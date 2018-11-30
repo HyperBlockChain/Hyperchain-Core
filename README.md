@@ -17,3 +17,7 @@ Paralism is an new economy based on Parallel Blockchain Technology.
 ## About
 Visit [Paralism Official Site](http://www.paralism.com "Paralism Homepage") for more about vision of the new economy.
 
+## Nightly build
+### 2018.11.30 Paralism Rel 0.0.1
+* centos-nightly http://www.paralism.com/download/nightly-build/Paralism-0.1.1-centos-nighlty.sh
+* Windows-nightly http://www.paralism.com/download/nightly-build/Paralism-0.1.1-windows-nighlty.exe
