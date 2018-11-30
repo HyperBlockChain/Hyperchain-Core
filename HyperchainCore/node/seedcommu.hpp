@@ -19,47 +19,54 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
+#pragma once
 
+#include <thread>
+using namespace std;
+
+#include "Singleton.h"
+#include "NodeManager.h"
+#include "SearchNeighbourTask.h"
 #include "TaskThreadPool.h"
 
-
-
-TaskThreadPool::TaskThreadPool(uint32_t numthreads, uint32_t maxnumtasks) : 
-	_numthreads(numthreads),_taskqueue(maxnumtasks), _isstop(false)
+class SeedCommunication
 {
-	std::function<void()> f = std::bind(&TaskThreadPool::exec_task, this);
-	for (size_t i = 0; i < _numthreads; i++) {
-		_threads.push_back(thread(f));
+public:
+	SeedCommunication() : _isExit(false)
+	{}
+
+	~SeedCommunication()
+	{
+		_isExit = true;
+		if (_thread && _thread->joinable()) {
+			_thread->join();
+		}
 	}
-}
 
-void TaskThreadPool::stop() 
-{
-	_taskqueue.stop();
-	_isstop = true;
-	for (auto& t : _threads) {
-		t.join();
-	}
-	_threads.clear();
-}
+	void pullPeerlistFromSeedServer()
+	{
+		TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
 
-bool TaskThreadPool::put(QueueTask &&t)
-{
-	return _taskqueue.push(std::forward<QueueTask>(t));
-}
+		int num = 0;
+		while (!_isExit) {
+			taskpool->put(make_shared<SearchNeighbourTask>());
 
-void TaskThreadPool::exec_task() 
-{
-	list<QueueTask> tasklist;
-	while (!_isstop) {
-		_taskqueue.pop(tasklist);
-		for (auto t : tasklist) {
-			if (t->isRespond()) {
-				t->execRespond();
-			}
-			else {
-				t->exec();
+			num = 0;
+			while (num < 100 && !_isExit) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(200));
+				++num;
 			}
 		}
 	}
-}
+
+	bool start()
+	{
+		_thread.reset(new std::thread(&SeedCommunication::pullPeerlistFromSeedServer,this));
+		return true;
+	}
+
+private:
+	std::unique_ptr<std::thread> _thread;
+	bool _isExit;
+};
+

@@ -1,25 +1,42 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+//
+// This file is part of the aMule Project.
+//
+// Copyright (c) 2008-2011 Dévai Tamás ( gonosztopi@amule.org )
+// Copyright (c) 2004-2011 Angel Vidal ( kry@amule.org )
+// Copyright (c) 2004-2011 aMule Team ( admin@amule.org / http://www.amule.org )
+// Copyright (c) 2003-2011 Barry Dunne (http://www.emule-project.net)
+//
+// Any parts of this program derived from the xMule, lMule or eMule project,
+// or contributed by third-party developers are copyrighted by their
+// respective authors.
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA
+//
 
-Distributed under the MIT software license, see the accompanying
-file COPYING or https://opensource.org/licenses/MIT.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this 
-software and associated documentation files (the "Software"), to deal in the Software
-without restriction, including without limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
-to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or
-substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
-INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
-FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
+// Note To Mods //
+/*
+Please do not change anything here and release it..
+There is going to be a new forum created just for the Kademlia side of the client..
+If you feel there is an error or a way to improve something, please
+post it in the forum first and let us look at it.. If it is a real improvement,
+it will be added to the offical client.. Changing something without knowing
+what all it does can cause great harm to the network if released in mass form..
+Any mod that changes anything within the Kademlia side will not be allowed to advertise
+there client on the eMule forum..
 */
-
 #include <assert.h>
 
 #include <iomanip>
@@ -34,24 +51,23 @@ using namespace std;
 
 CUInt128::CUInt128(const CUInt128 &value, unsigned numBits)
 {
-	
+
 	unsigned numULONGs = numBits / 32;
 	for (unsigned i = 0; i < numULONGs; i++) {
 		Set32BitChunk(i, value.Get32BitChunk(i));
 	}
 
-	
+
 	for (unsigned i = numULONGs * 32; i < numBits; i++) {
 		SetBitNumber(i, value.GetBitNumber(i));
 	}
 
-	
 	numULONGs = (numBits + 31) / 32;
 	for (unsigned i = numBits; i < numULONGs * 32; i++) {
 		SetBitNumber(i, rand() % 2);
 	}
 
-	
+
 	for (unsigned i = numULONGs; i < 3; i++) {
 		Set32BitChunk(i, rand());
 	}

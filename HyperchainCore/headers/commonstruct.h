@@ -1,23 +1,23 @@
-﻿/*copyright 2016-2018 hyperchain.net (Hyper Block Chain)
-/*
-/*Distributed under the MIT software license, see the accompanying
-/*file COPYING or https://opensource.org/licenses/MIT。
-/*
-/*Permission is hereby granted, free of charge, to any person obtaining a copy of this 
-/*software and associated documentation files (the "Software"), to deal in the Software
-/*without restriction, including without limitation the rights to use, copy, modify, merge,
-/*publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
-/*to whom the Software is furnished to do so, subject to the following conditions:
-/*
-/*The above copyright notice and this permission notice shall be included in all copies or
-/*substantial portions of the Software.
-/*
-/*THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
-/*INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-/*PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
-/*FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-/*OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-/*DEALINGS IN THE SOFTWARE.
+﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+
+Distributed under the MIT software license, see the accompanying
+file COPYING or https://opensource.org/licenses/MIT.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+software and associated documentation files (the "Software"), to deal in the Software
+without restriction, including without limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
+to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 */
 #ifndef __COMMON_STRUCT_H__
 #define __COMMON_STRUCT_H__
@@ -73,7 +73,7 @@ enum _eerrorno
 
 typedef struct _tpeeraddress
 {
-	
+
 	uint32	uiIP;
 	uint32	uiPort;
 
@@ -238,8 +238,11 @@ typedef struct _fileinfo
 typedef struct _tprivateblock
 {
 	_tblockbaseinfo   tBlockBaseInfo;
-	T_SHA256 tHHash;		
-	T_FILEINFO tPayLoad;	
+	T_SHA256 tHHash;
+	
+	
+	T_FILEINFO tPayLoad;
+	
 
 	_tprivateblock()
 	{
@@ -264,7 +267,8 @@ typedef struct _tlocalblock
 {
 	_tblockbaseinfo   tBlockBaseInfo;
 	T_SHA256 tHHash;
-	uint64  uiAtChainNum;	
+	uint64  uiAtChainNum;
+	
 	T_PRIVATEBLOCK tPayLoad;
 
 	_tlocalblock()
@@ -341,6 +345,7 @@ typedef struct _thyperblock
 {
 	_tblockbaseinfo   tBlockBaseInfo;
 	T_SHA256 tHashAll;
+	
 	list<LIST_T_LOCALBLOCK> listPayLoad;
 	int8 strVersion[MAX_VER_LEN];
 
@@ -422,6 +427,7 @@ typedef struct _thyperblocksend
 	T_SHA256 GetHashAll()const;
 
 }T_HYPERBLOCKSEND, *T_PHYPERBLOCKSEND;
+
 typedef struct _tchainStateinfo 
 {
 	uint64 uiBlockNum;
@@ -580,7 +586,7 @@ typedef struct _tbuddyinfostate
 {
 	
 	int8 strBuddyHash[DEF_STR_HASH256_LEN];
-	uint8 uibuddyState;		
+	uint8 uibuddyState;	
 
 	T_PEERADDRESS tPeerAddrOut;
 

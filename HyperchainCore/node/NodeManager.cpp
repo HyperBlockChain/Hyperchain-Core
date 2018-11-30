@@ -1,9 +1,9 @@
 /*Copyright 2016-2018 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
-file COPYING or https://opensource.org/licenses/MIT.
+file COPYING or?https://opensource.org/licenses/MIT.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this?
 software and associated documentation files (the "Software"), to deal in the Software
 without restriction, including without limitation the rights to use, copy, modify, merge,
 publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
@@ -12,25 +12,20 @@ to whom the Software is furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all copies or
 substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,?
 INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
 PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
 FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
+
 #include "NodeManager.h"
 #include "../db/dbmgr.h"
+#include "../wnd/common.h"
 
-void NodeManager::myself(const CNode &me) 
-{
-	_me = me;
-}
-
-CNode & NodeManager::myself() 
-{
-	return _me;
-}
+#include <cpprest/json.h>
+using namespace web;
 
 CNode * NodeManager::searchBuddy() 
 {
@@ -167,5 +162,38 @@ void NodeManager::saveNeighbourNodes()
 				node.getNodeId<string>().c_str(),
 				node.serializeAP().c_str());
 		}
+	}
+}
+
+void NodeManager::parse(const string &nodes)
+{
+	json::value obj = json::value::parse(s2t(nodes));
+	assert(obj.is_array());
+
+	std::map<CUInt128,CNode> mapTmpNode;
+
+	size_t num = obj.size();
+	for (int i = 0; i < num; i++) {
+		
+		string objstr = t2s(obj[i].serialize());
+		CNode n;
+		CNode::parse(objstr, n);
+		mapTmpNode[n.getNodeId<CUInt128>()] = n;
+	}
+
+	std::lock_guard<std::mutex> lck(_guard);
+	auto it = _nodelist.begin();
+	for (;it != _nodelist.end(); it++)
+	{
+		if (mapTmpNode.count(it->getNodeId<CUInt128>()))
+		{
+			*it = mapTmpNode.at(it->getNodeId<CUInt128>());
+			mapTmpNode.erase(it->getNodeId<CUInt128>());
+		}
+	}
+
+	for (auto node : mapTmpNode)
+	{
+		_nodelist.emplace_back(node.second);
 	}
 }

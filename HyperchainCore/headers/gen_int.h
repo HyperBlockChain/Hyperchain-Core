@@ -34,4 +34,4 @@ typedef unsigned int        uint32;
 typedef int64_t				int64;
 typedef uint64_t			uint64;
 
-#endif 
+#endif //__GEN_INT_H__

@@ -61,17 +61,17 @@ DEALINGS IN THE SOFTWARE.
 #include <arpa/inet.h>
 #include <dirent.h>
 #include <sys/errno.h>
-#endif
+#endif// WIN32
 
 using namespace std;
 
 #ifdef WIN32
-#define SLEEP(x)                    Sleep(x) 
+#define SLEEP(x)                    Sleep(x) //mil
 #define IERROR GetLastError()
 #else
-#define SLEEP(x)                    usleep(x*1000)	
+#define SLEEP(x)                    usleep(x*1000)	//mil
 #define IERROR errno
 #endif
 
 
-#endif 
+#endif //__INCLUDE_COMM_H

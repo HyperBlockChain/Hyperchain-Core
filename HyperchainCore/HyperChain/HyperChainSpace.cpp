@@ -1,9 +1,9 @@
 /*Copyright 2016-2018 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
-file COPYING or https://opensource.org/licenses/MIT.
+file COPYING or?https://opensource.org/licenses/MIT.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this?
 software and associated documentation files (the "Software"), to deal in the Software
 without restriction, including without limitation the rights to use, copy, modify, merge,
 publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
@@ -12,7 +12,7 @@ to whom the Software is furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all copies or
 substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,?
 INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
 PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
 FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
@@ -78,8 +78,7 @@ int CHyperChainSpace::GetChainIDListFormLocal()
 				nend = li;
 			}
 			else
-			{
-				
+			{				
 				if (nstart == nend)
 				{
 					data = to_string(nstart);
@@ -116,7 +115,6 @@ int CHyperChainSpace::GetChainIDListFormLocal()
 
 void CHyperChainSpace::AnalyticalChainData(string strbuf, string nodeid)
 {
-	
 	string::size_type np = strbuf.find("HyperID=");
 	if (np != string::npos)
 	{
@@ -132,8 +130,10 @@ void CHyperChainSpace::AnalyticalChainData(string strbuf, string nodeid)
 	for (auto sid : vecHID)
 	{
 		string strIDtoID = sid;
+		ns = strIDtoID.find("-");
 
-		if ((ns = strIDtoID.find("-")) > 0)
+		
+		if ((ns != string::npos) && (ns > 0))
 		{
 			uint64 IDS = stoi(strIDtoID.substr(0, ns));
 			uint64 IDE = stoi(strIDtoID.substr(ns + 1, strIDtoID.length() - 1));
@@ -258,9 +258,8 @@ void CHyperChainSpace::PullDataThread()
 {
 	while (m_bpull)
 	{
-		PullDataFromChainSpace();
-		
-		uint64 ntimer = 500;
+		PullDataFromChainSpace();	
+		uint64 ntimer = TIMER;
 		while (m_bpull && ntimer <= PULLTIMER )
 		{
 			SLEEP(ntimer);

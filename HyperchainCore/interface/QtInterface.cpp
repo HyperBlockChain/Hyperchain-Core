@@ -412,9 +412,7 @@ bool isNum(string searchInfo)
 	}
 	return index;
 }
-////////////////////////////////////////////////////////
-//hyperchain browser interface
-////////////////////////////////////////////////////////
+
 VEC_T_BROWSERSHOWINFO Query(string &searchInfo)
 {
 	if (searchInfo.length() == DEF_SHA512_LEN)

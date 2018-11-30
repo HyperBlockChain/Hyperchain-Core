@@ -187,7 +187,7 @@ bool CCommonStruct::ReadConfig()
 	string strTemp = m_uufile.GetItemData(strXmlFile, "savenodenum");
 	g_confFile.uiSaveNodeNum = atoi(strTemp.c_str());
 
-
+	
 	strTemp = m_uufile.GetItemData(strXmlFile, "logfile");
 	if (0 == strTemp.compare("")) {
 		QString path = QDir::tempPath();
@@ -241,9 +241,7 @@ bool CCommonStruct::ReadConfig()
 		return false;
 	}
 
-
-
-
+	
 	vector<string> vec_str = m_uufile.ExtractStringList(strXmlFile, "nodeinfo");
 	vector<string>::iterator itr = vec_str.begin();
 	for (; itr != vec_str.end(); itr++) {

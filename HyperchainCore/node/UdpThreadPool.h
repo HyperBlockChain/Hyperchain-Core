@@ -1,9 +1,9 @@
 /*Copyright 2016-2018 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
-file COPYING or https://opensource.org/licenses/MIT.
+file COPYING or?https://opensource.org/licenses/MIT.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this?
 software and associated documentation files (the "Software"), to deal in the Software
 without restriction, including without limitation the rights to use, copy, modify, merge,
 publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
@@ -12,7 +12,7 @@ to whom the Software is furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all copies or
 substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,?
 INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
 PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
 FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
@@ -22,21 +22,27 @@ DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#ifndef __UDP_THREADPOOL_H__
-#define __UDP_THREADPOOL_H__
-
-
-
-
-
-#include "../headers/platform.h"
-#include "../headers/commonstruct.h"
-#include "../utility/MutexObj.h"
-
 #include "../crypto/crc32.h"
+
+
+#include <iostream>
+#include <stdio.h>
+#include <stdint.h>
+#include <memory>
+#include <string>
+#include <thread>
+#include <ctime>
+#include <map>
 #ifdef WIN32
 #include <winsock2.h>
+#pragma comment(lib,"WS2_32.LIB")
+#else
+#include <sys/socket.h>
+#include <sys/types.h>
 #endif
+
+#include "SyncQueue.h"
+
 
 
 #define CURRENT_VERSION '1'
@@ -47,12 +53,12 @@ DEALINGS IN THE SOFTWARE.
 #define PACKET_HEADER '1'
 #define SLICE_HEADER  '2'
 
-#define UDP_SLICE_MAX_SIZE 16384			
 
-#define MAX_BUFFER_SIZE 65536				
-#define MAX_SEND_TIMES  5					
-#define MAX_INTERVAL_TIME  1000				
-#define MAX_RECV_LIST_COUNT  2000			
+#define UDP_SLICE_MAX_SIZE 1024				
+#define MAX_BUFFER_SIZE	2048				
+#define MAX_SEND_TIMES  3					
+#define MAX_INTERVAL_TIME  100				
+#define MAX_RECV_LIST_COUNT  5000			
 
 enum _erecvflag
 {
@@ -67,35 +73,35 @@ typedef struct _tudpheader
 	uint32_t uDataBufCrc;
 	uint32_t uBufLen;
 	uint8_t PacketType;
-	uint8_t Version;
+	uint8_t Version; 
+	
 	uint16_t uSliceTotalNum;
 }T_UDPHEADER, *T_PUDPHEADER;
 
 typedef struct _tudpnode
-{
+{	
 	string Ip;
 	uint32_t Port;
 	uint16_t ClearFlag;
 	uint16_t RetryTimes;
-	uint64_t NextSendTime;
+	std::time_t NextSendTime;
+	
 	char bitmap[128];
 	T_UDPHEADER UdpHeader;
 	char *DataBuf;
 }T_UDPNODE, *T_PUDPNODE;
 
 
-
-
 typedef struct _tudpsliceheader
 {
-	uint8_t HeaderType;			
+	uint8_t HeaderType;			 
 	uint8_t SliceType;			
 	uint32_t uPacketNum;		
-	uint16_t uSliceTotalNum;	
-	uint16_t uSliceCurrIndex;   
+	uint16_t uSliceTotalNum;	 
+	uint16_t uSliceCurrIndex;	 
 	uint32_t uSliceBufCrc;
 	uint32_t uSliceBufLen;		
-	uint32_t uSliceDataOffset;  
+	uint32_t uSliceDataOffset; 
 }T_UDPSLICEHEADER, *T_PUDPSLICEHEADER;
 
 typedef struct _tudpslicenode
@@ -103,6 +109,12 @@ typedef struct _tudpslicenode
 	T_UDPSLICEHEADER SliceHeader;
 	char *SliceBuf;
 }T_UDPSLICENODE, *T_PUDPSLICENODE;
+
+typedef struct _trecvnode
+{
+	struct sockaddr_in fromAddr;
+	char *recvbuf;
+}T_RECVNODE, *T_PRECVNODE;
 
 typedef struct _tpacketkey
 {
@@ -128,12 +140,6 @@ typedef struct _tpacketkey
 	}
 }T_PACKETKEY;
 
-typedef list<T_UDPNODE>	LIST_T_UDPNODE;
-typedef LIST_T_UDPNODE::iterator    ITR_LIST_T_UDPNODE;
-
-typedef list<T_PUDPNODE>	LIST_T_PUDPNODE;
-typedef LIST_T_PUDPNODE::iterator    ITR_LIST_T_PUDPNODE;
-
 typedef list<T_UDPSLICENODE>	LIST_T_UDPSLICENODE;
 
 typedef map<uint32_t, T_PUDPNODE>		MAP_T_PUDPNODE;
@@ -148,44 +154,27 @@ typedef MAP_SLICEDATA::iterator    ITR_MAP_SLICEDATA;
 typedef map<T_PACKETKEY, MAP_SLICEDATA> MULTI_MAP_PACKETDATA;
 typedef MULTI_MAP_PACKETDATA::iterator    ITR_MULTI_MAP_PACKETDATA;
 
-class UdpThreadPool 
+
+
+
+class UdpThreadPool
 {
 public:
-
-	UdpThreadPool();
-	virtual ~UdpThreadPool();
-
-	enum _esendresult
-	{
-		LOCAL_IP = -2,
-		SEND_FAILED = -1,
-		SEND_SUCCESS
-	};
-
-	enum _erecvresult
-	{
-		RECV_LIST_EMPTY = -1,
-		RECV_SUCCESS = 1,
-		RECV_BUF_NOT_ENOUGH
-	};
-
-public:
-	int Init(const char* localIp, uint32_t localPort);
+	UdpThreadPool(const char* localIp, uint32_t localPort, uint32_t numthreads = thread::hardware_concurrency(), uint32_t maxnumtasks = MAX_RECV_LIST_COUNT);
+	~UdpThreadPool();
 	int send(const string &peerIP, uint32_t peerPort, const char * buf, size_t len);
-	
+	void start();
+	void stop();
 
 private:
 	void Recv();
 	void RecvData();
 	void SendAgain();
-	void slice_ack_resp_add(char *bitmap, uint16_t id);	
+	void slice_ack_resp_add(char *bitmap, uint16_t id);
 	int slice_ack_resp_check(char *bitmap, uint16_t id);
-	static void THREAD_API PushDataEntry(void* pParam);
-	static void THREAD_API RecvDataEntry(void* pParam);
-	static void THREAD_API SendAgainEntry(void* pParam);
 
 private:
-	bool					m_bUsed;
+	bool					m_isstop;
 	uint32_t				m_packetNum;
 	uint32_t				m_localPort;
 	const char				*m_localIp;
@@ -194,18 +183,24 @@ private:
 #else
 	int						m_listenFd;
 #endif
-	LIST_T_UDPNODE			m_recvList;
-	LIST_T_PUDPNODE			m_sendList;
+
+
+	SyncQueue<T_PUDPNODE>	m_sendList;
+	
+	SyncQueue<T_PRECVNODE>	m_recvList;
+	
+	std::thread				listen_thread;
+	std::thread				send_thread;
+	std::list<std::thread>	m_recvthreads;
+	uint32_t				m_recvthreads_num;
+
 	MAP_T_PUDPNODE			m_sendMap;
 	MAP_PACKETDATA			m_packetMap;
 	MULTI_MAP_PACKETDATA	m_recvMap;
-	CMutexObj				m_recvListLock;
-	CMutexObj				m_sendListLock;
-	CMutexObj				m_sendMapLock;
-	CMutexObj				m_packetMapLock;
-	CMutexObj				m_recvMapLock;
-	semaphore_t				m_semSendList;
-	semaphore_t				m_semRecvList;
-};
 
-#endif 
+	std::mutex				m_packetNumLock;
+	std::mutex				m_sendMapLock;
+	std::mutex				m_packetMapLock;
+	std::mutex				m_recvMapLock;
+};
+#pragma once

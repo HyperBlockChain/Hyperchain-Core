@@ -30,4 +30,4 @@ using namespace std;
 string t2s(const utility::string_t& ts);
 utility::string_t s2t(const std::string& s);
 
-#endif 
+#endif // COMMON_H

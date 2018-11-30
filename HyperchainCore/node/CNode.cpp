@@ -1,9 +1,9 @@
 /*Copyright 2016-2018 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
-file COPYING or https://opensource.org/licenses/MIT.
+file COPYING or?https://opensource.org/licenses/MIT.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this?
 software and associated documentation files (the "Software"), to deal in the Software
 without restriction, including without limitation the rights to use, copy, modify, merge,
 publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
@@ -12,20 +12,19 @@ to whom the Software is furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all copies or
 substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,?
 INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
 PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
 FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
-
+#include <QUuid>
+#include <iostream>
 #include <random>
 #include <sstream>
 #include <iomanip>
 using namespace std;
-
-
 
 #include "UdpAccessPoint.hpp"
 #include "TcpAccessPoint.hpp"
@@ -36,6 +35,7 @@ using namespace std;
 
 #include <cpprest/json.h>
 using namespace web;
+
 
 
 CNode::CNode(const CUInt128 & nodeid) :  _nodeid(nodeid)
@@ -71,17 +71,13 @@ void CNode::registerType()
 
 string CNode::generateNodeId()
 {
-	std::random_device rd;
-	std::mt19937 gen(rd());
-	std::uniform_int_distribution<> dis(1, 255);
-	string str;
-	ostringstream oss;
-	oss.flags(ios::hex);
-	for (int n = 0; n < CUInt128::value/2; ++n) {
-		oss << setw(2) << setfill('0') << dis(gen);
-	}
+	QUuid uuid = QUuid::createUuid();
+	string struuid = qPrintable(uuid.toString());
+	struuid.erase(0, 1);
+	struuid.pop_back();
+	struuid.erase(std::remove(struuid.begin(), struuid.end(), '-'), struuid.end());
 
-	return oss.str();
+	return struuid;
 }
 
 CNode & CNode::operator=(const CNode & node)
@@ -102,6 +98,42 @@ int CNode::send(string &msgbuf) const
 	}
 	return 0;
 }
+
+
+string CNode::serialize()
+{
+	json::value objAP = json::value::array(_aplist.size());
+
+	int i = 0;
+	for (auto ap : _aplist) {
+		objAP[i] = json::value::parse(s2t(ap->serialize()));
+		++i;
+	}
+
+	json::value obj;
+	obj[_XPLATSTR("ap")] = objAP;
+	obj[_XPLATSTR("id")] = json::value::string(s2t(_nodeid.ToHexString()));
+
+	std::stringstream oss;
+	obj.serialize(oss);
+	return oss.str();
+}
+
+void CNode::parse(const string &nodeinfo, CNode &node)
+{
+	json::value obj = json::value::parse(s2t(nodeinfo));
+
+	if (!obj.has_field(_XPLATSTR("id"))) {
+		throw std::invalid_argument("Invalid CNode type");
+	}
+
+	string id = t2s(obj[_XPLATSTR("id")].as_string());
+	node.setNodeId(id);
+
+	string aplist = t2s(obj[_XPLATSTR("ap")].serialize());
+	node.parseAP(aplist);
+}
+
 
 string CNode::serializeAP()
 {

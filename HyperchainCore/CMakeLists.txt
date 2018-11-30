@@ -38,7 +38,7 @@ endif()
 	
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules")
 
-PROJECT(P2PTest)
+PROJECT(Hyperchain)
 
 set(BIN_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
@@ -49,7 +49,7 @@ message(STATUS "Build Type: " "${CMAKE_BUILD_TYPE}")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-
+#include current directory
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 find_package(SQLite3 REQUIRED)
@@ -68,15 +68,15 @@ if(cpprestsdk_FOUND)
 endif()
 
 
-find_package (Boost REQUIRED COMPONENTS system)
+find_package (Boost REQUIRED COMPONENTS system program_options)
 
 cmake_policy(SET CMP0071 NEW)
 
 set(CMAKE_AUTOMOC TRUE)
 set(CMAKE_AUTORCC TRUE)
 
-set(main_SRC Log.cpp NodeInfo.cpp main.cpp qttestp2p.cpp )
-set(main_HEAD Log.h NodeInfo.h  qttestp2p.h Types.h)
+set(main_SRC Log.cpp NodeInfo.cpp main.cpp qttestp2p.cpp consolecommandhandler.cpp)
+set(main_HEAD Log.h NodeInfo.h  qttestp2p.h Types.h consolecommandhandler.h)
 set(main_UI qttestp2p.ui)
 
 FILE(GLOB crypto_SRC "crypto/*.cpp")
@@ -92,11 +92,14 @@ FILE(GLOB headers_HEAD "headers/*.h")
 
 FILE(GLOB HyperChain_SRC "HyperChain/*.cpp")
 FILE(GLOB HyperChain_HEAD "HyperChain/*.h")
+FILE(GLOB HyperChain_HPP "HyperChain/*.hpp")
 
-
+#FILE(GLOB interface_SRC "interface/*.cpp")
+#FILE(GLOB interface_HEAD "interface/*.h")
 
 FILE(GLOB node_SRC "node/*.cpp")
 FILE(GLOB node_HEAD "node/*.h")
+FILE(GLOB node_HPP "node/*.hpp")
 
 FILE(GLOB sqlite3_HEAD "thirdparty/sqlite3/*.h")
 
@@ -112,12 +115,20 @@ FILE(GLOB wnd_HEAD "wnd/*.h")
 
 
 
+#set(p2p_SRC ${crypto_SRC} ${data_SRC} ${debug_SRC} ${HttpUnit_SRC} ${interface_SRC} ${network_SRC} ${utility_SRC} ${HChainP2PManager_SRC})
+#set(p2p_HEAD ${crypto_HEAD} ${data_HEAD} ${debug_HEAD} ${HttpUnit_HEAD} ${interface_HEAD} ${network_HEAD} ${utility_HEAD} ${HChainP2PManager_HEAD})
+#end HChainP2PManager
+
+#All source files
 set(final_HEAD
     ${main_HEAD}	
 	${crypto_HEAD}
 	${headers_HEAD}
 	${HyperChain_HEAD}
+	${HyperChain_HPP}
+	#${interface_HEAD}
 	${node_HEAD}
+	${node_HPP}
 	${utility_HEAD}
 	${wnd_HEAD}
 	${db_HEAD}
@@ -131,6 +142,7 @@ set(final_SRC
 	${data_SRC}
 	${headers_SRC}
 	${HyperChain_SRC}
+	#${interface_SRC}
 	${node_SRC}
 	${utility_SRC}	
 	${wnd_SRC}
@@ -142,7 +154,7 @@ set(final_UI
 	${main_UI}
 	)
 	
-
+#set(resource_SRC ${CMAKE_BINARY_DIR}/logo.rc)
 
 qt5_wrap_ui(WRAP_FILES ${final_UI})	
 	
@@ -153,7 +165,7 @@ if(WIN32)
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS")
 endif()
 
-
+#add_executable(${PROJECT_NAME} ${final_SRC} ${final_HEAD} ${WRAP_FILES} ${resource_SRC})
 add_executable(${PROJECT_NAME} ${final_SRC} ${final_HEAD} ${WRAP_FILES})
 
 target_link_libraries(${PROJECT_NAME} Qt5::Widgets Qt5::Core Qt5::Gui Qt5::Network Qt5::WebChannel Qt5::WebEngineWidgets)
@@ -161,7 +173,7 @@ if(WIN32)
 target_link_libraries(${PROJECT_NAME} Qt5::WinMain)
 endif()
 
-target_link_libraries(${PROJECT_NAME} cpprestsdk::cpprest Boost::system ${SQLITE3_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} cpprestsdk::cpprest Boost::system Boost::program_options ${SQLITE3_LIBRARIES})
 
 
 
