@@ -1,23 +1,23 @@
-﻿/*copyright 2016-2018 hyperchain.net (Hyper Block Chain)
-/*
-/*Distributed under the MIT software license, see the accompanying
-/*file COPYING or https://opensource.org/licenses/MIT。
-/*
-/*Permission is hereby granted, free of charge, to any person obtaining a copy of this 
-/*software and associated documentation files (the "Software"), to deal in the Software
-/*without restriction, including without limitation the rights to use, copy, modify, merge,
-/*publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
-/*to whom the Software is furnished to do so, subject to the following conditions:
-/*
-/*The above copyright notice and this permission notice shall be included in all copies or
-/*substantial portions of the Software.
-/*
-/*THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
-/*INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-/*PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
-/*FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-/*OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-/*DEALINGS IN THE SOFTWARE.
+﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+
+Distributed under the MIT software license, see the accompanying
+file COPYING or https://opensource.org/licenses/MIT.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+software and associated documentation files (the "Software"), to deal in the Software
+without restriction, including without limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
+to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 */
 
 #ifndef __INTER_PUBLIC_H__
@@ -138,7 +138,7 @@ typedef struct _tLocalChain
 
 }TGETFRIENDCHAININFO, *P_TGETFRIENDCHAININFO;
 
-//一个存证文件信息
+
 typedef struct _tPoeInfo
 {
 	string				cFileName;			
@@ -178,13 +178,14 @@ typedef struct _tPoeInfo
 
 }TEVIDENCEINFO, *P_TEVIDENCEINFO;
 
-//浏览器显示信息
+
 typedef struct _tChainQueryStru
 {
 	uint64		iBlockNo;								
 	uint64		iJoinedNodeNum;								
 	uint64		iLocalBlockNum;							
-	uint16		iLocalChainNum;	
+	uint16		iLocalChainNum;								
+					
 	uint64		tTimeStamp;									
 	_tPoeInfo tPoeRecordInfo;
 
@@ -194,7 +195,7 @@ typedef struct _tChainQueryStru
 		iLocalChainNum = 0;
 		iLocalBlockNum = 0;
 		iJoinedNodeNum = 0;
-
+		
 		tTimeStamp = 0;
 	}
 
@@ -225,7 +226,6 @@ typedef struct _tUpqueue
 }TUPQUEUE, *P_TUPQUEUE;
 
 
- 
 typedef struct _tBlockInfo
 {
 	uint64 iBlockNo;
@@ -279,7 +279,7 @@ typedef struct _tNodeInfo
 
 typedef struct _tBlockPersistStru
 {
-	uint8  ucBlockType;
+	uint8  ucBlockType; 
 
 	uint64 uiBlockId;
 	uint64 uiReferHyperBlockId;
@@ -390,7 +390,7 @@ typedef VEC_T_BROWSERSHOWINFO::iterator			ITR_VEC_T_BROWSERSHOWINFO;
 typedef vector<P_TEVIDENCEINFO>					VEC_T_EVIDENCEINFO;
 typedef VEC_T_EVIDENCEINFO::iterator			ITR_VEC_T_EVIDENCEINFO;
 
-
+//by changhua
 typedef vector<P_TUPQUEUE>						VEC_T_UPQUEUEINFO;
 typedef VEC_T_UPQUEUEINFO::iterator				ITR_VEC_T_UPQUEUEINFO;
 

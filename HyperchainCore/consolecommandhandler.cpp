@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.
 #include "node/Singleton.h"
 #include "HyperChain/HyperChainSpace.h"
 #include "HyperChain/HyperData.h"
+#include "node/NodeManager.h"
 
 
 using namespace std;
@@ -116,11 +117,22 @@ ConsoleCommandHandler::ConsoleCommandHandler() :
 
 	_commands.push_back(cmdstruct("help", std::bind(&ConsoleCommandHandler::showUsages, this)));
 	_commands.push_back(cmdstruct("?", std::bind(&ConsoleCommandHandler::showUsages, this)));
+	_commands.push_back(cmdstruct("node", std::bind(&ConsoleCommandHandler::showNeighborNode, this)));
+	_commands.push_back(cmdstruct("n", std::bind(&ConsoleCommandHandler::showNeighborNode, this)));
+	_commands.push_back(cmdstruct("space", std::bind(&ConsoleCommandHandler::showHyperChainSpace, this)));
+	_commands.push_back(cmdstruct("sp", std::bind(&ConsoleCommandHandler::showHyperChainSpace, this)));
+	_commands.push_back(cmdstruct("spacemore", std::bind(&ConsoleCommandHandler::showHyperChainSpaceMore, this, std::placeholders::_1)));
+	_commands.push_back(cmdstruct("spm", std::bind(&ConsoleCommandHandler::showHyperChainSpaceMore, this, std::placeholders::_1)));
+	_commands.push_back(cmdstruct("local", std::bind(&ConsoleCommandHandler::showLocalData, this)));
+	_commands.push_back(cmdstruct("l", std::bind(&ConsoleCommandHandler::showLocalData, this)));
+	_commands.push_back(cmdstruct("down", std::bind(&ConsoleCommandHandler::downloadHyperBlock, this, std::placeholders::_1)));
+	_commands.push_back(cmdstruct("d", std::bind(&ConsoleCommandHandler::downloadHyperBlock, this, std::placeholders::_1)));
+	_commands.push_back(cmdstruct("search", std::bind(&ConsoleCommandHandler::searchLocalHyperBlock, this, std::placeholders::_1)));
+	_commands.push_back(cmdstruct("se", std::bind(&ConsoleCommandHandler::searchLocalHyperBlock, this, std::placeholders::_1)));
 	_commands.push_back(cmdstruct("exit", std::bind(&ConsoleCommandHandler::exit, this)));
 	_commands.push_back(cmdstruct("quit", std::bind(&ConsoleCommandHandler::exit, this)));
 	_commands.push_back(cmdstruct("q", std::bind(&ConsoleCommandHandler::exit, this)));
-
-
+	
 }
 ConsoleCommandHandler::~ConsoleCommandHandler()
 {
@@ -130,23 +142,17 @@ ConsoleCommandHandler::~ConsoleCommandHandler()
 void ConsoleCommandHandler::showUsages()
 {
 	cout << "These are common commands used in various situations:" << endl << endl;
-	cout << "   help(?):		show all available commands" << endl;
-
-	cout << "   status(s):      show Hyperchain running status" << endl;
-
-	cout << "   node(n):	    show neighbor node information" << endl;
-
-	cout << "   space(sp):	    show HyperChain-Space information" << endl;
-	cout << "   spacemore(spm):	show HyperChain-Space more information" << endl;
-
-
-	cout << "   local(l):		show local data information" << endl;
-
-	cout << "   down(d):        download a specified hyper block from HyperChain-Space to local" << endl;
-
-	cout << "   search(se):   search detail information for a specified hyper block number" << endl;
-	cout << "                 search hyperblocknumber" << endl;
-	cout << "   exit(quit/q): exit the program" << endl;
+	cout << "   help(?):			show all available commands" << endl;
+	cout << "   node(n):			show neighbor node information" << endl;
+	cout << "   space(sp):			show HyperChain-Space information" << endl;
+	cout << "   spacemore(spm):		show a specified hyper block from HyperChain-Space more information" << endl;
+	cout << "						spm  'HyperBlockID'" << endl;
+	cout << "   local(l):			show local data information" << endl;
+	cout << "   down(d):			download a specified hyper block from HyperChain-Space to local" << endl;
+	cout << "						d 'HyperBlockID' 'NodeID' "<< endl;
+	cout << "   search(se):			search detail information for a specified hyper block number" << endl;	
+	cout << "						se 'HyperBlockID'" << endl;
+	cout << "   exit(quit/q):		exit the program" << endl;
 }
 
 void ConsoleCommandHandler::exit()
@@ -202,6 +208,19 @@ void ConsoleCommandHandler::run() {
 
 void ConsoleCommandHandler::showNeighborNode()
 {
+	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+	const CNodeList *pNodeList = nodemgr->getNodeList();
+	if (pNodeList->size() <= 0)
+	{
+		cout << "Neighbor Node is empty..." << endl;
+		return;
+	}
+
+	for (auto node : *pNodeList)
+	{
+		cout << node.serialize() << endl;	
+	}
+
 
 }
 
@@ -302,9 +321,10 @@ void ConsoleCommandHandler::showLocalData()
 void ConsoleCommandHandler::downloadHyperBlock(const list<string> &commlist)
 {
 	size_t s = commlist.size();
-	if (s <= 1)
+	if (s < 3)
 	{
 		cout << "Please specify the block number." << endl;
+		cout << "Please specify the node id." << endl;
 		return;
 	}
 
@@ -315,7 +335,7 @@ void ConsoleCommandHandler::downloadHyperBlock(const list<string> &commlist)
 		if (iterCurrPos != commlist.end())
 		{
 			uint64 nblocknum = std::stol(*iterCurrPos);			
-			std::advance(iterCurrPos, 2);
+			std::advance(iterCurrPos, 1);
 			if (iterCurrPos != commlist.end())
 			{
 				string strnodeid = *iterCurrPos;

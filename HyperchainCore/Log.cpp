@@ -1,23 +1,23 @@
-﻿/*copyright 2016-2018 hyperchain.net (Hyper Block Chain)
-/*
-/*Distributed under the MIT software license, see the accompanying
-/*file COPYING or https://opensource.org/licenses/MIT。
-/*
-/*Permission is hereby granted, free of charge, to any person obtaining a copy of this 
-/*software and associated documentation files (the "Software"), to deal in the Software
-/*without restriction, including without limitation the rights to use, copy, modify, merge,
-/*publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
-/*to whom the Software is furnished to do so, subject to the following conditions:
-/*
-/*The above copyright notice and this permission notice shall be included in all copies or
-/*substantial portions of the Software.
-/*
-/*THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
-/*INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-/*PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
-/*FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-/*OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-/*DEALINGS IN THE SOFTWARE.
+﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+
+Distributed under the MIT software license, see the accompanying
+file COPYING or https://opensource.org/licenses/MIT.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+software and associated documentation files (the "Software"), to deal in the Software
+without restriction, including without limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
+to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 */
 
 
@@ -60,6 +60,7 @@ static size_t get_file_size(FILE* fp)
 }
 
 
+
 void renamelogfile(LOG_HELPER* log_helper)
 {
 
@@ -69,7 +70,7 @@ void renamelogfile(LOG_HELPER* log_helper)
     char *pos1, *pos2;
     time(&t);
 
-
+  
 	strftime(tmp, MAX_STR_SIZE, "_%Y%m%d_%H%M%S", localtime(&t));
 #ifdef WIN32
 	pos1 = strrchr(log_helper->file_name, '\\');
@@ -85,7 +86,7 @@ void renamelogfile(LOG_HELPER* log_helper)
     if (pos2) 
 	{
         strncpy(fullname, log_helper->file_name, pos2 - log_helper->file_name);
-  
+      
         strcat(fullname, tmp);
         strcat(fullname, pos2);
     }
@@ -171,7 +172,7 @@ static void log_level( LOG_HELPER* log_helper, int level, const char *fmt, va_li
                 if( log_fp == NULL ) 
 				{
                     log_helper->fp = NULL;
-                   
+              
                     return;
                 }
                 log_helper->fp = log_fp;
@@ -182,14 +183,14 @@ static void log_level( LOG_HELPER* log_helper, int level, const char *fmt, va_li
 	{
     	log_fp = stdout;
     }
-   
+  
     vsnprintf(tmp, 1024*5-1, fmt, ap);
     int buff_left_length = 1024*5-strlen(buff);
     strncat(buff,tmp, buff_left_length-1);
-   
+
     fprintf(log_fp, "%s\n", buff);
     fflush(log_fp);
- 
+
 }
 
 void log_info(LOG_HELPER* log_helper, const char *fmt0, ...) 
@@ -256,12 +257,12 @@ LOG_HELPER* open_logfile(const char* file_name)
 	{
 
         FILE* fp = fopen(file_name,"a");
-
+	
 		if( fp == NULL ) 
 		{
             return NULL;
         }
-	
+
         log_helper = (LOG_HELPER*)calloc(1, sizeof(LOG_HELPER));
         log_helper->fp = fp;
         strcpy(log_helper->file_name, file_name);
