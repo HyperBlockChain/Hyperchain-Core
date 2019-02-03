@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -26,11 +26,12 @@ DEALINGS IN THE SOFTWARE.
 #include <thread>
 #include <mutex>
 
-#include <QList>
+
 #include <map>
 #include <functional>
 
 #include "util/cppsqlite3.h"
+
 
 class CppSQLite3DB;
 
@@ -47,25 +48,29 @@ public:
 
 public:
     int insertEvidence(const TEVIDENCEINFO& evidence);
-    int getEvidences(QList<TEVIDENCEINFO>& evidences, int page, int size = 20);
+    int getEvidences(std::list<TEVIDENCEINFO>& evidences, int page, int size = 20);
     int updateEvidence(const TEVIDENCEINFO& evidence, int type = 1);
-	int getNoConfiringList(QList<TEVIDENCEINFO>& evidences);
+	int getNoConfiringList(std::list<TEVIDENCEINFO>& evidences);
     int delEvidence(std::string hash);
 	int delEvidence(const TEVIDENCEINFO &evidence);
 	int insertHyperblock(const T_HYPERBLOCKDBINFO &hyperblock);
 	int updateHyperblock(const T_HYPERBLOCKDBINFO &hyperblock);
 	int existHyperblock(const T_HYPERBLOCKDBINFO &hyperblock);
-	int getHyperblock(QList<T_HYPERBLOCKDBINFO> &list, int page, int size);
-	int getHyperblockshead(QList<T_HYPERBLOCKDBINFO> &queue, int nStartHyperID);
+	int getHyperblock(std::list<T_HYPERBLOCKDBINFO> &list, int page, int size);
+	int getHyperblockshead(std::list<T_HYPERBLOCKDBINFO> &queue, int nStartHyperID);
 	int getAllHyperblockNumInfo(std::list<uint64> &queue);
-	int getHyperblocks(QList<T_HYPERBLOCKDBINFO> &queue, int nStartHyperID, int nEndHyperID);
-    int getUpqueue(QList<TUPQUEUE> &queue, int page, int size);
+	int getHyperblocks(std::list<T_HYPERBLOCKDBINFO> &queue, int nStartHyperID, int nEndHyperID);
+    int getUpqueue(std::list<TUPQUEUE> &queue, int page, int size);
 	int delUpqueue(std::string hash);
 	int addUpqueue(string sHash);
+
+	int findverinhyperblock();
+	int updatahyperblockaddver();
 
 	int getLatestHyperBlockNo();
 	int getLatestHyperBlock(T_HYPERBLOCKDBINFO &hyperblock);
 	int getOnChainStateFromHashTime(string strlocalhash, uint64 time);
+	bool isBlockExisted(string &strblockhash);
 	string hash256tostring(const unsigned char* hash);
 	void strtohash256(unsigned char* hash, const char* szHash);
 
@@ -123,7 +128,8 @@ private:
     int updateDB();
 
 private:
-    bool ifColExist(const char* tbl, const char* col);  
+    bool ifColExist(const char* tbl, const char* col);
+    //type 1:tbl 2:index
     bool ifTblOrIndexExist(const char* name, int type = 1);
 
 private:

@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -49,6 +49,7 @@ int g2u(char *inbuf, size_t inlen, char *outbuf, size_t outlen)
 	return code_convert("gb2312", "utf-8", inbuf, inlen, outbuf, outlen);
 }
 #endif
+
 
 
 

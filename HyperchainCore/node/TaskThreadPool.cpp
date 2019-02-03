@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -23,13 +23,12 @@ DEALINGS IN THE SOFTWARE.
 #include "TaskThreadPool.h"
 
 
-
 TaskThreadPool::TaskThreadPool(uint32_t numthreads, uint32_t maxnumtasks) : 
 	_numthreads(numthreads),_taskqueue(maxnumtasks), _isstop(false)
 {
 	std::function<void()> f = std::bind(&TaskThreadPool::exec_task, this);
 	for (size_t i = 0; i < _numthreads; i++) {
-		_threads.push_back(thread(f));
+		_threads.emplace_back(thread(f));
 	}
 }
 
@@ -50,8 +49,8 @@ bool TaskThreadPool::put(QueueTask &&t)
 
 void TaskThreadPool::exec_task() 
 {
-	list<QueueTask> tasklist;
 	while (!_isstop) {
+		list<QueueTask> tasklist;
 		_taskqueue.pop(tasklist);
 		for (auto t : tasklist) {
 			if (t->isRespond()) {

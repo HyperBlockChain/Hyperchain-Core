@@ -41,33 +41,38 @@ there client on the eMule forum..
 
 #include <iomanip>
 #include <sstream>
+#include <string.h>
 using namespace std;
 
 #include "UInt128.h"
 
 
+//#include "../../ArchSpecific.h"
+//#include <common/Format.h>	// Needed for CFormat
 
 
 
 CUInt128::CUInt128(const CUInt128 &value, unsigned numBits)
 {
-
+	// Copy the whole uint32s
 	unsigned numULONGs = numBits / 32;
 	for (unsigned i = 0; i < numULONGs; i++) {
 		Set32BitChunk(i, value.Get32BitChunk(i));
 	}
 
-
+	// Copy the remaining bits
 	for (unsigned i = numULONGs * 32; i < numBits; i++) {
 		SetBitNumber(i, value.GetBitNumber(i));
 	}
 
+	// Fill the remaining bits of the current 32-bit chunk with random bits
+	// (Not seeding based on time to allow multiple different ones to be created in quick succession)
 	numULONGs = (numBits + 31) / 32;
 	for (unsigned i = numBits; i < numULONGs * 32; i++) {
 		SetBitNumber(i, rand() % 2);
 	}
 
-
+	// Pad with random bytes
 	for (unsigned i = numULONGs; i < 3; i++) {
 		Set32BitChunk(i, rand());
 	}
@@ -75,7 +80,11 @@ CUInt128::CUInt128(const CUInt128 &value, unsigned numBits)
 
 std::string CUInt128::ToHexString() const
 {
+	//wxString str;
 
+	//for (int i = 3; i >= 0; i--) {
+	//	str.Append(CFormat(wxT("%08X")) % m_data.u32_data[i]);
+	//}
 
 	std::ostringstream oss;
 	oss.flags(ios::hex);
@@ -89,13 +98,29 @@ std::string CUInt128::ToHexString() const
 
 std::string CUInt128::ToBinaryString(bool trim) const
 {
-
+	//wxString str;
+	//str.Alloc(128);
+	//int b;
+	//for (int i = 0; i < 128; i++) {
+	//	b = GetBitNumber(i);
+	//	if ((!trim) || (b != 0)) {
+	//		str.Append(b ? wxT("1") : wxT("0"));
+	//		trim = false;
+	//	}
+	//}
+	//if (str.Len() == 0) {
+	//	str = wxT("0");
+	//}
+	//return str;
 	return "";
 }
 
 CUInt128& CUInt128::SetValueBE(const uint8_t *valueBE) throw()
 {
-
+	/*m_data.u32_data[3] = wxUINT32_SWAP_ON_LE(RawPeekUInt32(valueBE));
+	m_data.u32_data[2] = wxUINT32_SWAP_ON_LE(RawPeekUInt32(valueBE + 4));
+	m_data.u32_data[1] = wxUINT32_SWAP_ON_LE(RawPeekUInt32(valueBE + 8));
+	m_data.u32_data[0] = wxUINT32_SWAP_ON_LE(RawPeekUInt32(valueBE + 12));*/
 
 	m_data.u32_data[3] = *(uint32_t*)valueBE;
 	m_data.u32_data[2] = *(uint32_t*)(valueBE + 4);
@@ -128,12 +153,33 @@ CUInt128& CUInt128::SetHexString(const std::string & s) throw()
 
 void CUInt128::ToByteArray(uint8_t *b) const
 {
+	/*wxCHECK_RET(b != NULL, wxT("Destination buffer missing."));
 
+	RawPokeUInt32(b,      wxUINT32_SWAP_ON_LE(m_data.u32_data[3]));
+	RawPokeUInt32(b + 4,  wxUINT32_SWAP_ON_LE(m_data.u32_data[2]));
+	RawPokeUInt32(b + 8,  wxUINT32_SWAP_ON_LE(m_data.u32_data[1]));
+	RawPokeUInt32(b + 12, wxUINT32_SWAP_ON_LE(m_data.u32_data[0]));*/
+
+	assert(b != nullptr);
+	memcpy(b, &m_data.u32_data[3], 4);
+	memcpy(b+4, &m_data.u32_data[2], 4);
+	memcpy(b+8, &m_data.u32_data[1], 4);
+	memcpy(b+12, &m_data.u32_data[0], 4);
+
+	//*(b) = m_data.u32_data[3];
+	//*(b + 4) = m_data.u32_data[2];
+	//*(b + 8) = m_data.u32_data[1];
+	//*(b + 12) = m_data.u32_data[0];
 }
 
 void CUInt128::StoreCryptValue(uint8_t *buf) const
 {
+	//wxCHECK_RET(buf != NULL, wxT("Destination buffer missing."));
 
+	//RawPokeUInt32(buf,      wxUINT32_SWAP_ON_BE(m_data.u32_data[3]));
+	//RawPokeUInt32(buf + 4,  wxUINT32_SWAP_ON_BE(m_data.u32_data[2]));
+	//RawPokeUInt32(buf + 8,  wxUINT32_SWAP_ON_BE(m_data.u32_data[1]));
+	//RawPokeUInt32(buf + 12, wxUINT32_SWAP_ON_BE(m_data.u32_data[0]));
 }
 
 int CUInt128::CompareTo(const CUInt128 &other) const throw()
@@ -211,4 +257,4 @@ CUInt128& CUInt128::ShiftLeft(unsigned bits) throw()
 
 	return *this;
 }
-
+// File_checked_for_headers

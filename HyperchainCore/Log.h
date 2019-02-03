@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -23,16 +23,20 @@ DEALINGS IN THE SOFTWARE.
 #ifndef _LOG_H_
 #define _LOG_H_
 
-
+//#include "includeComm.h"
+//
+//#include "stdafx.h"
 #include <stdio.h>
 #include <time.h>
 #ifdef WIN32
-
-#define LOG_ERR     3   
-#define LOG_WARNING 4  
-#define LOG_NOTICE  5  
-#define LOG_INFO    6   
-
+//#define LOG_EMERG   0   /* system is unusable */
+//#define LOG_ALERT   1   /* action must be taken immediately */
+//#define LOG_CRIT    2   /* critical conditions */
+#define LOG_ERR     3   /* error conditions */
+#define LOG_WARNING 4   /* warning conditions */
+#define LOG_NOTICE  5   /* normal but significant condition */
+#define LOG_INFO    6   /* informational */
+//#define LOG_DEBUG   7   /* debug-level messages */
 
 #else
 	#include <syslog.h>
@@ -45,10 +49,10 @@ DEALINGS IN THE SOFTWARE.
 
 #define FILENAMESIZE 1024
 
-#define 	PRF_LOG_ERROR   1 
-#define 	PRF_LOG_WARNING 2 
-#define 	PRF_LOG_INFO    4 
-#define 	PRF_LOG_NOTICE  8 
+#define 	PRF_LOG_ERROR   1 // 1 < 0
+#define 	PRF_LOG_WARNING 2 // 1 < 1
+#define 	PRF_LOG_INFO    4 // 1 < 2
+#define 	PRF_LOG_NOTICE  8 // 1 < 3
 #define     PRF_LOG_ALL     (PRF_LOG_ERROR |  PRF_LOG_WARNING | PRF_LOG_INFO | PRF_LOG_NOTICE) // is default
 #define 	PRF_LOG_NON 0
 

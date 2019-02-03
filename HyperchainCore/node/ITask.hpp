@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -26,23 +26,42 @@ DEALINGS IN THE SOFTWARE.
 #include <assert.h>
 #include "IDGenerator.h"
 #include "UInt128.h"
+#include <string.h>
 
-typedef enum
+#include <memory>
+using namespace std;
+
+enum class TASKTYPE :char
 {
 	BASETYPE = 0,
 	HYPER_CHAIN_SEARCH,
 	HYPER_CHAIN_SEARCH_RSP,
-	HYPER_CHAIN_UP,
-	HYPER_CHAIN_UP_RSP,
+
+	ON_CHAIN,
+	ON_CHAIN_RSP,
+	ON_CHAIN_CONFIRM,
+	ON_CHAIN_CONFIRM_RSP,
+
+	COPY_BLOCK,
+
+	ON_CHAIN_REFUSE,
+	ON_CHAIN_WAIT,
+
+	GLOBAL_BUDDY_START_REQ,
+	GLOBAL_BUDDY_SEND_REQ,
+	GLOBAL_BUDDY_RSP,
+	COPY_HYPER_BLOCK_REQ,
+	GET_HYPERBLOCK_BY_NO_REQ,
+
 	HYPER_CHAIN_SPACE_PULL,
 	HYPER_CHAIN_SPACE_PULL_RSP,
 	HYPER_CHAIN_HYPERDATA_PULL,
 	HYPER_CHAIN_HYPERDATA_PULL_RSP,
 	SEARCH_NEIGHBOUR,
 	SEARCH_NEIGHBOUR_RSP,
-} TASKTYPE;
+};
 
-using TASKBUF = shared_ptr<string>;
+using TASKBUF = std::shared_ptr<string>;
 
 class ITask
 {
@@ -52,8 +71,9 @@ public:
 
 		size_t prefixlen = CUInt128::value + sizeof(TASKTYPE);
 
-		string id(_recvbuf->c_str(), CUInt128::value);
-		_sentnodeid.SetHexString(id);
+		uint8_t ut[CUInt128::value];
+		memcpy(ut, _recvbuf->c_str(), CUInt128::value);
+		_sentnodeid = CUInt128(ut);
 
 		_payload = _recvbuf->c_str() + prefixlen;
 		_payloadlen = _recvbuf->size() - prefixlen;
@@ -64,23 +84,13 @@ public:
 	virtual void execRespond() = 0;
 	
 	bool isRespond() { return _isRespond; }
-protected:
-	template<typename T>
-	typename std::enable_if<std::is_base_of<ITask,T>::value>::type 
-		attachTaskMetaHead(string &msgbuf) 
-	{
-		TASKTYPE t = T::value;
-		msgbuf.insert(0,(char*)&(t),sizeof(TASKTYPE));
-	}
 
 protected:
 	bool _isRespond = false;
-
 	const char * _payload = nullptr;
 	size_t _payloadlen = 0;
 	CUInt128 _sentnodeid;
 
 private:
-
 	TASKBUF _recvbuf;
 };

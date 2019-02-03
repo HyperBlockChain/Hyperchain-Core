@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -19,6 +19,7 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
+#include "HyperData.h"
 #include "HyperChainSpace.h"
 #include "node/TaskThreadPool.h"
 #include "node/Singleton.h"
@@ -31,22 +32,35 @@ DEALINGS IN THE SOFTWARE.
 CHyperChainSpace::CHyperChainSpace(string nodeid)
 {
 	m_mynodeid = nodeid;
-	Init();
 }
 
 CHyperChainSpace::~CHyperChainSpace()
 {
 	m_bpull = false;
-	if(m_threadpull.joinable())
+	if(m_threadpull->joinable())
 	{
-		m_threadpull.join();
+		m_threadpull->join();
 	}
 }
-void CHyperChainSpace::GetHyperChainData(map<uint64, set<string>>& out_HyperChainData)
+void CHyperChainSpace::GetHyperChainData(MULTI_MAP_HPSPACEDATA & out_HyperChainData)
 {
-	lock_guard<mutex> locker(m_lock);
+	lock_guard<mutex> locker(m_datalock);
 	out_HyperChainData.clear();
 	out_HyperChainData = m_hpspacedata;
+}
+
+void CHyperChainSpace::GetHyperChainShow(map<string, string>& out_HyperChainShow)
+{
+	lock_guard<mutex> locker(m_showlock);
+	out_HyperChainShow.clear();
+	out_HyperChainShow = m_hpspaceshow;
+}
+
+void CHyperChainSpace::GetLocalChainShow(vector<string> & out_LocalChainShow)
+{
+	lock_guard<mutex> locker(m_listlock);
+	out_LocalChainShow.clear();
+	out_LocalChainShow = m_hyperidlistcompressed;
 }
 
 int CHyperChainSpace::GetLocalChainIDList(list<uint64> & out_LocalIDList)
@@ -54,9 +68,33 @@ int CHyperChainSpace::GetLocalChainIDList(list<uint64> & out_LocalIDList)
 	return DBmgr::instance()->getAllHyperblockNumInfo(out_LocalIDList);
 }
 
+uint64 CHyperChainSpace::GetGlobalLatestHyperBlockNo()
+{
+	uint64 localHID = DBmgr::instance()->getLatestHyperBlockNo();
+
+	lock_guard<mutex> locker(m_datalock);
+	if (m_hpspacedata.size() == 0)
+		return localHID;
+	
+	MULTI_MAP_HPSPACEDATA::reverse_iterator it = m_hpspacedata.rbegin();
+	if (it == m_hpspacedata.rend())
+		return localHID;
+
+	uint64 globalHID = it->first;
+	MAP_NODE nodemap = it->second;
+
+	if (globalHID <= localHID)
+		return localHID;
+
+	MAP_NODE::iterator iter = nodemap.begin();
+	CHyperData * hd = Singleton<CHyperData>::instance();
+	hd->PullHyperDataByHID(globalHID, iter->first);
+	return globalHID;
+}
+
 int CHyperChainSpace::GetChainIDListFormLocal()
 {	
-	lock_guard<mutex> lk(m_lock);
+	lock_guard<mutex> lk(m_listlock);
 	uint64 ret = 0;
 	m_localhpidlist.clear();
 	if (GetLocalChainIDList(m_localhpidlist) == 0)
@@ -71,14 +109,14 @@ int CHyperChainSpace::GetChainIDListFormLocal()
 		m_hyperidlistcompressed.clear();
 
 		for (auto li : m_localhpidlist)
-		{
-
+		{		
 			if (li == nend || li - nend == 1)
 			{
 				nend = li;
 			}
 			else
-			{				
+			{
+				//"nstart-nend"
 				if (nstart == nend)
 				{
 					data = to_string(nstart);
@@ -121,12 +159,18 @@ void CHyperChainSpace::AnalyticalChainData(string strbuf, string nodeid)
 		strbuf = strbuf.substr(np + 8);
 	}
 
+	{
+		lock_guard<mutex> locker(m_showlock);
+		m_hpspaceshow[nodeid] = strbuf;
+	}
+
 	vector<string> vecHID;
 	SplitString(strbuf, vecHID, ";");
 
 	vector<string>::iterator vit;
 	string::size_type ns = 0;
 
+	lock_guard<mutex> lk(m_datalock);
 	for (auto sid : vecHID)
 	{
 		string strIDtoID = sid;
@@ -140,22 +184,14 @@ void CHyperChainSpace::AnalyticalChainData(string strbuf, string nodeid)
 
 			for (uint64 ID = IDS; ID < IDE + 1; ID++)
 			{
-				if (!FindIDExistInChainIDList(ID))
-				{
-					m_hpspacedata[ID].insert(nodeid);
-				}
-
+				m_hpspacedata[ID].insert(make_pair(nodeid, system_clock::now()));
 			}
 
 		}
 		else
 		{
 			uint64 ID = stoi(strIDtoID);
-			if (!FindIDExistInChainIDList(ID))
-			{
-				m_hpspacedata[ID].insert(nodeid);
-			}
-
+			m_hpspacedata[ID].insert(make_pair(nodeid, system_clock::now()));
 		}
 	}
 }
@@ -178,12 +214,9 @@ void CHyperChainSpace::SplitString(const string& s, vector<std::string>& v, cons
 
 bool CHyperChainSpace::PullChainSpaceRspTaskEXC(string & mes)
 {
-	bool bret = false;
-
+	lock_guard<mutex> lk(m_listlock);
 	if (m_hyperidlistcompressed.size() <= 0)
-		return bret;
-	else
-		bret = true;
+		return false;
 
 	mes += "HyperID=";
 	for (auto li: m_hyperidlistcompressed)
@@ -192,8 +225,7 @@ bool CHyperChainSpace::PullChainSpaceRspTaskEXC(string & mes)
 		mes += ";";
 	}
 
-	return bret;
-
+	return true;
 }
 
 void CHyperChainSpace::PullChainSpaceRspTaskRSP(string  mes, string nodeid)
@@ -222,18 +254,18 @@ bool CHyperChainSpace::FindIDExistInChainIDList(uint64 id)
 
 void CHyperChainSpace::UpdataChainIDList()
 {
+	lock_guard<mutex> lk(m_listlock);
 	m_localhpidlist.clear();
 	GetLocalChainIDList(m_localhpidlist);
 }
 
 
-void CHyperChainSpace::Init()
+void CHyperChainSpace::start()
 {
-	m_hpspacedata.clear();
 	GetChainIDListFormLocal();
 	m_bpull = true;
 	
-	m_threadpull = thread(&CHyperChainSpace::PullDataThread, this);
+	m_threadpull.reset(new std::thread(&CHyperChainSpace::PullDataThread, this));
 }
 
 
@@ -245,7 +277,6 @@ uint64 CHyperChainSpace::PullDataFromChainSpace()
 	if (!taskpool)
 		return 0;
 
-	m_hpspacedata.clear();
 	nret = GetChainIDListFormLocal();
 
 	taskpool->put(make_shared<PullChainSpaceTask>());
@@ -258,12 +289,7 @@ void CHyperChainSpace::PullDataThread()
 {
 	while (m_bpull)
 	{
-		PullDataFromChainSpace();	
-		uint64 ntimer = TIMER;
-		while (m_bpull && ntimer <= PULLTIMER )
-		{
-			SLEEP(ntimer);
-			ntimer += ntimer;			
-		}
+		PullDataFromChainSpace();
+		std::this_thread::sleep_for(std::chrono::seconds(5));
 	}
 }

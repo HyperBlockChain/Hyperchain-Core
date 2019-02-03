@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -25,11 +25,11 @@ DEALINGS IN THE SOFTWARE.
 #ifdef WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-
+//#include <WinBase.h>
 #else
 #include <pthread.h>
 #include <unistd.h>
-#endif
+#endif// WIN32
 
 
 #include <stdio.h>
@@ -37,7 +37,7 @@ DEALINGS IN THE SOFTWARE.
 #include "MutexObj.h"
 #include "CallbackFuncObj.h"
 
-
+//#include "includeComm.h"
 
 extern  int 	ERR_JTHREAD_CANINITMUTEX;
 extern  int 	ERR_JTHREAD_CANTSTARTTHREAD;
@@ -69,7 +69,7 @@ private:
 	static DWORD WINAPI ThreadEntry( LPVOID param );
 #else
 	static	void* ThreadEntry(void* param);
-#endif
+#endif //WIN32
 	
 	void* ThreadImp();
 	

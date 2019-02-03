@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -23,16 +23,13 @@ DEALINGS IN THE SOFTWARE.
 
 #include <stdio.h>
 #include <stdlib.h>
-
 #include <stdarg.h>
 #include <time.h>
 #include <string.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-
 #include <assert.h>
 #include "Log.h"
-
 #include "utility/MutexObj.h"
 #include "headers/UUFile.h"
 
@@ -42,7 +39,6 @@ DEALINGS IN THE SOFTWARE.
 #if defined (LOG_ERR) && !defined (LOG_ERROR)
 #define LOG_ERROR LOG_ERR
 #endif
-
 
 CMutexObj g_muxIniFile;
 
@@ -59,18 +55,14 @@ static size_t get_file_size(FILE* fp)
     return file_info.st_size;
 }
 
-
-
 void renamelogfile(LOG_HELPER* log_helper)
 {
-
 	char tmp[FILENAME_MAX] = {0};
     char fullname[FILENAMESIZE] = {0};
     time_t t;
     char *pos1, *pos2;
     time(&t);
 
-  
 	strftime(tmp, MAX_STR_SIZE, "_%Y%m%d_%H%M%S", localtime(&t));
 #ifdef WIN32
 	pos1 = strrchr(log_helper->file_name, '\\');
@@ -86,7 +78,6 @@ void renamelogfile(LOG_HELPER* log_helper)
     if (pos2) 
 	{
         strncpy(fullname, log_helper->file_name, pos2 - log_helper->file_name);
-      
         strcat(fullname, tmp);
         strcat(fullname, pos2);
     }
@@ -146,13 +137,11 @@ static void log_level( LOG_HELPER* log_helper, int level, const char *fmt, va_li
 #endif
 	strcat(buff, temp_pid);
     strcat(buff," ");
-
 	time_t t;
     time(&t);
     strftime(tmp, MAX_STR_SIZE, "%Y-%m-%d %H:%M:%S", localtime(&t));
     strcat(buff,tmp);
     strcat(buff,"--");
-
 
     if( log_helper != NULL ) 
 	{
@@ -172,7 +161,6 @@ static void log_level( LOG_HELPER* log_helper, int level, const char *fmt, va_li
                 if( log_fp == NULL ) 
 				{
                     log_helper->fp = NULL;
-              
                     return;
                 }
                 log_helper->fp = log_fp;
@@ -183,14 +171,11 @@ static void log_level( LOG_HELPER* log_helper, int level, const char *fmt, va_li
 	{
     	log_fp = stdout;
     }
-  
     vsnprintf(tmp, 1024*5-1, fmt, ap);
     int buff_left_length = 1024*5-strlen(buff);
     strncat(buff,tmp, buff_left_length-1);
-
     fprintf(log_fp, "%s\n", buff);
     fflush(log_fp);
-
 }
 
 void log_info(LOG_HELPER* log_helper, const char *fmt0, ...) 
@@ -255,14 +240,11 @@ LOG_HELPER* open_logfile(const char* file_name)
 
     if( file_name != NULL ) 
 	{
-
         FILE* fp = fopen(file_name,"a");
-	
 		if( fp == NULL ) 
 		{
             return NULL;
         }
-
         log_helper = (LOG_HELPER*)calloc(1, sizeof(LOG_HELPER));
         log_helper->fp = fp;
         strcpy(log_helper->file_name, file_name);

@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -83,7 +83,7 @@ public:
 		char buf[512];
 		struct ifreq *ifreq;
 		char* ip;
-	 
+
 		ifconf.ifc_len = 512;
 		ifconf.ifc_buf = buf;
 		strcpy(outip, "127.0.0.1");
@@ -91,9 +91,9 @@ public:
 		{
 			return -1;
 		}
-		ioctl(sockfd, SIOCGIFCONF, &ifconf);      
+		ioctl(sockfd, SIOCGIFCONF, &ifconf);    
 		close(sockfd);
-		
+ 
 		ifreq = (struct ifreq*)buf;
 		for (i = (ifconf.ifc_len / sizeof(struct ifreq)); i>0; i--)
 		{
@@ -157,11 +157,11 @@ public:
 							if ((0 != strcmp(bufTemp, "127.0.0.1")) && (NULL == wcsstr(ptr, L"Network")))
 							{
 								strcpy(outip, bufTemp);
-								
+
 							}
 						}
 					}
-			
+					
 					pUnicast = pUnicast->Next;
 				}
 				
@@ -268,7 +268,7 @@ public:
 
 	bool mkdirEx(const char *Path)
 	{
-		
+
 		return true;
 	}
 
@@ -293,7 +293,7 @@ public:
 	bool SaveFile(string &path,const string& content)
 	{
 		ReparePath(path);
-		
+
 
 		FILE* f=fopen(path.c_str(),"wb");
 		if(f==NULL)
@@ -306,7 +306,7 @@ public:
 	bool SaveFileAdd(string &path,const string& content)
 	{
 		ReparePath(path);
-		
+
 
 		FILE* f=fopen(path.c_str(),"a+");
 		if(f==NULL)
@@ -372,7 +372,7 @@ public:
 			if (End > Start) {
 				string LineData = FileContent.substr(Start+strStart.size(), End-Start-strStart.size());
 				StringList.push_back(LineData);
-				
+			
 				Start = End;
 			} else break;
 		}
@@ -395,7 +395,7 @@ public:
 			if (End > Start) {
 				string LineData = FileContent.substr(Start+strItem1.size(), End-Start-strItem1.size());
 				StringList.push_back(LineData);
-				
+	
 				Start = End;
 			} else break;
 		}
@@ -403,6 +403,6 @@ public:
 		return StringList;
 	}
 
-	
+
 };
 #endif

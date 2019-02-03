@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -33,10 +33,11 @@ public:
 
 	void PullHyperDataByHID(uint64 hyid, string nodeid);
 
-	void PullHyperDataRspexec(string buf, vector<string> & outmsg);
-	int PullHyperDataRspexecRespond(string buf);
+	void PullHyperDataRspexec(string buf, string & outmsg);
+	int PullHyperDataRspexecRespond(string & hblock);
 
 private:
 	void GetBlockFromID(uint64 BlockNum, vector<string>& hyperdata);
+	void GetHyperBlockByID(uint64 BlockNum, string & hyperdata);
 };
 

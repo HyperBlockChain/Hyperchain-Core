@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -24,7 +24,6 @@ DEALINGS IN THE SOFTWARE.
 
 #include "../crypto/crc32.h"
 
-
 #include <iostream>
 #include <stdio.h>
 #include <stdint.h>
@@ -43,8 +42,6 @@ DEALINGS IN THE SOFTWARE.
 
 #include "SyncQueue.h"
 
-
-
 #define CURRENT_VERSION '1'
 
 #define UDP_INIT_PAKTYPE '1'
@@ -53,12 +50,11 @@ DEALINGS IN THE SOFTWARE.
 #define PACKET_HEADER '1'
 #define SLICE_HEADER  '2'
 
-
-#define UDP_SLICE_MAX_SIZE 1024				
-#define MAX_BUFFER_SIZE	2048				
-#define MAX_SEND_TIMES  3					
-#define MAX_INTERVAL_TIME  100				
-#define MAX_RECV_LIST_COUNT  5000			
+#define UDP_SLICE_MAX_SIZE 1024
+#define MAX_BUFFER_SIZE	2048
+#define MAX_SEND_TIMES  3					//Maximum number of retries
+#define MAX_INTERVAL_TIME  100				//Maximum interval(ms)
+#define MAX_RECV_LIST_COUNT  5000			//Maximum list length
 
 enum _erecvflag
 {
@@ -68,13 +64,12 @@ enum _erecvflag
 
 typedef struct _tudpheader
 {
-	uint8_t HeaderType;
+	uint8_t HeaderType;			//PACKET_HEADER = '1'; SLICE_HEADER = '2'
 	uint32_t uPacketNum;
 	uint32_t uDataBufCrc;
 	uint32_t uBufLen;
-	uint8_t PacketType;
-	uint8_t Version; 
-	
+	uint8_t PacketType;			//SYN_TYPE = '1'; ACK_TYPE = '2'
+	uint8_t Version;			//current version = '1'
 	uint16_t uSliceTotalNum;
 }T_UDPHEADER, *T_PUDPHEADER;
 
@@ -85,29 +80,28 @@ typedef struct _tudpnode
 	uint16_t ClearFlag;
 	uint16_t RetryTimes;
 	std::time_t NextSendTime;
-	
 	char bitmap[128];
 	T_UDPHEADER UdpHeader;
 	char *DataBuf;
 }T_UDPNODE, *T_PUDPNODE;
 
-
+//Slice Header
 typedef struct _tudpsliceheader
 {
-	uint8_t HeaderType;			 
-	uint8_t SliceType;			
-	uint32_t uPacketNum;		
-	uint16_t uSliceTotalNum;	 
-	uint16_t uSliceCurrIndex;	 
+	uint8_t HeaderType;			 //PACKET_HEADER = '1'; SLICE_HEADER = '2'
+	uint8_t SliceType;			 //SYN_TYPE = '1'; ACK_TYPE = '2'
+	uint32_t uPacketNum;		 //Packet number	
+	uint16_t uSliceTotalNum;	 //The total number of slices	
+	uint16_t uSliceCurrIndex;	 //current slice index	
 	uint32_t uSliceBufCrc;
-	uint32_t uSliceBufLen;		
-	uint32_t uSliceDataOffset; 
+	uint32_t uSliceBufLen;		 //slice data length 
+	uint32_t uSliceDataOffset;   //Offset in the entire packet
 }T_UDPSLICEHEADER, *T_PUDPSLICEHEADER;
 
 typedef struct _tudpslicenode
 {
 	T_UDPSLICEHEADER SliceHeader;
-	char *SliceBuf;
+	char SliceBuf[UDP_SLICE_MAX_SIZE];
 }T_UDPSLICENODE, *T_PUDPSLICENODE;
 
 typedef struct _trecvnode
@@ -154,9 +148,6 @@ typedef MAP_SLICEDATA::iterator    ITR_MAP_SLICEDATA;
 typedef map<T_PACKETKEY, MAP_SLICEDATA> MULTI_MAP_PACKETDATA;
 typedef MULTI_MAP_PACKETDATA::iterator    ITR_MULTI_MAP_PACKETDATA;
 
-
-
-
 class UdpThreadPool
 {
 public:
@@ -184,13 +175,10 @@ private:
 	int						m_listenFd;
 #endif
 
-
 	SyncQueue<T_PUDPNODE>	m_sendList;
-	
 	SyncQueue<T_PRECVNODE>	m_recvList;
-	
-	std::thread				listen_thread;
-	std::thread				send_thread;
+	std::thread				m_listenthread;
+	std::thread				m_sendthread;
 	std::list<std::thread>	m_recvthreads;
 	uint32_t				m_recvthreads_num;
 

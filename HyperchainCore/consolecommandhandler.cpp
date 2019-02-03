@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -23,17 +23,19 @@ DEALINGS IN THE SOFTWARE.
 #include <boost/algorithm/string.hpp>
 #include <map>
 #include <set>
-#include <QList>
 #include "consolecommandhandler.h"
-
 
 #include "headers/inter_public.h"
 #include "headers/commonstruct.h"
 #include "db/dbmgr.h"
 #include "node/Singleton.h"
+#include "node/TaskThreadPool.h"
 #include "HyperChain/HyperChainSpace.h"
 #include "HyperChain/HyperData.h"
 #include "node/NodeManager.h"
+#include "consensus/buddyinfo.h"
+#include "consensus/consensus_engine.h"
+
 
 
 using namespace std;
@@ -93,7 +95,7 @@ void stringTostringlist(const string & str, list<string> &l, char delimiter = ' 
 }
 
 
-void queryBlock(uint64 nblocknum, QList<T_HYPERBLOCKDBINFO> &listblock)
+void queryBlock(uint64 nblocknum, std::list<T_HYPERBLOCKDBINFO> &listblock)
 {
 	int nStartId = nblocknum;
 	int nEndId = nblocknum;
@@ -115,25 +117,29 @@ ConsoleCommandHandler::ConsoleCommandHandler() :
 {
 	cmdstruct cmd("help", std::bind(&ConsoleCommandHandler::showUsages, this));
 
-	_commands.push_back(cmdstruct("help", std::bind(&ConsoleCommandHandler::showUsages, this)));
-	_commands.push_back(cmdstruct("?", std::bind(&ConsoleCommandHandler::showUsages, this)));
-	_commands.push_back(cmdstruct("node", std::bind(&ConsoleCommandHandler::showNeighborNode, this)));
-	_commands.push_back(cmdstruct("n", std::bind(&ConsoleCommandHandler::showNeighborNode, this)));
-	_commands.push_back(cmdstruct("space", std::bind(&ConsoleCommandHandler::showHyperChainSpace, this)));
-	_commands.push_back(cmdstruct("sp", std::bind(&ConsoleCommandHandler::showHyperChainSpace, this)));
-	_commands.push_back(cmdstruct("spacemore", std::bind(&ConsoleCommandHandler::showHyperChainSpaceMore, this, std::placeholders::_1)));
-	_commands.push_back(cmdstruct("spm", std::bind(&ConsoleCommandHandler::showHyperChainSpaceMore, this, std::placeholders::_1)));
-	_commands.push_back(cmdstruct("local", std::bind(&ConsoleCommandHandler::showLocalData, this)));
-	_commands.push_back(cmdstruct("l", std::bind(&ConsoleCommandHandler::showLocalData, this)));
-	_commands.push_back(cmdstruct("down", std::bind(&ConsoleCommandHandler::downloadHyperBlock, this, std::placeholders::_1)));
-	_commands.push_back(cmdstruct("d", std::bind(&ConsoleCommandHandler::downloadHyperBlock, this, std::placeholders::_1)));
-	_commands.push_back(cmdstruct("search", std::bind(&ConsoleCommandHandler::searchLocalHyperBlock, this, std::placeholders::_1)));
-	_commands.push_back(cmdstruct("se", std::bind(&ConsoleCommandHandler::searchLocalHyperBlock, this, std::placeholders::_1)));
-	_commands.push_back(cmdstruct("exit", std::bind(&ConsoleCommandHandler::exit, this)));
-	_commands.push_back(cmdstruct("quit", std::bind(&ConsoleCommandHandler::exit, this)));
-	_commands.push_back(cmdstruct("q", std::bind(&ConsoleCommandHandler::exit, this)));
+	_commands.emplace_back(cmdstruct("help", std::bind(&ConsoleCommandHandler::showUsages, this)));
+	_commands.emplace_back(cmdstruct("?", std::bind(&ConsoleCommandHandler::showUsages, this)));
+	_commands.emplace_back(cmdstruct("node", std::bind(&ConsoleCommandHandler::showNeighborNode, this)));
+	_commands.emplace_back(cmdstruct("n", std::bind(&ConsoleCommandHandler::showNeighborNode, this)));
+	_commands.emplace_back(cmdstruct("space", std::bind(&ConsoleCommandHandler::showHyperChainSpace, this)));
+	_commands.emplace_back(cmdstruct("sp", std::bind(&ConsoleCommandHandler::showHyperChainSpace, this)));
+	_commands.emplace_back(cmdstruct("spacemore", std::bind(&ConsoleCommandHandler::showHyperChainSpaceMore, this, std::placeholders::_1)));
+	_commands.emplace_back(cmdstruct("spm", std::bind(&ConsoleCommandHandler::showHyperChainSpaceMore, this, std::placeholders::_1)));
+	_commands.emplace_back(cmdstruct("local", std::bind(&ConsoleCommandHandler::showLocalData, this)));
+	_commands.emplace_back(cmdstruct("l", std::bind(&ConsoleCommandHandler::showLocalData, this)));
+	_commands.emplace_back(cmdstruct("down", std::bind(&ConsoleCommandHandler::downloadHyperBlock, this, std::placeholders::_1)));
+	_commands.emplace_back(cmdstruct("d", std::bind(&ConsoleCommandHandler::downloadHyperBlock, this, std::placeholders::_1)));
+	_commands.emplace_back(cmdstruct("search", std::bind(&ConsoleCommandHandler::searchLocalHyperBlock, this, std::placeholders::_1)));
+	_commands.emplace_back(cmdstruct("se", std::bind(&ConsoleCommandHandler::searchLocalHyperBlock, this, std::placeholders::_1)));
+	_commands.emplace_back(cmdstruct("i", std::bind(&ConsoleCommandHandler::showInnerDataStruct, this)));
+	_commands.emplace_back(cmdstruct("ll", std::bind(&ConsoleCommandHandler::setLoggerLevel, this, std::placeholders::_1)));
+	_commands.emplace_back(cmdstruct("llcss", std::bind(&ConsoleCommandHandler::setConsensusLoggerLevel, this, std::placeholders::_1)));
+	_commands.emplace_back(cmdstruct("exit", std::bind(&ConsoleCommandHandler::exit, this)));
+	_commands.emplace_back(cmdstruct("quit", std::bind(&ConsoleCommandHandler::exit, this)));
+	_commands.emplace_back(cmdstruct("q", std::bind(&ConsoleCommandHandler::exit, this)));
 	
 }
+
 ConsoleCommandHandler::~ConsoleCommandHandler()
 {
 
@@ -152,6 +158,9 @@ void ConsoleCommandHandler::showUsages()
 	cout << "						d 'HyperBlockID' 'NodeID' "<< endl;
 	cout << "   search(se):			search detail information for a specified hyper block number" << endl;	
 	cout << "						se 'HyperBlockID'" << endl;
+	cout << "   inner(i):			show inner information" << endl;
+	cout << "   loggerlevel(ll):		set logger level(trace=0,debug=1,info=2,warn=3,err=4,critical=5,off=6)" << endl;
+	cout << "   consensusloggerlevel(llcss):	set consensus logger level(trace=0,debug=1,info=2,warn=3,err=4,critical=5,off=6)" << endl;
 	cout << "   exit(quit/q):		exit the program" << endl;
 }
 
@@ -160,7 +169,6 @@ void ConsoleCommandHandler::exit()
 	cout << "Are you sure you want to exit(y/n)?";
 	string sInput;
 	cin >> sInput;
-
 	if (sInput == "y" || sInput == "Y") {
 		_isRunning = false;
 	}
@@ -192,7 +200,7 @@ void ConsoleCommandHandler::handleCommand(const string &command)
 }
 
 void ConsoleCommandHandler::run() {
-	cout << "Copyright 2016-2018 hyperchain.net (Hyperchain)." << endl;
+	cout << "Copyright 2016-2019 hyperchain.net (Hyperchain)." << endl;
 	cout << "Input help for detail usages" << endl;
 
 	string command;
@@ -209,27 +217,16 @@ void ConsoleCommandHandler::run() {
 void ConsoleCommandHandler::showNeighborNode()
 {
 	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-	const CNodeList *pNodeList = nodemgr->getNodeList();
-	if (pNodeList->size() <= 0)
-	{
-		cout << "Neighbor Node is empty..." << endl;
-		return;
-	}
-
-	for (auto node : *pNodeList)
-	{
-		cout << node.serialize() << endl;	
-	}
-
-
+	cout << nodemgr->toString();
 }
 
 void ConsoleCommandHandler::showHyperChainSpace()
 {
 	CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
-	map<uint64, set<string>> HyperChainSpace;
-	HSpce->GetHyperChainData(HyperChainSpace);
 
+	map<string, string> HyperChainSpace;
+	HSpce->GetHyperChainShow(HyperChainSpace);
+	
 	if (HyperChainSpace.size() <= 0)
 	{
 		cout << "HyperChainSpace is empty..." << endl;
@@ -237,11 +234,10 @@ void ConsoleCommandHandler::showHyperChainSpace()
 
 	}
 
-
+	cout << "HyperChainSpace:" << endl;
 	for (auto mdata : HyperChainSpace)
 	{
-		cout << "HyperChainSpace: HyperID = " << mdata.first << ",Number of holders = " << mdata.second.size() << endl;
-
+		cout << "NodeID = " << mdata.first << ",HyperIDs = " << mdata.second << endl;
 	}
 
 }
@@ -264,30 +260,24 @@ void ConsoleCommandHandler::showHyperChainSpaceMore(const list<string> &commlist
 			uint64 nblocknum = std::stol(*iterCurrPos);
 
 			CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
-			map<uint64, set<string>> HyperChainSpace;
+			MULTI_MAP_HPSPACEDATA HyperChainSpace;
 			HSpce->GetHyperChainData(HyperChainSpace);
 
 			if (HyperChainSpace.size() <= 0)
 			{
 				cout << "HyperChainSpace is empty." << endl;
 				return;
-
 			}
 
 			for (auto mdata : HyperChainSpace)
 			{
-				if (mdata.first == nblocknum)
-				{
-					for (auto sid : mdata.second)
-					{
-						cout << "HyperChainSpace: HyperID = " << nblocknum << ",NodeID = " << sid << endl;
+				if (mdata.first != nblocknum)
+					continue;
 
-					}
-					break;
-
-				}
+				for (auto sid : mdata.second)
+					cout << "HyperChainSpace: HyperID = " << nblocknum << ",NodeID = " << sid.first << endl;
+				break;
 			}
-
 		}
 
 	}
@@ -300,21 +290,24 @@ void ConsoleCommandHandler::showHyperChainSpaceMore(const list<string> &commlist
 
 void ConsoleCommandHandler::showLocalData()
 {
+	string Ldata;
 	CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
-	list<uint64> LoadHyperNoList;
-	HSpce->GetLocalChainIDList(LoadHyperNoList);
+	vector<string> LocalChainSpace;
+	HSpce->GetLocalChainShow(LocalChainSpace);
 
-	if (LoadHyperNoList.size() <= 0)
+	if (LocalChainSpace.size() <= 0)
 	{
 		cout << "Local HyperData is empty." << endl;
 		return;
 	}
 
-	for (auto Ldata : LoadHyperNoList)
+	for (auto t : LocalChainSpace)
 	{
-		cout << "LocalHyperData : HyperID = " << Ldata << endl;
+		Ldata += t;
+		Ldata += ";";
 	}
 
+	cout << "LocalHyperData : HyperID = " << Ldata << endl;
 
 }
 
@@ -361,14 +354,7 @@ void ConsoleCommandHandler::searchLocalHyperBlock(const list<string> &commlist)
 		cout << "Please specify the block number." << endl;
 		return;
 	}
-	string chainnum;
-	string gentime;
-	string localblocknum;
-	string hash;
-	string hhash;
-	string version;
-	QList<T_HYPERBLOCKDBINFO> listblock;
-	char buf[BUFFERLEN] = { 0 };
+	std::list<T_HYPERBLOCKDBINFO> listblock;
 
 	try {
 		auto iterCurrPos = commlist.begin();
@@ -379,15 +365,11 @@ void ConsoleCommandHandler::searchLocalHyperBlock(const list<string> &commlist)
 
 		T_SHA256 tmphash;
 		bool isshowedhyperblock = false;
-		foreach(T_HYPERBLOCKDBINFO h, listblock) {
+		for(auto h : listblock) {
 
 			if (!isshowedhyperblock) {
 				cout << "Hyper Block Id:" << h.GetReferHyperBlockId() << endl;
-				memset(buf, 0, BUFFERLEN);
-
-				T_SHA256 tmphash = h.GetHyperBlockHash();
-				CCommonStruct::Hash256ToStr(buf, &tmphash);
-				cout << "Hyper Block Hash: " << buf << endl;
+				cout << "Hyper Block Hash: " << DBmgr::instance()->hash256tostring(h.strHyperBlockHash) << endl;		
 				cout << endl;
 				isshowedhyperblock = true;
 			}
@@ -399,17 +381,8 @@ void ConsoleCommandHandler::searchLocalHyperBlock(const list<string> &commlist)
 			strftime(strstamp, 32, "%Y-%m-%d %H:%M:%S", std::localtime(&t));
 			cout << "Time:         " << strstamp << endl;
 			cout << "Version:      " << h.GetVersion() << endl;
-
-			memset(buf, 0, BUFFERLEN);
-			T_SHA256 tmphash = h.GetHashSelf();
-			CCommonStruct::Hash256ToStr(buf, &tmphash);
-			cout << "Hash:         " << buf << endl;
-
-			memset(buf, 0, BUFFERLEN);
-			T_SHA256 thash = h.GetPreHash();
-			CCommonStruct::Hash256ToStr(buf, &thash);
-			cout << "PreHash:      " << buf << endl;
-
+			cout << "Hash:         " << DBmgr::instance()->hash256tostring(h.strHashSelf) << endl;
+			cout << "PreHash:      " << DBmgr::instance()->hash256tostring(h.strPreHash) << endl;
 			cout << "Payload:      " << h.GetPayload() << endl;
 			cout << endl;
 		}
@@ -419,5 +392,90 @@ void ConsoleCommandHandler::searchLocalHyperBlock(const list<string> &commlist)
 	}
 }
 
+void showTaskDetails()
+{
+	uint16 num = Singleton<TaskThreadPool>::getInstance()->getQueueSize();
+	cout << "Task numbers in task pool:" << num << endl;
+	cout << Singleton<TaskThreadPool>::getInstance()->getQueueDetails() << endl;
+}
 
+void ConsoleCommandHandler::showInnerDataStruct()
+{
+	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+	HCNodeSH me = nodemgr->myself();
+	cout << "My nodeid:" << me->getNodeId<string>() << endl;
 
+	showNeighborNode();
+	cout << endl;
+	showTaskDetails();
+
+	ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::getInstance();
+	switch (g_tP2pManagerStatus.GetCurrentConsensusPhase())
+	{
+	case CONSENSUS_PHASE::PREPARE_LOCALBUDDY_PHASE:
+		cout << "Phase: Prepare to enter LOCALBUDDY_PHASE, "
+			 << "Consensus condition : " << consensuseng->isAbleToConsensus();
+		break;
+	case CONSENSUS_PHASE::LOCALBUDDY_PHASE:
+		cout << "Phase: LOCALBUDDY_PHASE" << endl;
+		cout << "Request block number(listRecvLocalBuddyReq):" << g_tP2pManagerStatus.listRecvLocalBuddyReq.size() << endl;
+		cout << "Respond block number(listRecvLocalBuddyRsp):" << g_tP2pManagerStatus.listRecvLocalBuddyRsp.size() << endl;
+		cout << "Standby block chain number(listCurBuddyReq):" << g_tP2pManagerStatus.listCurBuddyReq.size() << endl;
+		cout << "Standby block chain number(listCurBuddyRsp):" << g_tP2pManagerStatus.listCurBuddyRsp.size() << endl;
+		break;
+	case CONSENSUS_PHASE::GLOBALBUDDY_PHASE:
+		cout << "Phase: GLOBALBUDDY_PHASE" << endl;
+		break;
+	case CONSENSUS_PHASE::PERSISTENCE_CHAINDATA_PHASE:
+		cout << "Phase: PERSISTENCE_CHAINDATA_PHASE" << endl;
+	}
+
+	int i = 0;
+	CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
+	cout << "listLocalBuddyChainInfo Number:" << g_tP2pManagerStatus.listLocalBuddyChainInfo.size() << endl;
+	for (auto &b : g_tP2pManagerStatus.listLocalBuddyChainInfo) {
+		char content[32] = { 0 };
+		memcpy(content, b.GetLocalBlock().GetPayLoad().GetPayLoad().data(),31);
+		std::printf("listLocalBuddyChainInfo: %d %s\n", ++i, content);
+	}
+}
+
+void ConsoleCommandHandler::setLoggerLevelHelp(std::shared_ptr<spdlog::logger> & logger,
+										const list<string> &level)
+{
+	spdlog::level::level_enum lev = logger->level();;
+	if (level.size() > 1) {
+		auto pos = ++level.begin();
+		int i = std::stoi(pos->c_str());
+		lev = (spdlog::level::level_enum)i;
+		lev = lev > spdlog::level::off ? spdlog::level::off : lev;
+		logger->set_level(lev);
+	}
+
+	std::printf("%s level is %d (trace=0,debug=1,info=2,warn=3,err=4,critical=5,off=6)\n",
+		logger->name().c_str(),
+		logger->level());
+}
+
+void ConsoleCommandHandler::setLoggerLevel(const list<string> &level)
+{
+	setLoggerLevelHelp(g_console_logger, level);
+	return;
+	spdlog::level::level_enum lev = g_console_logger->level();;
+	if (level.size() > 1) {
+		auto pos = ++level.begin();
+		int i = std::stoi(pos->c_str());
+		lev = (spdlog::level::level_enum)i;
+		lev = lev > spdlog::level::off ? spdlog::level::off : lev;
+		g_console_logger->set_level(lev);
+	}
+
+	std::printf("Logger level is %d (trace=0,debug=1,info=2,warn=3,err=4,critical=5,off=6)\n",
+		g_console_logger->level());
+}
+
+void ConsoleCommandHandler::setConsensusLoggerLevel(const list<string> &level)
+{
+	setLoggerLevelHelp(g_consensus_console_logger, level);
+	return;
+}

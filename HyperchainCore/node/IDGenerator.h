@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -24,13 +24,13 @@ DEALINGS IN THE SOFTWARE.
 #define _IDGENERATOR_H
 
 #include <atomic>
-
+//using namespace std;
 
 class IDGenerator {
 public: 
 	static int64_t getId();
 private:
-
+	//static std::atomic_uint64_t _currid;
 	static std::atomic<uint64_t> _currid;
 };
 

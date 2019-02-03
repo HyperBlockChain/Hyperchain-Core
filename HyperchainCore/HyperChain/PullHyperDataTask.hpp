@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -28,7 +28,7 @@ using namespace std;
 #include "HyperChain/HyperChainSpace.h"
 #include "node/NodeManager.h"
 
-class PullHyperDataRspTask : public ITask, public std::integral_constant<TASKTYPE, HYPER_CHAIN_HYPERDATA_PULL_RSP> {
+class PullHyperDataRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_HYPERDATA_PULL_RSP> {
 public:
 	using ITask::ITask;
 	PullHyperDataRspTask() {};
@@ -44,19 +44,13 @@ public:
 	{
 		CHyperData * hd = Singleton<CHyperData>::getInstance();
 		NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-		vector<string> msgbuf;
-		msgbuf.clear();
+		string msgbuf;
 
 		hd->PullHyperDataRspexec(strpayload, msgbuf);
-
-		for (auto buf : msgbuf)
-		{
-			string strbuf = buf;
-			attachTaskMetaHead<PullHyperDataRspTask>(strbuf);
-			nodemgr->sendTo(_sentnodeid, strbuf);
-		}
-
 		
+		DataBuffer<PullHyperDataRspTask> datamsgbuf(std::move(msgbuf));
+		nodemgr->sendTo(_sentnodeid, datamsgbuf);		
+
 	}
 
 	void execRespond() override
@@ -75,7 +69,7 @@ private:
 	string strpayload;
 };
 
-class PullHyperDataTask : public ITask, public std::integral_constant<TASKTYPE, HYPER_CHAIN_HYPERDATA_PULL> {
+class PullHyperDataTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_HYPERDATA_PULL> {
 public:
 	using ITask::ITask;
 	PullHyperDataTask() {};
@@ -91,8 +85,8 @@ public:
 		NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
 		string msgbuf = m_msg;		
 
-		attachTaskMetaHead<PullHyperDataTask>(msgbuf);
-		nodemgr->sendTo(CUInt128(nodeid), msgbuf);
+		DataBuffer<PullHyperDataTask> datamsgbuf(std::move(msgbuf));
+		nodemgr->sendTo(CUInt128(nodeid), datamsgbuf);
 	
 	}
 

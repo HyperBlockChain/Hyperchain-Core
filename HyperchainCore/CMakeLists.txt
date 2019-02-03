@@ -1,4 +1,4 @@
-#Copyright 2016-2018 hyperchain.net (Hyperchain)
+#Copyright 2016-2019 hyperchain.net (Hyperchain)
 #Distributed under the MIT software license, see the accompanying
 #file COPYING or https://opensource.org/licenses/MIT.
 
@@ -25,20 +25,26 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.7)
 set(CMAKE_CXX_STANDARD 11)
 
 if(UNIX)
-SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g2 -ggdb")  
-SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall") 
+#SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g2 -ggdb")  
+#SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall") 
 
+##########################################################################
+#############DEBUG
+add_definitions(-D_DEBUG)
+add_definitions(-DDEBUG)
+add_definitions("$ENV{CXXFLAGS} -O0 -Wall -g -rdynamic -ggdb")
+SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -rdynamic -ggdb")
+##########################################################################
 elseif(WIN32)
 
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /MD")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od /MDd")
-SET( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /level='requireAdministrator' /uiAccess='false'" )
 
 endif()
 	
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules")
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules") 
 
-PROJECT(Hyperchain)
+PROJECT(hc)
 
 set(BIN_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
@@ -57,27 +63,21 @@ if(SQLite3_FOUND)
     message(STATUS "Found SQLite3")
 endif()
 
-find_package(Qt5 REQUIRED COMPONENTS Core Widgets WebEngineWidgets WebChannel)
-if(Qt5_FOUND)
-    message(STATUS "Found Qt5")
-endif()
-
 find_package(cpprestsdk REQUIRED)
 if(cpprestsdk_FOUND)
     message(STATUS "Found cpprestsdk")
 endif()
 
 
-find_package (Boost REQUIRED COMPONENTS system program_options)
+find_package (Boost REQUIRED COMPONENTS system program_options date_time filesystem thread)
 
 cmake_policy(SET CMP0071 NEW)
 
 set(CMAKE_AUTOMOC TRUE)
 set(CMAKE_AUTORCC TRUE)
 
-set(main_SRC Log.cpp NodeInfo.cpp main.cpp qttestp2p.cpp consolecommandhandler.cpp)
-set(main_HEAD Log.h NodeInfo.h  qttestp2p.h Types.h consolecommandhandler.h)
-set(main_UI qttestp2p.ui)
+set(main_SRC Log.cpp newLog.cpp NodeInfo.cpp main.cpp consolecommandhandler.cpp)
+set(main_HEAD Log.h newLog.h NodeInfo.h Types.h consolecommandhandler.h)
 
 FILE(GLOB crypto_SRC "crypto/*.cpp")
 FILE(GLOB crypto_HEAD "crypto/*.h")
@@ -90,16 +90,18 @@ FILE(GLOB db_HEAD "db/*.h")
 FILE(GLOB headers_SRC "headers/*.cpp")
 FILE(GLOB headers_HEAD "headers/*.h")
 
+FILE(GLOB HttpUnit_SRC "HttpUnit/*.cpp")
+FILE(GLOB HttpUnit_HEAD "HttpUnit/*.h")
+
 FILE(GLOB HyperChain_SRC "HyperChain/*.cpp")
 FILE(GLOB HyperChain_HEAD "HyperChain/*.h")
 FILE(GLOB HyperChain_HPP "HyperChain/*.hpp")
 
-#FILE(GLOB interface_SRC "interface/*.cpp")
-#FILE(GLOB interface_HEAD "interface/*.h")
-
 FILE(GLOB node_SRC "node/*.cpp")
 FILE(GLOB node_HEAD "node/*.h")
 FILE(GLOB node_HPP "node/*.hpp")
+
+FILE(GLOB spdlog_HEAD "spdlog/*")
 
 FILE(GLOB sqlite3_HEAD "thirdparty/sqlite3/*.h")
 
@@ -112,21 +114,17 @@ FILE(GLOB utility_HEAD "utility/*.h")
 FILE(GLOB wnd_SRC "wnd/*.cpp")
 FILE(GLOB wnd_HEAD "wnd/*.h")
 
-
-
-
-#set(p2p_SRC ${crypto_SRC} ${data_SRC} ${debug_SRC} ${HttpUnit_SRC} ${interface_SRC} ${network_SRC} ${utility_SRC} ${HChainP2PManager_SRC})
-#set(p2p_HEAD ${crypto_HEAD} ${data_HEAD} ${debug_HEAD} ${HttpUnit_HEAD} ${interface_HEAD} ${network_HEAD} ${utility_HEAD} ${HChainP2PManager_HEAD})
-#end HChainP2PManager
+FILE(GLOB consensus_SRC "consensus/*.cpp" "consensus/*.hpp")
+FILE(GLOB consensus_HEAD "consensus/*.h")
 
 #All source files
 set(final_HEAD
     ${main_HEAD}	
 	${crypto_HEAD}
 	${headers_HEAD}
+	${HttpUnit_HEAD}
 	${HyperChain_HEAD}
 	${HyperChain_HPP}
-	#${interface_HEAD}
 	${node_HEAD}
 	${node_HPP}
 	${utility_HEAD}
@@ -134,6 +132,8 @@ set(final_HEAD
 	${db_HEAD}
 	${util_HEAD}
 	${sqlite3_HEAD}
+	${spdlog_HEAD}
+	${consensus_HEAD}
 	)
  
 set(final_SRC
@@ -141,41 +141,39 @@ set(final_SRC
 	${crypto_SRC}
 	${data_SRC}
 	${headers_SRC}
+	${HttpUnit_SRC}
 	${HyperChain_SRC}
-	#${interface_SRC}
 	${node_SRC}
 	${utility_SRC}	
 	${wnd_SRC}
 	${db_SRC}
 	${util_SRC}
-	)
-
-set(final_UI
-	${main_UI}
+	${consensus_SRC}
 	)
 	
-#set(resource_SRC ${CMAKE_BINARY_DIR}/logo.rc)
-
-qt5_wrap_ui(WRAP_FILES ${final_UI})	
-	
-
-source_group("Ui" FILES ${UI_FILES} ${WRAP_FILES} )
+set(resource_SRC ${CMAKE_BINARY_DIR}/logo.rc)	
 
 if(WIN32)
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS")
+set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /level='requireAdministrator' /uiAccess='false' /SUBSYSTEM:CONSOLE" )
 endif()
 
-#add_executable(${PROJECT_NAME} ${final_SRC} ${final_HEAD} ${WRAP_FILES} ${resource_SRC})
 add_executable(${PROJECT_NAME} ${final_SRC} ${final_HEAD} ${WRAP_FILES})
 
-target_link_libraries(${PROJECT_NAME} Qt5::Widgets Qt5::Core Qt5::Gui Qt5::Network Qt5::WebChannel Qt5::WebEngineWidgets)
 if(WIN32)
-target_link_libraries(${PROJECT_NAME} Qt5::WinMain)
+target_link_libraries(${PROJECT_NAME} bcrypt.lib)
 endif()
 
-target_link_libraries(${PROJECT_NAME} cpprestsdk::cpprest Boost::system Boost::program_options ${SQLITE3_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} cpprestsdk::cpprest ${SQLITE3_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} Boost::system Boost::program_options)
 
+include(HyperChainCPack.cmake)
+configure_file (
+"${PROJECT_SOURCE_DIR}/logo.rc.in"
+"${PROJECT_BINARY_DIR}/logo.rc")
 
+configure_file (
+"${PROJECT_SOURCE_DIR}/config.h.in"
+"${PROJECT_BINARY_DIR}/config.h")
 
 
 

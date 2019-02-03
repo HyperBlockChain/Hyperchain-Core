@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -69,7 +69,7 @@ typedef map<uint64, HyperBlockDB> HyperchainDB;
 class CHyperchainDB
 {
 public:
-	
+
 	static int cleanTmp(HyperchainDB &hyperchainDB);
 	static int AddHyperBlockDataRecord(HyperchainDB &hyperchainDB, T_HYPERBLOCKDBINFO blockInfo);
 
@@ -95,4 +95,4 @@ public:
 	static int GetHyperBlockNumInfo(std::list<uint64> &HyperBlockNum);
 
 };
-#endif 
+#endif //__HYPERCHAIN_DB_H__

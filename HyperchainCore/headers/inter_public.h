@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -41,7 +41,7 @@ DEALINGS IN THE SOFTWARE.
 
 using namespace std;
 
-
+//max seconds
 #define MAX_SECS_COUNTER (9999999999)
 #define MAX_SECS_COUNTER (9999999999)
 #define MAX_SEND_NAT_TRAVERSAL_NODE_NUM (2)
@@ -53,7 +53,7 @@ using namespace std;
 #define RANDTIME						(60)
 #define LOCALBUDDYTIME                  (1*60)
 #define GLOBALBUDDYTIME                 (1.5*60)
-#define NEXTBUDDYTIME					(2*60)
+#define NEXTBUDDYTIME					(3*60-30)
 #define LIST_BUDDY_RSP_NUM				(3)
 #define BUDDYSCRIPT						("buddy_script")
 #define AUTHKEY							("auth_key")
@@ -185,7 +185,7 @@ typedef struct _tChainQueryStru
 	uint64		iJoinedNodeNum;								
 	uint64		iLocalBlockNum;							
 	uint16		iLocalChainNum;								
-					
+						
 	uint64		tTimeStamp;									
 	_tPoeInfo tPoeRecordInfo;
 
@@ -390,7 +390,7 @@ typedef VEC_T_BROWSERSHOWINFO::iterator			ITR_VEC_T_BROWSERSHOWINFO;
 typedef vector<P_TEVIDENCEINFO>					VEC_T_EVIDENCEINFO;
 typedef VEC_T_EVIDENCEINFO::iterator			ITR_VEC_T_EVIDENCEINFO;
 
-//by changhua
+
 typedef vector<P_TUPQUEUE>						VEC_T_UPQUEUEINFO;
 typedef VEC_T_UPQUEUEINFO::iterator				ITR_VEC_T_UPQUEUEINFO;
 

@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -68,7 +68,7 @@ int CThreadObj::Start()
 		int iRtn = (NULL == m_ThreadID) ? 1 : 0;
 #else
 		int iRtn = pthread_create(&m_ThreadID,NULL, ThreadEntry,this);
-#endif
+#endif //WIN32
 
 	if(0 != iRtn)
 	{
@@ -76,7 +76,7 @@ int CThreadObj::Start()
 		return  ERR_JTHREAD_CANTSTARTTHREAD;
 	}
 
-	
+	//wait until running is set;
 	m_muxRunning.Lock();
 	while(!m_bIsRunning)
 	{
@@ -85,7 +85,7 @@ int CThreadObj::Start()
 		Sleep(1);
 #else
 		usleep(1000);
-#endif 
+#endif //WIN32
 	
 		m_muxRunning.Lock();
 	}
@@ -118,7 +118,7 @@ void CThreadObj::Join()
 	WaitForSingleObject(m_ThreadID, INFINITE);
 #else
 	pthread_join(m_ThreadID, NULL);	
-#endif 
+#endif //WIN32
 	
 }
 
@@ -135,7 +135,7 @@ int CThreadObj::Kill()
 	CloseHandle(m_ThreadID);
 #else
 	pthread_cancel(m_ThreadID);
-#endif 
+#endif //WIN32
 	
 	m_ThreadID = 0;
 	m_bIsRunning = false;

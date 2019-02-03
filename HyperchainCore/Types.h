@@ -26,9 +26,13 @@
 #ifndef TYPES_H
 #define TYPES_H
 
-
-#include <list>			
-#include <vector>		
+/*
+#ifndef USE_STD_STRING
+#include <wx/string.h>		// Needed for wxString and wxEmptyString
+#endif
+*/
+#include <list>			// Needed for std::list
+#include <vector>		// Needed for std::vector
 #include <string>
 
 #ifndef _MSC_VER
@@ -52,6 +56,47 @@
 	#define ULONGLONG(x) x##ui64
 #endif
 
+// These are _MSC_VER defines used in eMule. They should
+// not be used in aMule, instead, use this table to
+// find the type to use in order to get the desired
+// effect.
+//////////////////////////////////////////////////
+// Name              // Type To Use In Amule    //
+//////////////////////////////////////////////////
+// BOOL              // bool                    //
+// WORD              // uint16                  //
+// INT               // int32                   //
+// UINT              // uint32                  //
+// UINT_PTR          // uint32*                 //
+// PUINT             // uint32*                 //
+// DWORD             // uint32                  //
+// LONG              // long                    //
+// ULONG             // unsigned long           //
+// LONGLONG          // long long               //
+// ULONGLONG         // unsigned long long      //
+// LPBYTE            // char*                   //
+// VOID              // void                    //
+// PVOID             // void*                   //
+// LPVOID            // void*                   //
+// LPCVOID           // const void*             //
+// CHAR              // char                    //
+// LPSTR             // char*                   //
+// LPCSTR            // const char*             //
+// TCHAR             // char                    //
+// LPTSTR            // char*                   //
+// LPCTSTR           // const char*             //
+// WCHAR             // wchar_t                 //
+// LPWSTR            // wchar_t*                //
+// LPCWSTR           // const wchar_t*          //
+// WPARAM            // uint16                  //
+// LPARAM            // uint32                  //
+// POINT             // wxPoint                 //
+//////////////////////////////////////////////////
+
+/*
+ * Backwards compatibility with emule.
+ * Note that the int* types are indeed unsigned.
+ */
 typedef uint8_t		uint8;
 typedef uint16_t	uint16;
 typedef uint32_t	uint32;
@@ -65,9 +110,15 @@ typedef uint8_t		byte;
 
 class CKnownFile;
 
-
+//! Various common list-types.
+//@{
+/*
+#ifndef USE_STD_STRING
+typedef std::list<wxString> CStringList;
+#endif
+*/
 typedef std::list<CKnownFile*> CKnownFilePtrList;
-
+//@}
 
 typedef std::vector<uint8>  ArrayOfUInts8;
 typedef std::vector<uint16> ArrayOfUInts16;
@@ -75,39 +126,49 @@ typedef std::vector<uint32> ArrayOfUInts32;
 typedef std::vector<uint64> ArrayOfUInts64;
 typedef std::list<uint32>	ListOfUInts32;
 
-
+/* This is the Evil Void String For Returning On Const References From Hell */
+// IT MEANS I WANT TO USE IT EVERYWHERE. DO NOT MOVE IT.
+// THE FACT SOMETHING IS USED IN JUST ONE PLACE DOESN'T MEAN IT HAS
+// TO BE MOVED TO THAT PLACE. I MIGHT NEED IT ELSEWHERE LATER.
+//
+/*
+#ifndef USE_STD_STRING
+static const wxString EmptyString = wxEmptyString;
+#endif
+*/
 #ifndef __cplusplus
 	typedef int bool;
 #endif
 
 
-#ifdef _WIN32			
+#ifdef _WIN32			// Used in non-wx-apps too (ed2k), so don't use __WINDOWS__ here !
 	#ifndef NOMINMAX
 		#define NOMINMAX
 	#endif
-	#include <windows.h> 
-	
+	#include <windows.h> // Needed for RECT  // Do_not_auto_remove
+	// Windows compilers don't have these constants
 	#ifndef W_OK
 		enum
 		{
-			F_OK = 0,  
-			X_OK = 1,  
-			W_OK = 2,   
-			R_OK = 4   
+			F_OK = 0,   // test for existence
+			X_OK = 1,   //          execute permission
+			W_OK = 2,   //          write
+			R_OK = 4    //          read
 		};
-	#endif 
+	#endif // W_OK
 	#ifdef __WINDOWS__
-		#include <wx/msw/winundef.h>	
+		#include <wx/msw/winundef.h>	// Do_not_auto_remove
 	#endif
 	#undef GetUserName
-#else 
+#else // _WIN32
 	typedef struct sRECT {
 	  uint32 left;
 	  uint32 top;
 	  uint32 right;
 	  uint32 bottom;
 	} RECT;
-#endif
+#endif /* _WIN32 */
 
 
-#endif
+#endif /* TYPES_H */
+// File_checked_for_headers
