@@ -1,5 +1,5 @@
 # Hyperchain-Core
-Hyperchain-Core is a software with a plugin-enable cross-platform application framework, P2P node layer and protocol stack implementation of Hyperchain. Please refer to [Hyperchain Whitepaper](http://www.hyperchain.net/blog/archives/311) about the fundamental knowledge and the design.
+Hyperchain-Core is a software with a plugin-enable cross-platform application framework, P2P node layer and protocol stack implementation of Hyperchain. Please refer to [Hyperchain Whitepaper](http://www.hyperchain.net/blog/archives/940) about the fundamental knowledge and the design.
 
 ## Prerequisite 
 ### Windows: 
