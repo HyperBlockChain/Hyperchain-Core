@@ -131,6 +131,41 @@ void MD5::update(FILE *file){
   fclose (file);
 }
 
+// MD5 update for istreams.
+// Like update for files; see above.
+
+//void MD5::update(istream& stream){
+//
+//  unsigned char buffer[1024];
+//  int len;
+//
+//  while (stream.good()){
+//    stream.read(buffer, 1024); // note that return value of read is unusable.
+//    len=stream.gcount();
+//    update(buffer, len);
+//  }
+//
+//}
+
+// MD5 update for ifstreams.
+// Like update for files; see above.
+
+//void MD5::update(ifstream& stream){
+//
+//  unsigned char buffer[1024];
+//  int len;
+//
+//  while (stream.good()){
+//    stream.read(buffer, 1024); // note that return value of read is unusable.
+//    len=stream.gcount();
+//    update(buffer, len);
+//  }
+//
+//}
+
+
+// MD5 finalization. Ends an MD5 message-digest operation, writing the
+// the message digest and zeroizing the context.
 
 
 void MD5::finalize (){

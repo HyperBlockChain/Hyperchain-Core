@@ -246,6 +246,7 @@ public:
 
     CppSQLite3Query execQuery();
 
+	void bind(int nParam, const char* szValue, size_t len);
     void bind(int nParam, const char* szValue);
     void bind(int nParam, const int nValue);
     void bind(int nParam, const double dwValue);

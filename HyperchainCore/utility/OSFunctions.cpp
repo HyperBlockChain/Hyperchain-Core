@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -51,7 +51,7 @@ int OSFunctions::GetCurrentFreeMemoryOS()
 	return mems;
 #else
 	struct sysinfo sys;  
-	int err = sysinfo(&sys); 
+	sysinfo(&sys); 
 	int mems = sys.freeram/MB;
 
 	return mems;
@@ -68,7 +68,7 @@ int OSFunctions::GetTotalMemoryOS()
 	return mems;
 #else
 	struct sysinfo sys;  
-	int err = sysinfo(&sys);
+	sysinfo(&sys);
 	int mems = sys.totalram / MB;
 
 	return mems;

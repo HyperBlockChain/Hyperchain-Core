@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -19,11 +19,19 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
+#include "newLog.h"
 #include "HyperData.h"
 #include "db/HyperchainDB.h"
-#include "node/TaskThreadPool.h"
 #include "node/Singleton.h"
+#include "node/TaskThreadPool.h"
+#include "consensus/hyperblockTask.hpp"
 #include "HyperChain/PullHyperDataTask.hpp"
+#include "../wnd/common.h"
+
+#include <iostream>
+
+#include <cpprest/json.h>
+using namespace web;
 
 
 CHyperData::CHyperData()
@@ -36,19 +44,21 @@ CHyperData::~CHyperData()
 }
 
 
-void CHyperData::PullHyperDataByHID(uint64 hyid, string nodeid)
+void CHyperData::PullHyperDataByHID(uint64 hid, string nodeid)
 {
-	TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-	if (!taskpool)
-		return;
+	struct timeval timePtr;
+	CCommonStruct::gettimeofday_update(&timePtr);
 
-	string msg = "hyperid=";
-	msg += to_string(hyid);
+	DataBuffer<GetHyperBlockByNoReqTask> msgbuf(sizeof(T_P2PPROTOCOLGETHYPERBLOCKBYNOREQ));
+	T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ tGetHyperBlockByNoReq = reinterpret_cast<T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ>(msgbuf.payload());
+	tGetHyperBlockByNoReq->SetP2pprotocolgethyperblockbynoreq(
+		T_P2PPROTOCOLTYPE(P2P_PROTOCOL_GET_HYPERBLOCK_BY_NO_REQ, timePtr.tv_sec), hid);
 
-	taskpool->put(make_shared<PullHyperDataTask>(msg, nodeid));
+	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+	nodemgr->sendTo(CUInt128(nodeid), msgbuf);
 }
 
-void CHyperData::PullHyperDataRspexec(string buf, vector<string> & outmsg)
+void CHyperData::PullHyperDataRspexec(string buf, string & outmsg)
 {
 	string hyperdata = buf;
 	string::size_type np = hyperdata.find("hyperid=");
@@ -56,33 +66,66 @@ void CHyperData::PullHyperDataRspexec(string buf, vector<string> & outmsg)
 	{
 		string strhyid(hyperdata.begin() + 8, hyperdata.end());
 		uint64 hyperid = stoi(strhyid);
-		GetBlockFromID(hyperid, outmsg);
+		GetHyperBlockByID(hyperid, outmsg);
 	}
 }
 
-int CHyperData::PullHyperDataRspexecRespond(string buf)
+int CHyperData::PullHyperDataRspexecRespond(string & hblock)
 {
-	if (buf.size() == 0)
+	if (hblock.size() == 0)
 		return -1;
 
-	T_HYPERBLOCKDBINFO hblockinfo(buf);
-	return DBmgr::instance()->insertHyperblock(hblockinfo);
+	json::value obj = json::value::parse(s2t(hblock));
+	assert(obj.is_array());
+
+	size_t num = obj.size();
+	for (size_t i = 0; i < num; i++)
+	{
+		string objstr = t2s(obj[i].serialize());
+		T_HYPERBLOCKDBINFO hblockinfo(objstr);
+		DBmgr::instance()->insertHyperblock(hblockinfo);
+	}
+
+	return 0;
 }
-
-
 
 void CHyperData::GetBlockFromID(uint64 BlockNum, vector<string>& hyperdata)
 {
-	QList<T_HYPERBLOCKDBINFO> queue;
-	int nRet = DBmgr::instance()->getHyperblocks(queue, BlockNum, BlockNum);
+	std::list<T_HYPERBLOCKDBINFO> queue;
+	DBmgr::instance()->getHyperblocks(queue, BlockNum, BlockNum);
 	if (queue.size() == 0)
 		return;
 
-	for (auto qu : queue)
+	for (auto info : queue)
 	{
-		T_HYPERBLOCKDBINFO info = qu;
 		hyperdata.push_back(info.serialize());
 	}
 }
 
+void CHyperData::GetHyperBlockByID(uint64 BlockNum, string & hyperdata)
+{
+	json::value obj = json::value::array();
+	std::list<T_HYPERBLOCKDBINFO> queue;
+	int nRet = DBmgr::instance()->getHyperblocks(queue, BlockNum, BlockNum);
+	if (nRet != 0)
+		return;
 
+	if (queue.size() == 0)
+		return;
+
+	int i = 0;
+	for (auto info : queue) 
+	{
+		if (info.ucBlockType == 1) {
+			obj[0] = json::value::parse(s2t(info.serialize()));
+		}
+		else if (info.ucBlockType == 2) {
+			obj[i] = json::value::parse(s2t(info.serialize()));
+		}
+		++i;
+	}
+
+	std::stringstream oss;
+	obj.serialize(oss);
+	hyperdata = std::move(oss.str());
+}

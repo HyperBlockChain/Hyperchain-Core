@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -22,10 +22,12 @@ DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
+#include <sstream>
 #include <list>
 #include <thread>
 #include <memory>
 #include <functional>
+#include <unordered_map>
 using namespace std;
 
 #include "ITask.hpp"
@@ -38,11 +40,38 @@ public:
 	TaskThreadPool(uint32_t numthreads = thread::hardware_concurrency(),uint32_t maxnumtasks = 5000);
 	TaskThreadPool(const TaskThreadPool &) = delete;
 	TaskThreadPool & operator=(const TaskThreadPool &) = delete;
+	~TaskThreadPool() { stop(); }
 
 	bool put(QueueTask &&t);
 
 	void stop();
 	void exec_task();
+
+	size_t getQueueSize() {
+		return _taskqueue.size();
+	}
+	string getQueueDetails() {
+
+		std::unordered_map<string, uint16> tt;
+		{
+			std::unique_lock<std::mutex> lck(_taskqueue.guard());
+			std::list<QueueTask> tsklist = _taskqueue.tasklist();
+
+			for (auto it = tsklist.begin(); it != tsklist.end(); it++) {
+				string t = typeid(*it->get()).name();
+				if (tt.count(t) == 0) {
+					tt[t] = 1;
+				} else {
+					tt[t] += 1;
+				}
+			}
+		}
+		ostringstream oss;
+		for (auto task : tt) {
+			oss << task.first << ":" << task.second << endl;
+		}
+		return oss.str();
+	}
 
 private:
 

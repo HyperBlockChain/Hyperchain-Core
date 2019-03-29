@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -23,16 +23,16 @@ DEALINGS IN THE SOFTWARE.
 #ifndef __MUTEX_OBJ_H__
 #define __MUTEX_OBJ_H__
 
-
+//#include "includeComm.h"
 #ifdef WIN32
-
+//#include <WinBase.h>
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #else
 #include <semaphore.h>
 #include <pthread.h>
 #include <unistd.h>
-#endif
+#endif// WIN32
 
 
 class CMutexObj
@@ -45,7 +45,7 @@ public:
 	void UnLock();
 
 private:
-
+	//windows OS
 #ifdef WIN32
 	CRITICAL_SECTION	m_oSection;
 #else

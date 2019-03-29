@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -46,10 +46,16 @@ using namespace std;
 
 
 
+
+
 typedef map<uint64, T_HYPERBLOCKDBINFO> LocalBlockDB;
 
 
+
+
+
 typedef map<uint64, LocalBlockDB> LocalChainDB;
+
 
 
 struct HyperBlockDB
@@ -62,6 +68,8 @@ struct HyperBlockDB
 
 
 };
+
+
 
 
 typedef map<uint64, HyperBlockDB> HyperchainDB;
@@ -77,22 +85,25 @@ public:
 	CHyperchainDB();
 	~CHyperchainDB();
 public:
-
+	
 	static int saveHyperBlockToDB(const T_HYPERBLOCKDBINFO &hyperblock);
 
+	
 	static int saveHyperBlocksToDB(const vector<T_HYPERBLOCKDBINFO> &vHyperblock);
 
+	
 	static int getHyperBlocks(HyperchainDB &hyperchainDB, uint64 nStartHyperID, uint64 nEndHyperID);
 
+	
 	static int getAllHyperBlocks(HyperchainDB &hyperchainDB);
 
-
+	
 	static uint64 GetLatestHyperBlockNo();
 
-
+	
 	static int GetLatestHyperBlock(HyperBlockDB &hyperblockDB);
 
 	static int GetHyperBlockNumInfo(std::list<uint64> &HyperBlockNum);
 
 };
-#endif 
+#endif //__HYPERCHAIN_DB_H__

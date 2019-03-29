@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -34,11 +34,11 @@ DEALINGS IN THE SOFTWARE.
 string t2s(const utility::string_t& ts)
 {
 #ifdef WIN32
-	
+	// On Windows, all strings are wide
 	wstring_convert<codecvt_utf8<wchar_t>> strCnv;
 	return strCnv.to_bytes(ts);
 #else
-	
+	// On POSIX platforms, all strings are narrow
 	return string(ts);
 #endif
 }
@@ -46,11 +46,11 @@ string t2s(const utility::string_t& ts)
 utility::string_t s2t(const std::string& s)
 {
 #ifdef WIN32
-	
+	// On Windows, all strings are wide
 	wstring_convert<codecvt_utf8<wchar_t>> strCnv;
 	return strCnv.from_bytes(s);
 #else
-	
+	// On POSIX platforms, all strings are narrow
 	return utility::string_t(s);
 #endif
 }

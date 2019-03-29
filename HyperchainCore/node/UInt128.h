@@ -42,8 +42,23 @@ there client on the eMule forum..
 
 #include "../Types.h"
 
+////////////////////////////////////////
+////////////////////////////////////////
 
-class CUInt128: public std::integral_constant<size_t, 32>
+/**
+ * Class representing an unsigned 128-bit integer.
+ *
+ * Not all operations are valid, especially multiplicative operations
+ * (multiply, divide) and shift right are not implemented.
+ *
+ * @if maint
+ * Internal representation: The number is stored as a whole little-endian
+ * 128-bit number.
+ * @endif
+ */
+//32 is length of hex string.
+//sizeof(m_data)  
+class CUInt128: public std::integral_constant<size_t, 16>
 {
 public:
 	CUInt128(const CUInt128& value) throw()
@@ -65,7 +80,7 @@ public:
 		SetValue(value);
 	}
 
-	explicit CUInt128(const uint8_t *valueBE) throw()
+	explicit CUInt128(const uint8_t valueBE[CUInt128::value]) throw()
 	{
 		SetValueBE(valueBE);
 	}
@@ -75,19 +90,22 @@ public:
 		SetHexString(hexString);
 	}
 
-
+	/**
+	 * Generates a new number, copying the most significant 'numBits' bits from 'value'.
+	 * The remaining bits are randomly generated.
+	 */
 	CUInt128(const CUInt128& value, unsigned numBits);
 
-
+	/* Bit at level 0 being most significant. */
 	unsigned GetBitNumber(unsigned bit) const throw()
 	{
 		return bit <= 127 ? (m_data.u32_data[(127 - bit) / 32] >> ((127 - bit) % 32)) & 1 : 0;
 	}
 
-
+	/* Bit at level 0 being most significant. */
 	CUInt128& SetBitNumber(unsigned bit, unsigned value)
 	{
-	
+		//wxCHECK(bit <= 127, *this);
 
 		if (value)
 			m_data.u32_data[(127 - bit) / 32] |= 1 << ((127 - bit) % 32);
@@ -97,16 +115,16 @@ public:
 		return *this;
 	}
 
-
+	/* Chunk 0 being the most significant */
 	uint32_t Get32BitChunk(unsigned val) const throw()
 	{
 		return val < 4 ? m_data.u32_data[3 - val] : 0;
 	}
 
-	
+	/* Chunk 0 being the most significant */
 	void Set32BitChunk(unsigned chunk, uint32_t value)
 	{
-	
+		//wxCHECK2(chunk < 4, return);
 
 		m_data.u32_data[3 - chunk] = value;
 	}
@@ -118,6 +136,15 @@ public:
 	std::string ToBinaryString(bool trim = false) const;
 	void ToByteArray(uint8_t *b) const;
 
+	/**
+	 * Stores value used by the crypt functions.
+	 *
+	 * Since eMule started to use the value as-is (four little-endian 32-bit integers in big-endian order),
+	 * we have to reproduce that same representation on every platform.
+	 *
+	 * @param buf Buffer to hold the value. Must be large enough to hold the data (16 bytes at least),
+	 *	and must not be NULL.
+	 */
 	void StoreCryptValue(uint8_t *buf) const;
 	bool IsZero() const throw() { return (m_data.u64_data[0] | m_data.u64_data[1]) == 0; }
 

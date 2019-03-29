@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -41,26 +41,40 @@ public:
 
 	UdpAccessPoint(string && objjsonstring)
 	{
-		init(std::move(objjsonstring));
+		init(std::forward<string>(objjsonstring));
 	}
+
+	bool isSame(IAccessPoint *other) const override
+	{
+		if (other->id() != id()) {
+			return false;
+		}
+		UdpAccessPoint *p = dynamic_cast<UdpAccessPoint*>(other);
+		if (p->_port == _port && p->_IP == _IP) {
+			return true;
+		}
+		return false;
+	}
+
+	int id() const override { return 1; }
 
 	bool open() override
 	{
 		return true;
 	}
 
-	int write(const char *buf, size_t len)
+	int write(const char *buf, size_t len) override
 	{
-		UdpThreadPool *pUdpThreadPool = Singleton<UdpThreadPool, const char*, uint32_t, uint32_t>::getInstance();
+		UdpThreadPool *pUdpThreadPool = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance();
 		return pUdpThreadPool->send(_IP,_port,buf, len);
 	}
 
-	void close()
+	void close() override
 	{
 
 	}
 
-	string serialize() 
+	string serialize() override
 	{ 
 		json::value obj;
 		obj[_XPLATSTR("typename")] = json::value::string(s2t(CLASSNAME));
@@ -71,11 +85,17 @@ public:
 		return oss.str();
 	}
 
+	void ip(const string &ip) { _IP=ip; }
+	uint32_t port(uint32_t port) { return _port = port; }
+
+	const string ip() { return _IP; }
+	uint32_t port() { return _port; }
+
 private:
 	void init(string && objjsonstring)
 	{
 		std::error_code err;
-		std::istringstream oss(objjsonstring);
+		std::istringstream oss(std::forward<string>(objjsonstring));
 		json::value obj = json::value::parse(oss, err);
 
 		string tn = t2s(obj[_XPLATSTR("typename")].as_string());
@@ -89,7 +109,7 @@ private:
 
 
 public:
-	static constexpr char* CLASSNAME = "UdpAP";
+	static constexpr const char* CLASSNAME = "UdpAP";
 
 private:
 	string _IP;

@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -26,11 +26,12 @@ DEALINGS IN THE SOFTWARE.
 #include <thread>
 #include <mutex>
 
-#include <QList>
+//#include <QList>
 #include <map>
 #include <functional>
 
 #include "util/cppsqlite3.h"
+//#include  "node/CNode.h"
 
 class CppSQLite3DB;
 
@@ -47,28 +48,34 @@ public:
 
 public:
     int insertEvidence(const TEVIDENCEINFO& evidence);
-    int getEvidences(QList<TEVIDENCEINFO>& evidences, int page, int size = 20);
+    int getEvidences(std::list<TEVIDENCEINFO>& evidences, int page, int size = 20);
     int updateEvidence(const TEVIDENCEINFO& evidence, int type = 1);
-	int getNoConfiringList(QList<TEVIDENCEINFO>& evidences);
+	int getNoConfiringList(std::list<TEVIDENCEINFO>& evidences);
     int delEvidence(std::string hash);
 	int delEvidence(const TEVIDENCEINFO &evidence);
 	int insertHyperblock(const T_HYPERBLOCKDBINFO &hyperblock);
 	int updateHyperblock(const T_HYPERBLOCKDBINFO &hyperblock);
 	int existHyperblock(const T_HYPERBLOCKDBINFO &hyperblock);
-	int getHyperblock(QList<T_HYPERBLOCKDBINFO> &list, int page, int size);
-	int getHyperblockshead(QList<T_HYPERBLOCKDBINFO> &queue, int nStartHyperID);
+	int getLocalblock(T_HYPERBLOCKDBINFO &info, int hid, int id, int chain_num);
+	int getLocalchain(int hid, int chain_num, int &blocks, int &chain_difficulty);
+	int getHyperblock(std::list<T_HYPERBLOCKDBINFO> &list, int page, int size);
+	int getHyperblockshead(T_HYPERBLOCKDBINFO &queue, int nStartHyperID);
+	int getLocalblocksPayload(std::list<string> &queue, int nStartHyperID);
 	int getAllHyperblockNumInfo(std::list<uint64> &queue);
-	int getHyperblocks(QList<T_HYPERBLOCKDBINFO> &queue, int nStartHyperID, int nEndHyperID);
-    int getUpqueue(QList<TUPQUEUE> &queue, int page, int size);
+	int getHyperblocks(std::list<T_HYPERBLOCKDBINFO> &queue, int nStartHyperID, int nEndHyperID);
+    int getUpqueue(std::list<TUPQUEUE> &queue, int page, int size);
 	int delUpqueue(std::string hash);
 	int addUpqueue(string sHash);
 
 	int getLatestHyperBlockNo();
 	int getLatestHyperBlock(T_HYPERBLOCKDBINFO &hyperblock);
-	int getOnChainStateFromHashTime(string strlocalhash, uint64 time);
+	T_LOCALBLOCKADDRESS getOnChainStateFromRequestID(const string &requestid);
+	bool isBlockExisted(string &strblockhash);
 	string hash256tostring(const unsigned char* hash);
 	void strtohash256(unsigned char* hash, const char* szHash);
 
+	int updateOnChainState(const string &requestid, const T_LOCALBLOCKADDRESS& address);
+	int removeOnChainState(uint64 hid);
 
 	void bindParam(CppSQLite3Statement &stmt, int i)
 	{}
@@ -95,7 +102,7 @@ public:
 			}
 		}
 		catch (CppSQLite3Exception& ex) {
-			throw std::runtime_error(ex.errorMessage());
+			cout << sql << ex.errorCode() << ex.errorMessage() << endl;
 		}
 	}
 
@@ -109,21 +116,18 @@ public:
 			stmt.execDML();
 		}
 		catch (CppSQLite3Exception& ex) {
-			throw std::runtime_error(ex.errorMessage());
+			cout << sql << ex.errorCode() << ex.errorMessage() << endl;
 		}
 	}
 
 private:
     DBmgr();
 
-private:
     int createTbls();
-
-private:
     int updateDB();
 
-private:
-    bool ifColExist(const char* tbl, const char* col);  
+    bool ifColExist(const char* tbl, const char* col);
+    //type 1:tbl 2:index
     bool ifTblOrIndexExist(const char* name, int type = 1);
 
 private:

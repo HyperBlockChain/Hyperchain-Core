@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -24,6 +24,9 @@ DEALINGS IN THE SOFTWARE.
 #define __SHA_STRUCT_H__
 
 #include "includeComm.h"
+
+#include <string>
+using namespace std;
 
 typedef struct _tsha256
 {
@@ -71,6 +74,11 @@ typedef struct _tsha256
 				return false;
 		}
 		return true;
+	}
+
+	bool operator != (const _tsha256& arRes) const
+	{
+		return !(*this == arRes);
 	}
 
 	bool operator < (const _tsha256& arRes) const
@@ -121,6 +129,20 @@ typedef struct _tsha256
 	{
 		memset(pID, nNum, DEF_SHA256_LEN);
 	}
+
+	string toHexString() const
+	{
+		char ucBuf[DEF_SHA256_LEN * 2 + 1] = { 0 };
+
+		unsigned int uiNum = 0;
+		char *p = ucBuf;
+		for (; uiNum < DEF_SHA256_LEN; uiNum++) {
+			sprintf(p, "%02x", pID[uiNum]);
+			p += 2;
+		}
+		return string(ucBuf);
+	}
+
 }T_SHA256, *T_PSHA256;
 
 typedef struct _tsha512

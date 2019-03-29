@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -26,7 +26,7 @@ using namespace std;
 
 #include "ITask.hpp"
 
-class SearchRspTask : public ITask, public std::integral_constant<TASKTYPE, HYPER_CHAIN_SEARCH_RSP> {
+class SearchRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_SEARCH_RSP> {
 public:
 	using ITask::ITask;
 
@@ -42,7 +42,7 @@ public:
 	}
 };
 
-class SearchTask : public ITask, public std::integral_constant<TASKTYPE, HYPER_CHAIN_SEARCH> {
+class SearchTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_SEARCH> {
 public:
 	using ITask::ITask;
 	~SearchTask() {}

@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -44,12 +44,27 @@ public:
 	{
 		init(std::move(objjsonstring));
 	}
-	int write(const char *buf, size_t len)
+
+	bool isSame(IAccessPoint *other) const override
+	{
+		if (other->id() != id()) {
+			return false;
+		}
+		TcpAccessPoint *p = dynamic_cast<TcpAccessPoint*>(other);
+		if (p->_port == _port && p->_IP == _IP) {
+			return true;
+		}
+		return false;
+	}
+
+	int id() const override { return 2; }
+
+	int write(const char *buf, size_t len) override
 	{
 		return 0;
 	}
 
-	void close()
+	void close() override
 	{
 
 	}
@@ -82,7 +97,7 @@ private:
 	}
 
 public:
-	static constexpr char* CLASSNAME = "TcpAP";
+	static constexpr const char* CLASSNAME = "TcpAP";
 
 private:
 	string _IP;

@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -31,7 +31,7 @@ DEALINGS IN THE SOFTWARE.
 #include <iomanip>
 using namespace std;
 
-
+#include "newLog.h"
 
 class ConsoleCommandHandler
 {
@@ -73,8 +73,12 @@ private:
 	void showLocalData();
 	void downloadHyperBlock(const list<string> &commlist);
 	void searchLocalHyperBlock(const list<string> &commlist);
+	void showInnerDataStruct();
 
-	
+	void setLoggerLevel(const list<string> &level);
+	void setLoggerLevelHelp(std::shared_ptr<spdlog::logger> & logger, const list<string> &level);
+	void setConsensusLoggerLevel(const list<string> &level);
+	void enableTest(const list<string> &onoff);
 
 	inline void showPrompt() {
 		cout << "hc $ ";

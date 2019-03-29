@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -19,7 +19,7 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
-
+#include "../newLog.h"
 #include "NodeManager.h"
 #include "../db/dbmgr.h"
 #include "../wnd/common.h"
@@ -27,82 +27,73 @@ DEALINGS IN THE SOFTWARE.
 #include <cpprest/json.h>
 using namespace web;
 
-CNode * NodeManager::searchBuddy() 
-{
-	return NULL;
-}
 
-CNode * NodeManager::getNode(const CUInt128 &nodeid) 
-{
-	return NULL;
-}
-
-const CNodeList* NodeManager::getNodeList() 
-{
-	return &_nodelist;
-}
-
-void NodeManager::addNode(CNode && node)
-{
-	_nodelist.push_back(std::forward<CNode>(node));
-}
-
-
-void NodeManager::updateNode(CNode && node)
+HCNodeSH& NodeManager::getNode(const CUInt128 &nodeid) 
 {
 	std::lock_guard<std::mutex> lck(_guard);
-	auto result = std::find_if(_nodelist.begin(), _nodelist.end(), [&](CNode &n) {
-		if (n.getNodeId<CUInt128>() == node.getNodeId<CUInt128>()) {
-			CNode::APList &aplist = node.getAPList();
+	auto result = std::find_if(_nodemap.begin(), _nodemap.end(), [&](HCNodeMap::reference n) {
+		if (n.second->getNodeId<CUInt128>() == nodeid) {
+			return true;
+		}
+		return false;
+	});
+
+	if (result == _nodemap.end()) {
+		//return null node
+		HCNodeSH no;
+		return no;
+	}
+	return result->second;
+}
+
+const HCNodeMap* NodeManager::getNodeMap() 
+{
+	return &_nodemap;
+}
+
+size_t NodeManager::getNodeMapSize()
+{
+	return _nodemap.size();
+}
+
+void NodeManager::addNode(HCNodeSH & node)
+{
+	_nodemap[node->getNodeId<CUInt128>()] = node;
+}
+
+
+void NodeManager::updateNode(HCNodeSH & node)
+{
+	std::lock_guard<std::mutex> lck(_guard);
+	auto result = std::find_if(_nodemap.begin(), _nodemap.end(), [&](HCNodeMap::reference n) {
+		if (n.second->getNodeId<CUInt128>() == node->getNodeId<CUInt128>()) {
+			HCNode::APList &aplist = node->getAPList();
 			for (auto &ap : aplist) {
-				n.updateAP(ap);
+				n.second->updateAP(ap);
 			}
 			return true;
 		}
 		return false;
 	});
 
-	if (result == std::end(_nodelist)) {
-		addNode(std::move(node));
+	if (result == _nodemap.end()) {
+		addNode(node);
 	}
 }
 
-int NodeManager::sendTo(const CNode &targetNode, string & msgbuf)
-{
-	msgbuf.insert(0, _me.getNodeId<string>());
-	return targetNode.send(msgbuf);
-}
-
-int NodeManager::sendTo(const CUInt128 &targetNodeid, string & msgbuf)
-{
-	int result = 0;
-	auto r = std::find_if(_nodelist.begin(), _nodelist.end(), [&](const CNode &n) {
-		if (n.getNodeId<CUInt128>() == targetNodeid) {
-			result = sendTo(n, msgbuf);
-			return true;
-		}
-		return false;
-	});
-
-	if (r == std::end(_nodelist)) {
-		cout << "cannot find the target node" << endl;
-		return 0;
-	}
-
-	return result;
-}
 
 void NodeManager::loadMyself()
 {
 	DBmgr *pDb = DBmgr::instance();
 
+	std::lock_guard<std::mutex> lck(_guard);
 	pDb->query("SELECT * FROM myself;",
 		[this](CppSQLite3Query & q) {
 		string id = q.getStringField("id");
 		string aps = q.getStringField("accesspoint");
 
-		_me.setNodeId(id);
-		_me.parseAP(aps);
+		_me->setNodeId(id);
+		_me->parseAP(aps);
 	});
 }
 
@@ -110,6 +101,8 @@ void NodeManager::saveMyself()
 {
 	int num = 0;
 	DBmgr *pDb = DBmgr::instance();
+
+	std::lock_guard<std::mutex> lck(_guard);
 	pDb->query("SELECT count(*) as num FROM myself;",
 		[this, &num](CppSQLite3Query & q) {
 		num = q.getIntField("num");
@@ -119,81 +112,110 @@ void NodeManager::saveMyself()
 		pDb->exec("delete from myself;");
 	}
 	pDb->exec("insert into myself(id,accesspoint) values(?,?);",
-		_me.getNodeId<string>().c_str(),
-		_me.serializeAP().c_str());
+		_me->getNodeId<string>().c_str(),
+		_me->serializeAP().c_str());
 }
 
 void NodeManager::loadNeighbourNodes()
 {
-	_nodelist.clear();
+	_nodemap.clear();
 	DBmgr *pDb = DBmgr::instance();
 
+	std::lock_guard<std::mutex> lck(_guard);
 	pDb->query("SELECT * FROM neighbornodes",
 		[this](CppSQLite3Query & q) {
 		string id = q.getStringField("id");
 		string aps = q.getStringField("accesspoint");
 
 		CUInt128 nodeid(id);
-		CNode node(std::move(nodeid));
-		node.parseAP(aps);
-		_nodelist.push_back(std::move(node));
+		HCNodeSH node = make_shared<HCNode>(std::move(nodeid));
+		node->parseAP(aps);
+		_nodemap[CUInt128(id)] = node;
 		});
 }
+
 
 void NodeManager::saveNeighbourNodes()
 {
 	DBmgr *pDb = DBmgr::instance();
 
-	for (auto node: _nodelist)
-	{
+	std::lock_guard<std::mutex> lck(_guard);
+	std::for_each(_nodemap.begin(), _nodemap.end(), [&](HCNodeMap::reference node) {
+
 		int num = 0;
 		pDb->query("SELECT count(*) as num FROM neighbornodes where id=?;",
-			[this,&num](CppSQLite3Query & q) {
+			[this, &num](CppSQLite3Query & q) {
 			num = q.getIntField("num");
-		}, node.getNodeId<string>().c_str());
+		}, node.second->getNodeId<string>().c_str());
 
 		if (num > 0) {
 			pDb->exec("update neighbornodes set accesspoint = ? where id=?;",
-				node.serializeAP().c_str(),
-				node.getNodeId<string>().c_str());
+				node.second->serializeAP().c_str(),
+				node.second->getNodeId<string>().c_str());
 		}
 		else {
 			pDb->exec("insert into neighbornodes(id,accesspoint) values(?,?);",
-				node.getNodeId<string>().c_str(),
-				node.serializeAP().c_str());
+				node.second->getNodeId<string>().c_str(),
+				node.second->serializeAP().c_str());
 		}
-	}
+
+	});
 }
+
+
+string NodeManager::toString()
+{
+	ostringstream oss;
+
+	std::lock_guard<std::mutex> lck(_guard);
+	std::for_each(_nodemap.begin(), _nodemap.end(), [&](HCNodeMap::reference node) {
+		oss << node.second->serialize();
+	});
+
+	return oss.str();
+}
+
 
 void NodeManager::parse(const string &nodes)
 {
 	json::value obj = json::value::parse(s2t(nodes));
 	assert(obj.is_array());
 
-	std::map<CUInt128,CNode> mapTmpNode;
-
 	size_t num = obj.size();
-	for (int i = 0; i < num; i++) {
+	std::lock_guard<std::mutex> lck(_guard);
+	for (size_t i = 0; i < num; i++) {
 		
 		string objstr = t2s(obj[i].serialize());
-		CNode n;
-		CNode::parse(objstr, n);
-		mapTmpNode[n.getNodeId<CUInt128>()] = n;
-	}
 
+		auto n = make_shared<HCNode>();
+		HCNode::parse(objstr, *n.get());
+		_nodemap[n->getNodeId<CUInt128>()] = n;
+	}
+}
+
+const CUInt128* NodeManager::FindNodeId(IAccessPoint *ap)
+{
 	std::lock_guard<std::mutex> lck(_guard);
-	auto it = _nodelist.begin();
-	for (;it != _nodelist.end(); it++)
-	{
-		if (mapTmpNode.count(it->getNodeId<CUInt128>()))
-		{
-			*it = mapTmpNode.at(it->getNodeId<CUInt128>());
-			mapTmpNode.erase(it->getNodeId<CUInt128>());
-		}
-	}
+	auto r = std::find_if(_nodemap.begin(), _nodemap.end(), [&](HCNodeMap::reference n) {
 
-	for (auto node : mapTmpNode)
-	{
-		_nodelist.emplace_back(node.second);
+		HCNode::APList &aplist = n.second->getAPList();
+		auto ret = std::find_if(aplist.begin(), aplist.end(), [&](const shared_ptr<IAccessPoint> &apCurr) {
+			if (apCurr->isSame(ap)) {
+				return true;
+			}
+			return false;
+		});
+
+		if (ret == std::end(aplist)) {
+			return false;
+		}
+		return true;
+	});
+
+	if (r == _nodemap.end()) {
+		g_console_logger->error("cannot find the target node");
+		return nullptr;
 	}
+	
+	return r->second->getNodeId<CUInt128*>();
 }

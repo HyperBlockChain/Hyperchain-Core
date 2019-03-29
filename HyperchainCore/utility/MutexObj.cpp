@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -28,7 +28,8 @@ CMutexObj::CMutexObj()
 #ifdef WIN32
 	InitializeCriticalSection(&m_oSection);
 #else
-
+	//m_hMutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+	//pthread_mutex_init(&m_hMutex,NULL);
 	pthread_mutexattr_t   attr;   
 	pthread_mutexattr_init(&attr);   
 	pthread_mutexattr_settype(&attr,PTHREAD_MUTEX_RECURSIVE);   
@@ -73,6 +74,7 @@ CAutoMutexLock::~CAutoMutexLock()
 	m_oCriticalSection.UnLock();
 }
 
+//semaphore_t
 #ifdef _WIN32
 #define SAFE_CLOSE_HANDLE(h) if(h){::CloseHandle(h);h=0;}
 #endif

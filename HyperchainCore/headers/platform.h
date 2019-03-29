@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -25,14 +25,16 @@ DEALINGS IN THE SOFTWARE.
 #ifdef WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-
+//#define SLEEP(x)                    Sleep(x)
 #else
 #include <sys/stat.h> 
 #include <sys/types.h> 
-
+//#define SLEEP(x)                    usleep(1000*x)
 #endif
 
-
+/*
+	Thread
+*/
 #ifdef _WIN32
 #include <process.h>
 #define THREAD_EXIT								              return
@@ -58,7 +60,9 @@ DEALINGS IN THE SOFTWARE.
 #define WAITTHREADEND(_t)                               pthread_join (_t, NULL)
 #endif
 
-
+/*
+	Event/Condition
+*/
 #ifdef _WIN32
 #define DEFINE_EVENT(_event)				                    HANDLE _event
 #define INITIALIZE_EVENT(_event)			                _event = CreateEvent(NULL, FALSE, FALSE, NULL)
@@ -76,7 +80,9 @@ DEALINGS IN THE SOFTWARE.
 #define DESTROY_EVENT(_event)				                 pthread_cond_destroy(&(_event))
 #endif
 
-
+/*
+	Mutex
+*/
 #ifdef _WIN32
 #define	    MUTEXTYPE                      HANDLE
 #define		MUTEXDEFX(x)		          HANDLE x 

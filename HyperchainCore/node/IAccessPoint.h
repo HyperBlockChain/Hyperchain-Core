@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -32,4 +32,6 @@ public:
 	virtual int write(const char *buf, size_t len) { assert(false); return 0; }
 	virtual void close() { assert(false); }
 	virtual string serialize() { assert(false); return string(""); }
+	virtual int id() const { return 0; }
+	virtual bool isSame(IAccessPoint *other) const { return false; }
 };

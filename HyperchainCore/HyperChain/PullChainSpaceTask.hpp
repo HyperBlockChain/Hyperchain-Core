@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -27,7 +27,7 @@ using namespace std;
 #include "HyperChain/HyperChainSpace.h"
 #include "node/NodeManager.h"
 
-class PullChainSpaceRspTask : public ITask, public std::integral_constant<TASKTYPE, HYPER_CHAIN_SPACE_PULL_RSP> {
+class PullChainSpaceRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_SPACE_PULL_RSP> {
 public:
 	using ITask::ITask;
 	PullChainSpaceRspTask() {};
@@ -37,13 +37,14 @@ public:
 	{
 		CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
 		NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+
 		string msgbuf = "";
 
-		if (sp->PullChainSpaceRspTaskEXC(msgbuf))
+		if (sp && sp->PullChainSpaceRspTaskEXC(msgbuf))
 		{
-			attachTaskMetaHead<PullChainSpaceRspTask>(msgbuf);
-			nodemgr->sendTo(_sentnodeid, msgbuf);
-			
+			DataBuffer<PullChainSpaceRspTask> datamsg(std::move(msgbuf));
+
+			nodemgr->sendTo(_sentnodeid, datamsg);
 		}
 
 	}
@@ -56,7 +57,7 @@ public:
 	}
 };
 
-class PullChainSpaceTask : public ITask, public std::integral_constant<TASKTYPE, HYPER_CHAIN_SPACE_PULL> {
+class PullChainSpaceTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_SPACE_PULL> {
 public:
 	using ITask::ITask;
 	PullChainSpaceTask() {};
@@ -64,15 +65,10 @@ public:
 	void exec() override
 	{
 		NodeManager *nodemgr = Singleton<NodeManager>::getInstance();		
-		string msgbuf = "";
-		attachTaskMetaHead<PullChainSpaceTask>(msgbuf);
 
-		const CNodeList *pNodeList = nodemgr->getNodeList();
-		for (auto &node : *pNodeList)
-		{
-			nodemgr->sendTo(node, msgbuf);
-		}
-	
+		DataBuffer<PullChainSpaceTask> msgbuf(0);
+
+		nodemgr->sendToAllNodes(msgbuf);
 	}
 
 	void execRespond() override

@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -53,6 +53,15 @@ int g2u(char *inbuf, size_t inlen, char *outbuf, size_t outlen)
 }
 #endif
 
+//void convertUnCharToStr(char* str, unsigned char* UnChar, int ucLen)
+//{
+//	int i = 0;
+//	for (i = 0; i < ucLen; i++)
+//	{
+//		//格式化输str,每unsigned char 转换字符占两位置%x写输%X写输  
+//		sprintf(str + i * UNICODE_POS, "%02x", UnChar[i]);
+//	}
+//}
 
 
 string ChangeStorageUnit(uint64 data, char uint)

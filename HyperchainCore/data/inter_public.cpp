@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -245,7 +245,7 @@ uint64 _tBlockPersistStru::GetQueueID()const
 }
 
 _tBlockPersistStru::_tBlockPersistStru(T_SHA256 hashAll, T_SHA256  hyperBlockHash, T_SHA256  hashSelf, T_SHA256  preHash, string payLoad, string script, string auth,
-	uint8 blockType, uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp, uint64 localChainId, const string &version)
+	uint8 blockType, uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp, uint64 localChainId, const string &version, uint32 diff)
 {
 	memcpy(strHashAll, hashAll.pID, DEF_SHA256_LEN*sizeof(unsigned char));
 	memcpy(strHyperBlockHash, hyperBlockHash.pID, DEF_SHA256_LEN*sizeof(unsigned char));
@@ -260,10 +260,11 @@ _tBlockPersistStru::_tBlockPersistStru(T_SHA256 hashAll, T_SHA256  hyperBlockHas
 	uiBlockTimeStamp = blockTimeStamp;
 	uiLocalChainId = localChainId;
 	strVersion = version;
+	difficulty = diff;
 }
 
 _tBlockPersistStru::_tBlockPersistStru(T_SHA256 hashAll, T_SHA256  hyperBlockHash, T_SHA256  hashSelf, T_SHA256  preHash, string payLoad, string script, string auth,
-	uint8 blockType, uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp, uint64 localChainId, uint64 queueID, const string &version)
+	uint8 blockType, uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp, uint64 localChainId, uint64 queueID, const string &version, uint32 diff)
 {
 	memcpy(strHashAll, hashAll.pID, DEF_SHA256_LEN*sizeof(unsigned char));
 	memcpy(strHyperBlockHash, hyperBlockHash.pID, DEF_SHA256_LEN*sizeof(unsigned char));
@@ -279,6 +280,8 @@ _tBlockPersistStru::_tBlockPersistStru(T_SHA256 hashAll, T_SHA256  hyperBlockHas
 	uiLocalChainId = localChainId;
 	uiQueueID = queueID;
 	strVersion = version;
+	difficulty = diff;
+
 }
 
 
@@ -291,15 +294,12 @@ void _tBlockPersistStru::strtohash256(unsigned char* out, const char* szHash)
 	memset(str, 0, len);
 	memcpy(str, szHash, len);
 	for (int i = 0; i < len; i += 2) {
-	
 		if (str[i] >= 'a' && str[i] <= 'f') str[i] = str[i] & ~0x20;
 		if (str[i + 1] >= 'a' && str[i] <= 'f') str[i + 1] = str[i + 1] & ~0x20;
-		
 		if (str[i] >= 'A' && str[i] <= 'F')
 			out[i / 2] = (str[i] - 'A' + 10) << 4;
 		else
 			out[i / 2] = (str[i] & ~0x30) << 4;
-		
 		if (str[i + 1] >= 'A' && str[i + 1] <= 'F')
 			out[i / 2] |= (str[i + 1] - 'A' + 10);
 		else
@@ -335,8 +335,7 @@ _tBlockPersistStru::_tBlockPersistStru(string objjsonstring)
 	strVersion = t2s(obj[_XPLATSTR("version")].as_string());
 	uiQueueID = obj[_XPLATSTR("queue_id")].as_integer();
 	uiLocalChainId = obj[_XPLATSTR("chain_num")].as_integer();
-	
-
+	difficulty = obj[_XPLATSTR("difficulty")].as_integer();
 }
 
 void _tBlockPersistStru::Set(uint8 blockType)
@@ -445,6 +444,7 @@ string _tBlockPersistStru::serialize()
 	obj[_XPLATSTR("version")] = json::value::string(s2t(strVersion));
 	obj[_XPLATSTR("queue_id")] = json::value::number(uiQueueID);
 	obj[_XPLATSTR("chain_num")] = json::value::number(uiLocalChainId);
+	obj[_XPLATSTR("difficulty")] = json::value::number(difficulty);
 	std::stringstream oss;
 	obj.serialize(oss);
 	return oss.str();

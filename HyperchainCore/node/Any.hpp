@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -51,7 +51,7 @@ struct Any
 	U& AnyCast()
 	{
 		if (!Is<U>()) {
-			
+			cout << "can not cast " << typeid(U).name() << " to " << m_tpIndex.name() << std::endl;
 			throw std::logic_error{"bad cast"};
 		}
 

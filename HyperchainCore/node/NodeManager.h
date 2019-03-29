@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -22,38 +22,140 @@ DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
+#include "../newLog.h"
 #include "UInt128.h"
-#include "CNode.h"
+#include "HCNode.h"
+#include "ITask.hpp"
 
+#include <map>
 #include <mutex>
 using namespace std;
+
+using HCNodeMap = std::map<CUInt128, std::shared_ptr<HCNode> >;
+
+template<typename T, ProtocolVer pro_ver=0>
+class DataBuffer {
+
+public:
+	DataBuffer(size_t payloadlen) :_data(std::string(payloadlen + ProtocolHeaderLen, 0)) {
+		setTaskMetaHeader();
+	}
+
+	DataBuffer(string &&payload) :_data(std::forward<string>(payload)) {
+		_data.insert(0, ProtocolHeaderLen, '\0');
+		setTaskMetaHeader();
+	}
+
+	operator string() {
+		return _data;
+	}
+
+	string& tostring()
+	{
+		return _data;
+	}
+
+	void resize(size_t payloadlen)
+	{
+		_data.resize(payloadlen + ProtocolHeaderLen);
+	}
+
+	char *payload() { return const_cast<char*>(_data.c_str() + ProtocolHeaderLen); }
+
+	typename std::enable_if<std::is_base_of<ITask, T>::value>::type
+	setHeader(uint8_t h[CUInt128::value]) {
+		memcpy(payloadoffset(0), h, CUInt128::value);
+	}
+
+	typename std::enable_if<std::is_base_of<ITask, T>::value>::type
+	setHeader(CUInt128 &nodeid) {
+
+		uint8_t h[CUInt128::value];
+		nodeid.ToByteArray(h);
+		memcpy(payloadoffset(0), h, CUInt128::value);
+	}
+		
+private:
+	typename std::enable_if<std::is_base_of<ITask, T>::value>::type
+	setTaskMetaHeader() {
+		TASKTYPE t = T::value;
+		ProtocolVer *v = reinterpret_cast<ProtocolVer*>(payloadoffset(CUInt128::value));
+		*v = pro_ver;
+		memcpy(payloadoffset(CUInt128::value + sizeof(ProtocolVer)), (char*)&(t), sizeof(TASKTYPE));
+	}
+	char * payloadoffset(size_t offset) { return const_cast<char*>(_data.c_str() + offset); }
+
+	string _data;
+};
 
 class NodeManager {
 
 public: 
 	
-	NodeManager() {}
+	NodeManager() : _me(make_shared<HCNode>()) {}
 	NodeManager(const NodeManager &) = delete;
 	NodeManager & operator=(const NodeManager &) = delete;
 
 	~NodeManager() {}
 
-	void myself(CNode &&me) { _me = std::move(me); }
-	CNode & myself() { return _me; }
+	void myself(HCNodeSH &me) { _me = std::move(me); }
+	HCNodeSH & myself() { return _me; }
 
-	void seedServer(CNode &&seed) {_seed = std::move(seed);}
-	CNode & seedServer() { return _seed; }
+	void seedServer(HCNodeSH &seed) {_seed = std::move(seed);}
+	HCNodeSH & seedServer() { return _seed; }
 
-	CNode * searchBuddy();
-	CNode * getNode(const CUInt128 &nodeid);
+	HCNodeSH& getNode(const CUInt128 &nodeid);
     
-	void addNode(CNode && node);
-	void updateNode(CNode && node);
+	void addNode(HCNodeSH & node);
+	void updateNode(HCNodeSH & node);
 
-	int sendTo(const CNode &targetNode, string & msgbuf);
-	int sendTo(const CUInt128 &targetNodeid, string & msgbuf);
+	template<typename T> 
+	void sendToAllNodes(DataBuffer<T> & msgbuf)
+	{
+		std::lock_guard<std::mutex> lck(_guard);
 
-	const CNodeList * getNodeList();
+		uint8_t b[CUInt128::value];
+		_me->getNodeId(b);
+		msgbuf.setHeader(b);
+
+		std::for_each(_nodemap.begin(), _nodemap.end(), [&, this](HCNodeMap::reference node) {
+			node.second->send(msgbuf.tostring());
+		});
+	}
+
+	template<typename T>
+	int sendTo(HCNodeSH &targetNode, DataBuffer<T> & msgbuf)
+	{
+		uint8_t b[CUInt128::value];
+		_me->getNodeId(b);
+
+		msgbuf.setHeader(b);
+		return targetNode->send(msgbuf.tostring());
+	}
+
+	template<typename T>
+	int sendTo(const CUInt128 &targetNodeid, DataBuffer<T> & msgbuf)
+	{
+		int result = 0;
+		std::lock_guard<std::mutex> lck(_guard);
+		auto r = std::find_if(_nodemap.begin(), _nodemap.end(), [&, this](const HCNodeMap::reference n) {
+			if (n.second->getNodeId<CUInt128>() == targetNodeid) {
+				result = this->sendTo(n.second, msgbuf);
+				return true;
+			}
+			return false;
+		});
+
+		if (r == _nodemap.end()) {
+			g_console_logger->error( "cannot find the target node:{}", targetNodeid.ToHexString().c_str());
+			return 0;
+		}
+
+		return result;
+	}
+
+	const HCNodeMap* getNodeMap();
+	size_t getNodeMapSize();
 	void loadMyself();
 	void saveMyself();
 	void loadNeighbourNodes();
@@ -61,10 +163,15 @@ public:
 
 	void parse(const string &nodes);
 
+	const CUInt128 * FindNodeId(IAccessPoint *ap);
+
+
+	string toString();
+
 private: 
 
-    CNode _me;
-    CNode _seed;
-    CNodeList _nodelist;
+    HCNodeSH _me;
+    HCNodeSH _seed;
+	HCNodeMap _nodemap;
 	mutex _guard;
 };

@@ -33,7 +33,7 @@
 //						-sqlite3_prepare replaced with sqlite3_prepare_v2
 //						-Added Name based parameter binding to CppSQLite3Statement.
 ////////////////////////////////////////////////////////////////////////////////
-
+//#include "stdafx.h"
 #include "cppsqlite3.h"
 #include <cstdlib>
 
@@ -129,7 +129,7 @@ CppSQLite3Exception::~CppSQLite3Exception()
 }
 
 
-
+////////////////////////////////////////////////////////////////////////////////
 
 CppSQLite3Buffer::CppSQLite3Buffer()
 {
@@ -165,7 +165,7 @@ const char* CppSQLite3Buffer::format(const char* szFormat, ...)
 }
 
 
-
+////////////////////////////////////////////////////////////////////////////////
 
 CppSQLite3Binary::CppSQLite3Binary() :
 mpBuf(0),
@@ -195,7 +195,7 @@ void CppSQLite3Binary::setEncoded(const unsigned char* pBuf)
     clear();
 
     mnEncodedLen = strlen((const char*)pBuf);
-    mnBufferLen = mnEncodedLen + 1; 
+    mnBufferLen = mnEncodedLen + 1; // Allow for NULL terminator
 
     mpBuf = (unsigned char*)malloc(mnBufferLen);
 
@@ -230,7 +230,7 @@ const unsigned char* CppSQLite3Binary::getBinary()
 {
     if (mbEncoded)
     {
-    
+        // in/out buffers can be the same
         mnBinaryLen = sqlite3_decode_binary(mpBuf, mpBuf);
 
         if (mnBinaryLen == -1)
@@ -258,6 +258,9 @@ unsigned char* CppSQLite3Binary::allocBuffer(int nLen)
 {
     clear();
 
+    // Allow extra space for encoded binary as per comments in
+    // SQLite encode.c See bottom of this file for implementation
+    // of SQLite functions use 3 instead of 2 just to be sure ;-)
     mnBinaryLen = nLen;
     mnBufferLen = 3 + (257*nLen)/254;
 
@@ -288,7 +291,7 @@ void CppSQLite3Binary::clear()
 }
 
 
-
+////////////////////////////////////////////////////////////////////////////////
 
 CppSQLite3Query::CppSQLite3Query()
 {
@@ -302,7 +305,7 @@ CppSQLite3Query::CppSQLite3Query()
 CppSQLite3Query::CppSQLite3Query(const CppSQLite3Query& rQuery)
 {
     mpVM = rQuery.mpVM;
- 
+    // Only one object can own the VM
     const_cast<CppSQLite3Query&>(rQuery).mpVM = 0;
     mbEof = rQuery.mbEof;
     mnCols = rQuery.mnCols;
@@ -345,7 +348,7 @@ CppSQLite3Query& CppSQLite3Query::operator=(const CppSQLite3Query& rQuery)
     {
     }
     mpVM = rQuery.mpVM;
- 
+    // Only one object can own the VM
     const_cast<CppSQLite3Query&>(rQuery).mpVM = 0;
     mbEof = rQuery.mbEof;
     mnCols = rQuery.mnCols;
@@ -641,7 +644,7 @@ CppSQLite3Table::CppSQLite3Table()
 CppSQLite3Table::CppSQLite3Table(const CppSQLite3Table& rTable)
 {
     mpaszResults = rTable.mpaszResults;
-
+    // Only one object can own the results
     const_cast<CppSQLite3Table&>(rTable).mpaszResults = 0;
     mnRows = rTable.mnRows;
     mnCols = rTable.mnCols;
@@ -991,15 +994,20 @@ CppSQLite3Query CppSQLite3Statement::execQuery()
 
 void CppSQLite3Statement::bind(int nParam, const char* szValue)
 {
-    checkVM();
-    int nRes = sqlite3_bind_text(mpVM, nParam, szValue, -1, SQLITE_TRANSIENT);
+	return bind(nParam, szValue, -1);
+}
 
-    if (nRes != SQLITE_OK)
-    {
-        throw CppSQLite3Exception(nRes,
-            "Error binding string param",
-            DONT_DELETE_MSG);
-    }
+void CppSQLite3Statement::bind(int nParam, const char* szValue, size_t len)
+{
+	checkVM();
+	int nRes = sqlite3_bind_text(mpVM, nParam, szValue, len, SQLITE_TRANSIENT);
+
+	if (nRes != SQLITE_OK)
+	{
+		throw CppSQLite3Exception(nRes,
+			"Error binding string param",
+			DONT_DELETE_MSG);
+	}
 }
 
 
@@ -1228,8 +1236,9 @@ CppSQLite3DB& CppSQLite3DB::operator=(const CppSQLite3DB& db)
 
 void CppSQLite3DB::open(const char* szFile)
 {
-    int nRet = sqlite3_open(szFile, &mpDB);
+	sqlite3_config(SQLITE_CONFIG_SERIALIZED);
 
+	int nRet = sqlite3_open(szFile, &mpDB);
     if (nRet != SQLITE_OK)
     {
         const char* szError = sqlite3_errmsg(mpDB);

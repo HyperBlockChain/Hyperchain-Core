@@ -1,8 +1,26 @@
-/**
- * Project Untitled
- */
-#pragma once
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
+Distributed under the MIT software license, see the accompanying
+file COPYING or?https://opensource.org/licenses/MIT.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this?
+software and associated documentation files (the "Software"), to deal in the Software
+without restriction, including without limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
+to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,?
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+*/
+
+#include "../newLog.h"
 #include "Singleton.h"
 #include "NodeManager.h"
 #include "TaskThreadPool.h"
@@ -27,8 +45,8 @@ namespace SEED {
 		string _nodeinfo;
 		system_clock::time_point _tp;
 	public:
-		struct tagnode() {}
-		struct tagnode(string nodeinfo) : _nodeinfo(nodeinfo), _tp(system_clock::now()) {}
+		tagnode() {}
+		tagnode(string nodeinfo) : _nodeinfo(nodeinfo), _tp(system_clock::now()) {}
 		bool isTimeOut() {
 			using minutes = std::chrono::duration<double, ratio<60>>;
 			system_clock::time_point curr = system_clock::now();
@@ -43,13 +61,15 @@ namespace SEED {
 	} NODE;
 
 	std::map<string, NODE> g_mapNodes;
+	std::mutex	_guard;
+
 	int getPeerList(const string & nodeid,string & peerlist)
 	{
 		json::value obj = json::value::array();
 
 		int i = 0;
-		int maxlen = (64 - 1) * 1024;
-		int len = 0;
+		size_t maxlen = (64 - 1) * 1024;
+		size_t len = 0;
 		auto it = g_mapNodes.begin();
 		for (; it != g_mapNodes.end();) {
 			if (it->second.isTimeOut()) {
@@ -81,7 +101,13 @@ namespace SEED {
 void SearchNeighbourRspTask::exec()
 {
 	string nodeid(_fromNodeId.ToHexString());
+	std::lock_guard<std::mutex> lck(SEED::_guard);
 	SEED::g_mapNodes[nodeid] = SEED::NODE(_msg);
+
+	char logmsg[128] = { 0 };
+	snprintf(logmsg, 128, "Handling SearchNeighbourRspTask from peer:%s\n", nodeid.c_str());
+	g_console_logger->debug(logmsg);
+
 
 	string msgbuf;
 	int num = SEED::getPeerList(nodeid, msgbuf);
@@ -89,16 +115,20 @@ void SearchNeighbourRspTask::exec()
 		
 		return;
 	}
+	snprintf(logmsg, 128, "found %d neighbours for peer:%s\n",num ,nodeid.c_str());
+	g_console_logger->debug(logmsg);
 
-	attachTaskMetaHead<SearchNeighbourRspTask>(msgbuf);
+	DataBuffer<SearchNeighbourRspTask> datamsgbuf(std::move(msgbuf));
 
 	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-	nodemgr->sendTo(_fromNodeId, msgbuf);
+	nodemgr->sendTo(_fromNodeId, datamsgbuf);
 }
 
 void SearchNeighbourRspTask::execRespond()
 {
 	
+	g_console_logger->debug("Handling SearchNeighbourRspTask Respond from seed server");
+
 	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
 	nodemgr->parse(_payload);
 }
@@ -106,19 +136,17 @@ void SearchNeighbourRspTask::execRespond()
 void SearchNeighbourTask::exec()
 {
 	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-	CNode seedserver = nodemgr->seedServer();
+	HCNodeSH seedserver = nodemgr->seedServer();
 
-	string msgbuf = nodemgr->myself().serialize();
-	attachTaskMetaHead<SearchNeighbourTask>(msgbuf);
+	string msgbuf = nodemgr->myself()->serialize();
+	DataBuffer<SearchNeighbourTask> datamsgbuf(std::move(msgbuf));
 
-	nodemgr->sendTo(seedserver, msgbuf);
+	nodemgr->sendTo(seedserver, datamsgbuf);
 
-	cout << "SearchNeighbourTask request.";
 }
 
 void SearchNeighbourTask::execRespond()
 {
-	cout << "SearchNeighbourTask respond.";
 	TaskThreadPool *taskpool = Singleton<TaskThreadPool>::instance();
 	taskpool->put(make_shared<SearchNeighbourRspTask>(std::move(_sentnodeid), _payload));
 }

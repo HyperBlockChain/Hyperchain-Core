@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -36,6 +36,8 @@ public:
 
 	void stop() {
 		_requeststop = true;
+		_not_empty_cv.notify_all();
+		_not_full_cv.notify_all();
 	}
 
 	bool push(T && task) {
@@ -48,13 +50,13 @@ public:
 		if (_requeststop) {
 			return;
 		}
-		
+		//t = _tasklist.front(task);		
 		t = _tasklist.front();		
 		_tasklist.pop_front();
 		_not_full_cv.notify_one();
 	}
 
-	void pop(std::list<T>& resultlist, int num = 10) {
+	void pop(std::list<T>& resultlist, size_t num = 10) {
 		std::unique_lock<std::mutex> lck(_guard);
 		_not_empty_cv.wait(lck, [this] { return _requeststop || !isEmpty(); });
 		if (_requeststop) {
@@ -74,6 +76,9 @@ public:
 		_not_full_cv.notify_one();
 	}
 
+	size_t size() { return _tasklist.size(); }
+	std::mutex& guard() { return _guard; }
+	std::list<T>& tasklist() { return _tasklist; }
 private:
 	bool isFull() {
 		return _tasklist.size() < _maxCapacity ? false : true;
@@ -100,8 +105,8 @@ private:
 	std::condition_variable _not_full_cv;
 	std::condition_variable _not_empty_cv;
 
-	
-	int _maxCapacity; 
+	// maximum capacity of _tasklist
+	uint32_t _maxCapacity; 
 	bool _requeststop; 
 };
 

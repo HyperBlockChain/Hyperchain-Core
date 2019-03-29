@@ -1,4 +1,4 @@
-/*Copyright 2016-2018 hyperchain.net (Hyperchain)
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -24,12 +24,11 @@ DEALINGS IN THE SOFTWARE.
 
 #include "../crypto/crc32.h"
 
-
 #include <iostream>
 #include <stdio.h>
 #include <stdint.h>
 #include <memory>
-#include <string>
+#include <cstring>
 #include <thread>
 #include <ctime>
 #include <map>
@@ -41,9 +40,8 @@ DEALINGS IN THE SOFTWARE.
 #include <sys/types.h>
 #endif
 
+using std::chrono::system_clock;
 #include "SyncQueue.h"
-
-
 
 #define CURRENT_VERSION '1'
 
@@ -53,12 +51,11 @@ DEALINGS IN THE SOFTWARE.
 #define PACKET_HEADER '1'
 #define SLICE_HEADER  '2'
 
-
-#define UDP_SLICE_MAX_SIZE 1024				
-#define MAX_BUFFER_SIZE	2048				
-#define MAX_SEND_TIMES  3					
-#define MAX_INTERVAL_TIME  100				
-#define MAX_RECV_LIST_COUNT  5000			
+#define UDP_SLICE_MAX_SIZE	1024
+#define MAX_BUFFER_SIZE		1088			
+#define MAX_SEND_TIMES		3				
+#define MAX_INTERVAL_TIME	10				
+#define MAX_RECV_LIST_COUNT	5000			
 
 enum _erecvflag
 {
@@ -68,13 +65,12 @@ enum _erecvflag
 
 typedef struct _tudpheader
 {
-	uint8_t HeaderType;
+	uint8_t HeaderType;			
 	uint32_t uPacketNum;
 	uint32_t uDataBufCrc;
 	uint32_t uBufLen;
-	uint8_t PacketType;
-	uint8_t Version; 
-	
+	uint8_t PacketType;			
+	uint8_t Version;			
 	uint16_t uSliceTotalNum;
 }T_UDPHEADER, *T_PUDPHEADER;
 
@@ -85,35 +81,35 @@ typedef struct _tudpnode
 	uint16_t ClearFlag;
 	uint16_t RetryTimes;
 	std::time_t NextSendTime;
-	
 	char bitmap[128];
 	T_UDPHEADER UdpHeader;
 	char *DataBuf;
 }T_UDPNODE, *T_PUDPNODE;
 
-
+//Slice Header
 typedef struct _tudpsliceheader
 {
 	uint8_t HeaderType;			 
-	uint8_t SliceType;			
-	uint32_t uPacketNum;		
+	uint8_t SliceType;			 
+	uint32_t uPacketNum;		 
 	uint16_t uSliceTotalNum;	 
 	uint16_t uSliceCurrIndex;	 
 	uint32_t uSliceBufCrc;
-	uint32_t uSliceBufLen;		
-	uint32_t uSliceDataOffset; 
+	uint32_t uSliceBufLen;		 
+	uint32_t uSliceDataOffset;   
 }T_UDPSLICEHEADER, *T_PUDPSLICEHEADER;
 
 typedef struct _tudpslicenode
 {
 	T_UDPSLICEHEADER SliceHeader;
-	char *SliceBuf;
+	char SliceBuf[UDP_SLICE_MAX_SIZE];
 }T_UDPSLICENODE, *T_PUDPSLICENODE;
 
 typedef struct _trecvnode
 {
 	struct sockaddr_in fromAddr;
-	char *recvbuf;
+	char recvbuf[MAX_BUFFER_SIZE];
+	int recvNum;
 }T_RECVNODE, *T_PRECVNODE;
 
 typedef struct _tpacketkey
@@ -122,16 +118,10 @@ typedef struct _tpacketkey
 	uint32_t Port;
 	uint32_t uPacketNum;
 
-	_tpacketkey(string ip, uint32_t port, uint32_t packetnum)
-	{
-		Ip = ip;
-		Port = port;
-		uPacketNum = packetnum;
-	}
+	_tpacketkey(string ip, uint32_t port, uint32_t packetnum) : Ip(ip), Port(port), uPacketNum(packetnum) {}
 
 	bool operator<(_tpacketkey const& other) const
 	{
-
 		if (Ip < other.Ip) { return true; }
 		if (Ip > other.Ip) { return false; }
 		if (Port < other.Port) { return true; }
@@ -140,12 +130,31 @@ typedef struct _tpacketkey
 	}
 }T_PACKETKEY;
 
+typedef struct _tpacketnode
+{
+	T_UDPHEADER _udpheader;
+	system_clock::time_point _tp;
+public:
+	_tpacketnode() : _tp(system_clock::now()) {}
+	bool isTimeOut() {
+		using minutes = std::chrono::duration<double, ratio<60>>;
+		system_clock::time_point curr = system_clock::now();
+
+		minutes timespan = std::chrono::duration_cast<minutes>(curr - _tp);
+		if (timespan.count() > 20) {
+			
+			return true;
+		}
+		return false;
+	}
+}T_PACKETNODE;
+
 typedef list<T_UDPSLICENODE>	LIST_T_UDPSLICENODE;
 
 typedef map<uint32_t, T_PUDPNODE>		MAP_T_PUDPNODE;
 typedef MAP_T_PUDPNODE::iterator    ITR_MAP_T_PUDPNODE;
 
-typedef map<T_PACKETKEY, T_UDPNODE> MAP_PACKETDATA;
+typedef map<T_PACKETKEY, T_PACKETNODE> MAP_PACKETDATA;
 typedef MAP_PACKETDATA::iterator	ITR_MAP_PACKETDATA;
 
 typedef map<uint32_t, T_UDPSLICENODE> MAP_SLICEDATA;
@@ -153,9 +162,6 @@ typedef MAP_SLICEDATA::iterator    ITR_MAP_SLICEDATA;
 
 typedef map<T_PACKETKEY, MAP_SLICEDATA> MULTI_MAP_PACKETDATA;
 typedef MULTI_MAP_PACKETDATA::iterator    ITR_MULTI_MAP_PACKETDATA;
-
-
-
 
 class UdpThreadPool
 {
@@ -165,17 +171,26 @@ public:
 	int send(const string &peerIP, uint32_t peerPort, const char * buf, size_t len);
 	void start();
 	void stop();
+	size_t getUdpSendQueueSize() {
+		return m_sendList.size();
+	}
+
+	size_t getUdpRecvQueueSize() {
+		return m_recvList.size();
+	}
 
 private:
 	void Recv();
 	void RecvData();
 	void SendAgain();
+	void CheckExpired();
+	void CleanExpiredCache();
 	void slice_ack_resp_add(char *bitmap, uint16_t id);
 	int slice_ack_resp_check(char *bitmap, uint16_t id);
 
 private:
 	bool					m_isstop;
-	uint32_t				m_packetNum;
+	std::atomic<uint32_t>	m_packetNum;
 	uint32_t				m_localPort;
 	const char				*m_localIp;
 #ifdef WIN32
@@ -184,21 +199,19 @@ private:
 	int						m_listenFd;
 #endif
 
-
 	SyncQueue<T_PUDPNODE>	m_sendList;
-	
-	SyncQueue<T_PRECVNODE>	m_recvList;
-	
-	std::thread				listen_thread;
-	std::thread				send_thread;
+	SyncQueue<T_RECVNODE>	m_recvList;
+	std::thread				m_listenthread;
+	std::thread				m_checkthread;
+	std::list<std::thread>	m_sendthreads;
 	std::list<std::thread>	m_recvthreads;
+	uint32_t				m_sendthreads_num;
 	uint32_t				m_recvthreads_num;
 
 	MAP_T_PUDPNODE			m_sendMap;
 	MAP_PACKETDATA			m_packetMap;
 	MULTI_MAP_PACKETDATA	m_recvMap;
 
-	std::mutex				m_packetNumLock;
 	std::mutex				m_sendMapLock;
 	std::mutex				m_packetMapLock;
 	std::mutex				m_recvMapLock;
