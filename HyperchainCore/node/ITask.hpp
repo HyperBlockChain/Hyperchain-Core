@@ -50,7 +50,7 @@ enum class TASKTYPE :char
 	GLOBAL_BUDDY_START_REQ,
 	GLOBAL_BUDDY_SEND_REQ,
 	GLOBAL_BUDDY_RSP,
-	COPY_HYPER_BLOCK_REQ,
+	BOARDCAST_HYPER_BLOCK,
 	GET_HYPERBLOCK_BY_NO_REQ,
 
 	HYPER_CHAIN_SPACE_PULL,
@@ -62,6 +62,8 @@ enum class TASKTYPE :char
 };
 
 using TASKBUF = std::shared_ptr<string>;
+using ProtocolVer = uint16_t;
+const size_t ProtocolHeaderLen = CUInt128::value + sizeof(ProtocolVer) + sizeof(TASKTYPE);
 
 class ITask
 {
@@ -69,14 +71,12 @@ public:
 	ITask() {}
 	ITask(TASKBUF && recvbuf) : _isRespond(true), _recvbuf(std::move(recvbuf)) {
 
-		size_t prefixlen = CUInt128::value + sizeof(TASKTYPE);
-
 		uint8_t ut[CUInt128::value];
 		memcpy(ut, _recvbuf->c_str(), CUInt128::value);
 		_sentnodeid = CUInt128(ut);
-
-		_payload = _recvbuf->c_str() + prefixlen;
-		_payloadlen = _recvbuf->size() - prefixlen;
+		_ver = *(ProtocolVer*)(_recvbuf->c_str() + CUInt128::value);
+		_payload = _recvbuf->c_str() + ProtocolHeaderLen;
+		_payloadlen = _recvbuf->size() - ProtocolHeaderLen;
 	}
 
 	virtual ~ITask() {}
@@ -90,6 +90,7 @@ protected:
 	const char * _payload = nullptr;
 	size_t _payloadlen = 0;
 	CUInt128 _sentnodeid;
+	ProtocolVer _ver = 0;
 
 private:
 	TASKBUF _recvbuf;

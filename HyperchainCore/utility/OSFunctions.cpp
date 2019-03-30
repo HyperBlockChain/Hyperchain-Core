@@ -51,7 +51,7 @@ int OSFunctions::GetCurrentFreeMemoryOS()
 	return mems;
 #else
 	struct sysinfo sys;  
-	int err = sysinfo(&sys); 
+	sysinfo(&sys); 
 	int mems = sys.freeram/MB;
 
 	return mems;
@@ -68,7 +68,7 @@ int OSFunctions::GetTotalMemoryOS()
 	return mems;
 #else
 	struct sysinfo sys;  
-	int err = sysinfo(&sys);
+	sysinfo(&sys);
 	int mems = sys.totalram / MB;
 
 	return mems;

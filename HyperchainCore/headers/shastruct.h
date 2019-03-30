@@ -25,6 +25,9 @@ DEALINGS IN THE SOFTWARE.
 
 #include "includeComm.h"
 
+#include <string>
+using namespace std;
+
 typedef struct _tsha256
 {
 	unsigned char pID[DEF_SHA256_LEN];
@@ -71,6 +74,11 @@ typedef struct _tsha256
 				return false;
 		}
 		return true;
+	}
+
+	bool operator != (const _tsha256& arRes) const
+	{
+		return !(*this == arRes);
 	}
 
 	bool operator < (const _tsha256& arRes) const
@@ -121,6 +129,20 @@ typedef struct _tsha256
 	{
 		memset(pID, nNum, DEF_SHA256_LEN);
 	}
+
+	string toHexString() const
+	{
+		char ucBuf[DEF_SHA256_LEN * 2 + 1] = { 0 };
+
+		unsigned int uiNum = 0;
+		char *p = ucBuf;
+		for (; uiNum < DEF_SHA256_LEN; uiNum++) {
+			sprintf(p, "%02x", pID[uiNum]);
+			p += 2;
+		}
+		return string(ucBuf);
+	}
+
 }T_SHA256, *T_PSHA256;
 
 typedef struct _tsha512

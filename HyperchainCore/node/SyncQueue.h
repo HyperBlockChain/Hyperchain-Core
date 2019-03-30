@@ -50,7 +50,7 @@ public:
 		if (_requeststop) {
 			return;
 		}
-		
+		//t = _tasklist.front(task);		
 		t = _tasklist.front();		
 		_tasklist.pop_front();
 		_not_full_cv.notify_one();

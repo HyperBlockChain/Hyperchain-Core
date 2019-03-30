@@ -26,6 +26,7 @@ DEALINGS IN THE SOFTWARE.
 #include "includeComm.h"
 #include "gen_int.h"
 #include "inter_public.h"
+#include "crypto/sha2.h"
 
 #include "shastruct.h"
 #include "node/UInt128.h"
@@ -42,8 +43,15 @@ using namespace std;
 #define MAX_AUTH_LEN (64)
 #define MAX_QUEED_LEN (32)
 #define LISTEN_PORT (8115)
-#define MAX_VER_LEN		(32)
+#define MAX_VER_LEN		(8)
 #define MAX_USER_DEFINED_DATA (1024* 16)
+
+
+
+
+
+#define BLOCK_VER "0.7.2"
+#define BLOCK_VER_ARRAY '0','.','7','.','2'
 
 
 #pragma pack(1)
@@ -54,9 +62,7 @@ enum _ep2pprotocoltypestate
 	SEND_ON_CHAIN_RSP,
 	RECV_ON_CHAIN_RSP,
 	SEND_CONFIRM,
-	RECV_CONFIRM,
-	SEND_CONFIRM_RSP,
-	RECV_CONFIRM_RSP
+	CONSENSUS_CONFIRMED
 };
 
 enum _erecvpagestate
@@ -87,12 +93,13 @@ typedef struct _tpeeraddress
 
 typedef struct _tblockbaseinfo
 {
-	uint64 uiID;				
-	T_SHA256 tPreHash;			
-	uint64 uiTime;				
+	
+	uint64 uiID = 0;				
+	T_SHA256 tPreHash;				
+	uint64 uiTime;					
 	int8  strScript[MAX_SCRIPT_LEN];
-	int8  strAuth[MAX_AUTH_LEN];
-	T_SHA256 tHashSelf;
+	int8  strAuth[MAX_AUTH_LEN];	
+	T_SHA256 tHashSelf;				
 
 	_tblockbaseinfo()
 	{
@@ -104,14 +111,13 @@ typedef struct _tblockbaseinfo
 		memset(tHashSelf.pID, 0, DEF_SHA256_LEN);
 	}
 
-	_tblockbaseinfo(uint64 ID, uint64 Time, int8 *Auth, int8 *Script, T_SHA256 HashSelf, T_SHA256 PreHash);
-	_tblockbaseinfo(uint64 ID, uint64 Time, int8 *Auth, int8 *Script, T_SHA256 HashSelf);
-	_tblockbaseinfo(T_SHA256 PreHash, uint64 ID, uint64 Time, int8 *Auth, int8 *Script);
+	_tblockbaseinfo(uint64 Time, int8 *Auth, int8 *Script, T_SHA256 HashSelf, T_SHA256 PreHash);
+	_tblockbaseinfo(uint64 Time, int8 *Auth, int8 *Script, T_SHA256 HashSelf);
+	_tblockbaseinfo(T_SHA256 PreHash, uint64 Time, int8 *Auth, int8 *Script);
 
 	_tblockbaseinfo& operator = (const _tblockbaseinfo& arRes);
 	void SetBlockBaseInfo(uint64 ID, uint64 Time, int8 *Auth, int8 *Script, T_SHA256 HashSelf, T_SHA256 PreHash);
 	void SetBlockBaseInfo(uint64 ID, uint64 Time, int8 *Auth, int8 *Script, T_SHA256 HashSelf);
-	
 	void SetBlockBaseInfo(uint64 ID, uint64 Time, int8 *Auth, int8 *Script);
 
 	void SetID(uint64 ID);
@@ -130,70 +136,22 @@ typedef struct _tblockbaseinfo
 	T_SHA256 GetHashSelf()const;
 	T_SHA256& GetHashSelf();
 
-
 }T_BLOCKBASEINFO, *T_PBLOCKBASEINFO;
-
-typedef struct _tblockbaseinfonew
-{
-	uint64 uiID;
-	T_SHA256 tPreHash;
-	uint64 uiTime;
-	int8 *strScript;
-	uint64 scriptLength;
-	int8  strAuth[MAX_AUTH_LEN];
-	T_SHA256 tHashSelf;
-
-	_tblockbaseinfonew()
-	{
-		uiID = 0;
-		uiTime = 0;
-		strScript = NULL;
-		scriptLength = 0;
-		memset(strAuth, 0, MAX_AUTH_LEN);
-		memset(tPreHash.pID, 0, DEF_SHA256_LEN);
-		memset(tHashSelf.pID, 0, DEF_SHA256_LEN);
-	}
-
-	_tblockbaseinfonew(uint64 ID,T_SHA256 preHash,uint64 t,int8* script,
-		uint64 scLen,int8 auth[],T_SHA256 hashSelf);
-
-	~_tblockbaseinfonew();
-
-	_tblockbaseinfonew& operator = (const _tblockbaseinfonew& arRes);
-
-	void Set(uint64 ID, T_SHA256 preHash, uint64 t, int8* script,
-		uint64 scLen, int8 auth[], T_SHA256 hashSelf);
-
-	void SetScript(int8*script, uint64 scLen);
-
-	void SetAuth(int8 auth[]);
-
-	uint64 GetScriptLength()const;
-
-	T_SHA256 GetPreviousHash()const;
-
-	T_SHA256 GetSelfHash()const;
-
-	uint64 GetID()const;
-
-
-}T_BLOCKBASEINFONEW, *T_PBLOCKBASEINFONEW;
 
 const size_t FILEINFOLEN = 16 * 1024;
 
 typedef struct _fileinfo
 {
-	_fileinfo() : _data{0}, _uiTime(time(nullptr)),_datalen(0) {}
+	_fileinfo() :  _uiTime(time(nullptr)),_datalen(0), _data{ 0 } {}
 
-	explicit _fileinfo(const string &externdata) : _data{0}, _uiTime(time(nullptr)) {
-		_datalen = externdata.size();
+	explicit _fileinfo(const string &externdata) : 
+			_uiTime(time(nullptr)), _datalen(externdata.size()),_data{0} {
 		if(_datalen > FILEINFOLEN) _datalen = FILEINFOLEN;
 		memcpy(_data, externdata.c_str(), _datalen);
 	}
 
 	~_fileinfo() {}
-	_fileinfo(const _fileinfo & other): _uiTime(other._uiTime),_datalen(other._datalen) {
-		memset(_data, 0, FILEINFOLEN);
+	_fileinfo(const _fileinfo & other): _uiTime(other._uiTime),_datalen(other._datalen), _data{ 0 } {
 		memcpy(_data, other._data, _datalen);
 	}
 
@@ -263,107 +221,119 @@ typedef struct _tprivateblock
 
 }T_PRIVATEBLOCK, *T_PPRIVATEBLOCK;
 
+
 typedef struct _tlocalblock
 {
+	char version[MAX_VER_LEN] = { BLOCK_VER_ARRAY };
 	_tblockbaseinfo   tBlockBaseInfo;
-	T_SHA256 tHHash;
-	uint16  uiAtChainNum;				
+	uint32  difficulty = 1;
+	uint64_t uiPreHID;						
+	T_SHA256 tPreHHash;						
+	uint16  uiAtChainNum;					
 	T_PRIVATEBLOCK tPayLoad;
 
 	_tlocalblock()
 	{
-		memset(tHHash.pID, 0, DEF_SHA256_LEN);
+		memset(tPreHHash.pID, 0, DEF_SHA256_LEN);
+		uiPreHID = 0;
 		uiAtChainNum = 1;
 	}
 
-	_tlocalblock(_tblockbaseinfo tBBI, T_SHA256 tHH, T_PRIVATEBLOCK tPL);
-	_tlocalblock(_tblockbaseinfo tBBI, T_SHA256 tHH, uint32 AtChainNu, T_PRIVATEBLOCK tPL);
-	_tlocalblock(_tblockbaseinfo tBBI, T_SHA256 tHH, uint32 AtChainNu);
-	_tlocalblock& operator = (const _tlocalblock& arRes);
-	void SetLocalBlock(_tblockbaseinfo tBBI, T_SHA256 tHH, uint32 AtChainNu, T_PRIVATEBLOCK tPL);
+	_tlocalblock(const _tblockbaseinfo& tBBI, uint32 diff, uint64_t hPreID, T_SHA256 tPreHH, const T_PRIVATEBLOCK& tPL) :
+				tBlockBaseInfo(tBBI), difficulty(diff), uiPreHID(hPreID), tPreHHash(tPreHH), tPayLoad(tPL){};
+
+	_tlocalblock(const _tblockbaseinfo& tBBI, uint32 diff, uint64_t hPreID, T_SHA256 tPreHH, uint32 AtChainNu, const T_PRIVATEBLOCK& tPL) :
+				tBlockBaseInfo(tBBI), difficulty(diff), uiPreHID(hPreID), tPreHHash(tPreHH), uiAtChainNum(AtChainNu), tPayLoad(tPL){};
+
+	_tlocalblock(const _tblockbaseinfo& tBBI, uint32 diff, uint64_t hPreID, T_SHA256 tPreHH, uint32 AtChainNu):
+				tBlockBaseInfo(tBBI), difficulty(diff),uiPreHID(hPreID), tPreHHash(tPreHH), uiAtChainNum(AtChainNu){};
+
+	_tlocalblock& operator = (const _tlocalblock& arRes) {
+		if (this != &arRes) {
+			uiPreHID = arRes.uiPreHID;
+			tPreHHash = arRes.tPreHHash;
+			tBlockBaseInfo = arRes.tBlockBaseInfo;
+			uiAtChainNum = arRes.uiAtChainNum;
+			tPayLoad = arRes.tPayLoad;
+			difficulty = arRes.difficulty;
+			strcpy(version,arRes.version);
+		}
+		return *this;
+	}
+	
 	void SetBlockBaseInfo(_tblockbaseinfo tBBI);
-	void SetHHash(T_SHA256 tHH);
+	void SetPreHHash(T_SHA256 tPreHH);
+
+	void SetPreHID(uint64 hPreID) {
+		uiPreHID = hPreID;
+	}
+	uint64_t GetPreHID() {
+		return uiPreHID;
+	}
+
+	string getUUID() const {
+		Digest<DT::sha1> digest;
+		digest.AddData(&tBlockBaseInfo.uiTime,sizeof(tBlockBaseInfo.uiTime));
+		digest.AddData(tPayLoad.GetPayLoad().data(), tPayLoad.GetPayLoad().datalen());
+		std::string d = digest.getDigestBase58();
+		return string(d.data(), d.size());
+	}
+
 	void SetAtChainNum(uint32 Num);
 	void SetPayLoad(T_PRIVATEBLOCK tPL);
+
+	void updatePreHyperBlockInfo(uint64_t preHID, const T_SHA256 &preHHash);
 	
 	_tblockbaseinfo GetBlockBaseInfo()const;
 	_tblockbaseinfo& GetBlockBaseInfo();
-	T_SHA256 GetHHash()const;
+	T_SHA256 GetPreHHash()const;
 	uint32 GetAtChainNum()const;
 	T_PRIVATEBLOCK GetPayLoad()const;
 	T_PRIVATEBLOCK& GetPayLoad();
 
-
 }T_LOCALBLOCK, *T_PLOCALBLOCK;
-
-typedef struct _tlocalblocknew
-{
-	_tblockbaseinfonew   tBlockBaseInfo;
-	T_SHA256 tHHash;
-	uint64  uiAtChainNum;
-	int8 *userDefine;
-	uint64 userDefineLength;
-
-	_tlocalblocknew()
-	{
-		userDefine = NULL;
-		userDefineLength = 0;
-		memset(tHHash.pID, 0, DEF_SHA256_LEN);
-		uiAtChainNum = 1;
-
-		SetUserDefineDefault();
-	}
-
-	_tlocalblocknew(const _tblockbaseinfonew&bbi, T_SHA256 HHash, uint64 atChainNum, int8*ud, uint64 udLen);
-
-	~_tlocalblocknew();
-
-	void Set(const _tblockbaseinfonew&bbi, T_SHA256 HHash, uint64 atChainNum, int8*ud, uint64 udLen);
-
-	void SetUserDefineDefault();
-
-	_tlocalblocknew& operator = (const _tlocalblocknew& arRes);
-
-	T_SHA256 GetParentHash()const;
-
-	uint64 WhichChainAt()const;
-
-	void SetUserDefine(int8*ud,uint64 udLen);
-
-	const _tblockbaseinfonew& GetBaseInfo()const;
-
-
-}T_LOCALBLOCKNEW, *T_PLOCALBLOCKNEW;
 
 typedef list<T_LOCALBLOCK> LIST_T_LOCALBLOCK;
 typedef LIST_T_LOCALBLOCK::iterator ITR_LIST_T_LOCALBLOCK;
-typedef list<T_LOCALBLOCKNEW> LIST_T_LOCALBLOCKNEW;
-typedef LIST_T_LOCALBLOCKNEW::iterator ITR_LIST_T_LOCALBLOCKNEW;
 
 typedef struct _thyperblock
 {
+	char version[MAX_VER_LEN] = { BLOCK_VER_ARRAY };
 	_tblockbaseinfo   tBlockBaseInfo;
-	T_SHA256 tHashAll;						
+	uint32  difficulty = 1;
+	T_SHA256 tMerkleHashAll;						
 	list<LIST_T_LOCALBLOCK> listPayLoad;
-	int8 strVersion[MAX_VER_LEN];
 
 	_thyperblock()
 	{   
-		memset(tHashAll.pID, 0, DEF_SHA256_LEN);
-		strcpy(strVersion, "Ver0.7.1");
+		memset(tMerkleHashAll.pID, 0, DEF_SHA256_LEN);
 	}
 
+	_thyperblock(const _thyperblock& arRes);
 	_thyperblock& operator = (const _thyperblock& arRes);
 	void SetHyperBlock(_tblockbaseinfo tBBI, T_SHA256 tHA, list<LIST_T_LOCALBLOCK>&& LPayLoad);
 	void SetBlockBaseInfo(_tblockbaseinfo tBBI);
-	void SetHashAll(T_SHA256 tHA);
+	void SetMerkleHash(T_SHA256 &tHA);
+	void SetMerkleHash(T_SHA256 &&tHA);
 	void SetlistPayLoad(list<LIST_T_LOCALBLOCK>&& LPayLoad);
 
 	_tblockbaseinfo GetBlockBaseInfo()const;
 	_tblockbaseinfo& GetBlockBaseInfo();
+	size_t GetChildBlockCount() const
+	{
+		size_t blockNum = 0;
+		auto childchain = GetlistPayLoad().begin();
+		for (; childchain != GetlistPayLoad().end(); childchain++) {
+			blockNum += (*childchain).size();
+		}
+		return blockNum;
+	}
 
-	T_SHA256 GetHashAll();
-	list<LIST_T_LOCALBLOCK> &GetlistPayLoad();
+	T_SHA256 GetMerkleHash();
+	list<LIST_T_LOCALBLOCK>& GetlistPayLoad();
+	const list<LIST_T_LOCALBLOCK>& GetlistPayLoad() const {
+		return listPayLoad;
+	}
 	void PushBack(LIST_T_LOCALBLOCK lb);
 
 	int8* GetVersionString();
@@ -371,7 +341,7 @@ typedef struct _thyperblock
 }T_HYPERBLOCK, *T_PHYPERBLOCK;
 
 
-
+/*
 typedef struct _thyperblocknew
 {
 	_tblockbaseinfonew   tBlockBaseInfo;
@@ -404,10 +374,13 @@ private:
 	void GetRoot();
 
 }T_HYPERBLOCKNEW, *T_PHYPERBLOCKNEW;
+*/
 
 typedef struct _thyperblocksend
 {
+	char version[MAX_VER_LEN] = {0};
 	_tblockbaseinfo   tBlockBaseInfo;
+	uint32  difficulty;
 	T_SHA256 tHashAll;
 
 	_thyperblocksend()
@@ -416,7 +389,7 @@ typedef struct _thyperblocksend
 	}
 
 	_thyperblocksend& operator = (const _thyperblocksend& arRes);
-	void SetHyperBlockSend(_tblockbaseinfo tBBI, T_SHA256 tHA);
+	void SetHyperBlockSend(_tblockbaseinfo tBBI, T_SHA256 tHA, char* ver, uint32 diff);
 	void SetBlockBaseInfo(_tblockbaseinfo tBBI);
 	void SetHashAll(T_SHA256 tHA);
 
@@ -428,7 +401,7 @@ typedef struct _thyperblocksend
 ///////////////////////////////////////////////////////////////////////////////////////////
 typedef struct _tchainStateinfo 
 {
-	uint64 uiBlockNum;
+	uint64 uiBlockNum;			
 
 	_tchainStateinfo& operator = (const _tchainStateinfo& arRes);
 	void SetBlockNum(uint64 BlockNum);
@@ -439,13 +412,13 @@ typedef struct _tchainStateinfo
 
 typedef struct _tpeerinfo
 {
-	T_PEERADDRESS tPeerInfoByMyself;
-	T_PEERADDRESS tPeerInfoByOther;
-	uint16 uiState;
+	T_PEERADDRESS tPeerInfoByMyself;	
+	T_PEERADDRESS tPeerInfoByOther;		
+	uint16 uiState;						
 	uint16 uiNatTraversalState;
-	uint64 uiTime;
-	int8 strName[MAX_NODE_NAME_LEN];
-	uint16 uiNodeState;
+	uint64 uiTime;						
+	int8 strName[MAX_NODE_NAME_LEN];	
+	uint16 uiNodeState;					
 
 	_tpeerinfo() : tPeerInfoByMyself(CUInt128()), tPeerInfoByOther(CUInt128())
 	{
@@ -498,40 +471,39 @@ typedef struct _tlocalconsensus
 {
 	T_BLOCKSTATEADDR tPeer;					
 	T_LOCALBLOCK  tLocalBlock;				
-	char strID[MAX_QUEED_LEN];
 	uint64 uiRetryTime;						
 	char strFileHash[DEF_SHA512_LEN+1];		
 
 	_tlocalconsensus()
 	{
-		memset(strID, 0, MAX_QUEED_LEN);
 		memset(strFileHash, 0, DEF_SHA512_LEN + 1);
 		uiRetryTime = 0;
 	}
 
-	_tlocalconsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, const char * ID, uint64 RetryTime, const char *FileHash);
-	_tlocalconsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, const char * ID, uint64 RetryTime);
+	_tlocalconsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, uint64 RetryTime, const char *FileHash);
+	_tlocalconsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, uint64 RetryTime);
 	_tlocalconsensus& operator = (const _tlocalconsensus& arRes);
-	void SetLoaclConsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, const char * ID, uint64 RetryTime, const char *FileHash);
-	void SetLoaclConsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, const char * ID, uint64 RetryTime);
+	void SetLoaclConsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, uint64 RetryTime, const char *FileHash);
+	void SetLoaclConsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, uint64 RetryTime);
 	void SetLoaclConsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock);
 	void SetPeer(T_BLOCKSTATEADDR  Peer);
 	void SetLocalBlock(T_LOCALBLOCK  LocalBlock);
-	void SetID(char * ID);
 	void SetRetryTime(uint64 RetryTime);
 	void SetFileHash(char *FileHash);
 
 	T_BLOCKSTATEADDR GetPeer()const;
 	T_LOCALBLOCK GetLocalBlock()const;
 	T_LOCALBLOCK& GetLocalBlock();
-	char * GetID();
+	string GetLocalBlockUUID() {
+		return tLocalBlock.getUUID();
+	}
 	uint64 GetRetryTime()const;
 	char * GetFileHash();
 
 
 }T_LOCALCONSENSUS, *T_PLOCALCONSENSUS;
 
-typedef struct _tglobalconsenus
+typedef struct _tglobalconsenus		
 {
 	T_BLOCKSTATEADDR tPeer;		
 	T_LOCALBLOCK  tLocalBlock;	
@@ -558,7 +530,7 @@ typedef struct _tbuddyinfo
 	T_PEERADDRESS tPeerAddrOut;	
 
 	uint8 GetType()const;
-	uint8 GetBufferLength()const;
+	uint32 GetBufferLength()const;
 	string& GetBuffer();
 	T_PEERADDRESS GetRequestAddress()const;
 	void Set(uint8 t, uint32 bufferLen, const char*receiveBuf, T_PEERADDRESS peerAddrOut);
@@ -573,10 +545,10 @@ typedef LIST_T_PLOCALCONSENSUS::iterator ITR_LIST_T_PLOCALCONSENSUS;
 
 typedef struct _tbuddyinfostate
 {
-	
 	int8 strBuddyHash[DEF_STR_HASH256_LEN];
-	uint8 uibuddyState;	
+	uint8 uibuddyState;		
 	T_PEERADDRESS tPeerAddrOut;
+
 	LIST_T_LOCALCONSENSUS localList;
 	_tbuddyinfostate()
 	{
@@ -590,9 +562,6 @@ typedef struct _tbuddyinfostate
 
 	T_PEERADDRESS GetPeerAddrOut()const;
 
-	T_SHA256 GetBuddyHash()const;
-
-
 	void Set(int8 buddyHash[],uint8 uibuddyState,T_PEERADDRESS addr);
 
 	void LocalListPushBack(T_LOCALCONSENSUS  localBlockInfo);
@@ -600,7 +569,7 @@ typedef struct _tbuddyinfostate
 	void LocalListSort();
 	LIST_T_LOCALCONSENSUS& GetLocalConsensus();
 
-	const int8 *GetBuddyHashEx()const;
+	const int8 *GetBuddyHash()const;
 	void SetPeerAddrOut(T_PEERADDRESS PeerAddrOut);
 	void SetBuddyState(uint8 BuddyState);
 	void SetBuddyHash(int8 * BuddyHash);
@@ -610,16 +579,17 @@ typedef struct _tbuddyinfostate
 
 typedef struct _tsearchinfo
 {    
-	uint64 uiHyperID;
-	uint64 uiTime;
+	T_LOCALBLOCKADDRESS addr; 
+	uint64 uiTime;		
+	_tsearchinfo() : uiTime(time(nullptr)){
+	}
+	uint64 GetHyperID()const {
+		return addr.hid;
+	}
 
-	_tsearchinfo(){}
-	_tsearchinfo(uint64 hyperID, uint64 t);
-	void Set(uint64 hyperID, uint64 t);
-
-	uint64 GetHyperID()const;
-
-	uint64 GetCreateTime()const;
+	uint64 GetCreateTime()const {
+		return uiTime;
+	}
 
 }T_SEARCHINFO, *T_PSEARCHINFO;
 
@@ -635,7 +605,8 @@ typedef LIST_T_PBUDDYINFOSTATE::iterator ITR_LIST_T_PBUDDYINFOSTATE;
 typedef list<T_BUDDYINFOSTATE> LIST_T_BUDDYINFOSTATE;
 typedef LIST_T_BUDDYINFOSTATE::iterator ITR_LIST_T_BUDDYINFOSTATE;
 
-typedef map<string,T_SEARCHINFO> MAP_T_SEARCHONCHAIN;
+using LB_UUID = string; 
+typedef map<LB_UUID,T_SEARCHINFO> MAP_T_SEARCHONCHAIN;
 typedef MAP_T_SEARCHONCHAIN::iterator ITR_MAP_T_SEARCHONCHAIN;
 
 #pragma pack()
@@ -643,11 +614,8 @@ typedef MAP_T_SEARCHONCHAIN::iterator ITR_MAP_T_SEARCHONCHAIN;
 typedef list<T_PPEERINFO> LIST_T_PPEERINFO;
 typedef LIST_T_PPEERINFO::iterator ITR_LIST_T_PPEERINFO;
 
-
 typedef list<T_HYPERBLOCK> LIST_T_HYPERBLOCK;
 typedef LIST_T_HYPERBLOCK::iterator ITR_LIST_T_HYPERBLOCK;
-typedef list<T_HYPERBLOCKNEW> LIST_T_HYPERBLOCKNEW;
-typedef LIST_T_HYPERBLOCKNEW::iterator ITR_LIST_T_HYPERBLOCKNEW;
 
 typedef list<T_BLOCKSTATEADDR> LIST_T_BLOCKSTATEADDR;
 typedef LIST_T_BLOCKSTATEADDR::iterator ITR_LIST_T_PBLOCKSTATEADDR;
@@ -656,12 +624,12 @@ typedef map<uint64, LIST_T_BLOCKSTATEADDR> MAP_BLOCK_STATE;
 typedef MAP_BLOCK_STATE::iterator ITR_MAP_BLOCK_STATE;
 
 
-typedef struct _tpeerconf
+typedef struct _tpeerconf		
 {
-	T_PEERADDRESS tPeerAddr;
-	T_PEERADDRESS tPeerAddrOut;
-	uint16 uiPeerState;
-	int8 strName[MAX_NODE_NAME_LEN];
+	T_PEERADDRESS tPeerAddr;	
+	T_PEERADDRESS tPeerAddrOut;	
+	uint16 uiPeerState;			
+	int8 strName[MAX_NODE_NAME_LEN];	
 
 	T_PEERADDRESS GetIntranetAddress()const;
 	T_PEERADDRESS GetInternetAddress()const;
@@ -675,9 +643,9 @@ typedef struct _tpeerconf
 typedef std::vector<T_PPEERCONF>	VEC_T_PPEERCONF;
 typedef VEC_T_PPEERCONF::iterator   ITR_VEC_T_PPEERCONF;
 
-typedef struct _tconffile
+typedef struct _tconffile			
 {
-	uint16			uiSaveNodeNum;
+	uint16			uiSaveNodeNum;	
 	uint32			uiLocalIP;
 	uint32			uiLocalPort;
 	string          strLocalNodeName;
@@ -705,25 +673,23 @@ private:
 	virtual ~CCommonStruct();
 
 public:
-
+	//static void GetGUID(char* acpBuf, unsigned int auiBufLen, T_PGUID pguid);
 	void static gettimeofday_update(struct timeval *ptr);
 	static int CompareHash(const T_SHA256& arhashLocal, const T_SHA256& arhashGlobal);
 	static void Hash256ToStr(char* getStr, T_PSHA256 phash);
-	static void StrToHash256(unsigned char *des, char* getStr);
 
 	static void Hash512ToStr(char* getStr, T_PSHA512 phash);
-	static void hash512tostring(char* out, const char* szHash);
 	static void StrToHash512(unsigned char *des, char* getStr);
 
 	static T_SHA256 DistanceHash(const T_SHA256& arLeft, const T_SHA256& arRight);
-	static string HashToString(const T_SHA256& arGuid);
-	static T_SHA256 StringToHash(const char *str);
 	static void ReplaceAll(string& str,const string& old_value,const string& new_value);
 	static void ReparePath(string& astrPath);
 
-
+	//static bool ReadConfig();
 	static string GetLocalIp();
 	static char* Time2String(time_t time1);	
+
+	static string generateNodeId(bool isbase62 = false);
 
 private:
 #ifdef WIN32

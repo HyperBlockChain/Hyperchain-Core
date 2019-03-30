@@ -52,7 +52,6 @@ int g2u(char *inbuf, size_t inlen, char *outbuf, size_t outlen)
 
 
 
-
 string ChangeStorageUnit(uint64 data, char uint)
 {
 	string buf("");

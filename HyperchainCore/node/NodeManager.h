@@ -33,16 +33,16 @@ using namespace std;
 
 using HCNodeMap = std::map<CUInt128, std::shared_ptr<HCNode> >;
 
-template<typename T>
+template<typename T, ProtocolVer pro_ver=0>
 class DataBuffer {
 
 public:
-	DataBuffer(size_t payloadlen) :_data(std::string(payloadlen + CUInt128::value + sizeof(TASKTYPE), 0)) {
+	DataBuffer(size_t payloadlen) :_data(std::string(payloadlen + ProtocolHeaderLen, 0)) {
 		setTaskMetaHeader();
 	}
 
 	DataBuffer(string &&payload) :_data(std::forward<string>(payload)) {
-		_data.insert(0, CUInt128::value + sizeof(TASKTYPE), '\0');
+		_data.insert(0, ProtocolHeaderLen, '\0');
 		setTaskMetaHeader();
 	}
 
@@ -55,7 +55,12 @@ public:
 		return _data;
 	}
 
-	char *payload() { return const_cast<char*>(_data.c_str() + CUInt128::value + sizeof(TASKTYPE)); }
+	void resize(size_t payloadlen)
+	{
+		_data.resize(payloadlen + ProtocolHeaderLen);
+	}
+
+	char *payload() { return const_cast<char*>(_data.c_str() + ProtocolHeaderLen); }
 
 	typename std::enable_if<std::is_base_of<ITask, T>::value>::type
 	setHeader(uint8_t h[CUInt128::value]) {
@@ -74,7 +79,9 @@ private:
 	typename std::enable_if<std::is_base_of<ITask, T>::value>::type
 	setTaskMetaHeader() {
 		TASKTYPE t = T::value;
-		memcpy(payloadoffset(CUInt128::value), (char*)&(t), sizeof(TASKTYPE));
+		ProtocolVer *v = reinterpret_cast<ProtocolVer*>(payloadoffset(CUInt128::value));
+		*v = pro_ver;
+		memcpy(payloadoffset(CUInt128::value + sizeof(ProtocolVer)), (char*)&(t), sizeof(TASKTYPE));
 	}
 	char * payloadoffset(size_t offset) { return const_cast<char*>(_data.c_str() + offset); }
 

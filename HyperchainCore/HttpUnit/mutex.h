@@ -19,74 +19,57 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
-#ifndef  __TRHEAD_OBJECT__
-#define  __TRHEAD_OBJECT__
-//
 #ifdef WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
-//#include <WinBase.h>
+#include "windows.h"
 #else
-#include <pthread.h>
-#include <unistd.h>
-#endif// WIN32
+#include "pthread.h"
+#endif
 
-
-#include <stdio.h>
-
-#include "MutexObj.h"
-#include "CallbackFuncObj.h"
-
-//#include "includeComm.h"
-
-extern  int 	ERR_JTHREAD_CANINITMUTEX;
-extern  int 	ERR_JTHREAD_CANTSTARTTHREAD;
-extern  int  	ERR_JTHREAD_THREADFUNCNOTSET;
-extern  int 	ERR_JTHREAD_NOTRUNNING;
-extern  int  	ERR_JTHREAD_ALREADYRUNNING;
-
-
-typedef void* (*pThreadCallbackFunc) (void* pParam);
-
-
-class CThreadObj
+class MMutex
 {
 public:
-	CThreadObj();
-	CThreadObj(TCallbackFuncObj<pThreadCallbackFunc>* pCObj);
-	~CThreadObj();
 
-	int Start();
-	int Start(TCallbackFuncObj<pThreadCallbackFunc>* pCObj);
-	int Kill();
-	void Join();
-	bool IsRunning();	
-
-	void ThreadStarted();
-
-private:
+    MMutex()
+	{
 #ifdef WIN32
-	static DWORD WINAPI ThreadEntry( LPVOID param );
+	    InitializeCriticalSection(&fMutex);
 #else
-	static	void* ThreadEntry(void* param);
-#endif //WIN32
-	
-	void* ThreadImp();
-	
-private:
-#ifdef WIN32
-	HANDLE		m_ThreadID;
-#else
-	pthread_t	m_ThreadID;
+		pthread_mutex_init(&fMutex, NULL);
 #endif
-	
-	bool 		m_bIsRunning;
-	CMutexObj 	m_muxRunning;
-	CMutexObj 	m_muxContinue;
-	CMutexObj 	m_muxContinue2;
+	}
 
-	TCallbackFuncObj<pThreadCallbackFunc>* 	m_pCallbackFuncObj;
+	~MMutex()
+	{
+#ifdef WIN32
+		DeleteCriticalSection(&fMutex);
+#else
+		pthread_mutex_destroy(&fMutex);
+#endif
+	}
+
+    inline void Lock() 
+	{
+#ifdef WIN32
+		::EnterCriticalSection(&fMutex);
+#else
+		(void)pthread_mutex_lock(&fMutex);
+#endif
+	};
+
+    inline void Unlock() 
+	{
+#ifdef WIN32
+	    ::LeaveCriticalSection(&fMutex);
+#else
+		pthread_mutex_unlock(&fMutex);
+#endif
+	};
+    
+private:
+
+#ifdef WIN32
+    CRITICAL_SECTION fMutex;                     
+#else
+    pthread_mutex_t fMutex;       
+#endif       
 };
-
-#endif //__TRHEAD_OBJECT__
-

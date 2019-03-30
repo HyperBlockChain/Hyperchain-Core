@@ -23,23 +23,28 @@ DEALINGS IN THE SOFTWARE.
 
 #include <stdio.h>
 #include <stdlib.h>
+//#include <syslog.h>
 #include <stdarg.h>
 #include <time.h>
 #include <string.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+ //#include <pthread.h>
+ //#include <dirent.h>
 #include <assert.h>
 #include "Log.h"
+//#include "mem_chunk.h"
 #include "utility/MutexObj.h"
 #include "headers/UUFile.h"
 
 
-#define MAX_STR_SIZE 1024 
+#define MAX_STR_SIZE 1024 ///<最大字符串长度
 #define DEFAULT_LOG_SIZE 10*1024*1024
 #if defined (LOG_ERR) && !defined (LOG_ERROR)
 #define LOG_ERROR LOG_ERR
 #endif
 
+//wlj//static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 CMutexObj g_muxIniFile;
 
 LOG_HELPER* g_pLogHelper = NULL;
@@ -55,14 +60,21 @@ static size_t get_file_size(FILE* fp)
     return file_info.st_size;
 }
 
+//static int get_file_size(FILE* fp) 
+//{
+//	return ftell(fp);
+//}
+
 void renamelogfile(LOG_HELPER* log_helper)
 {
+//    assert(NULL == log_helper);
 	char tmp[FILENAME_MAX] = {0};
     char fullname[FILENAMESIZE] = {0};
     time_t t;
     char *pos1, *pos2;
     time(&t);
 
+    //strftime(tmp, FILENAME_MAX, "%m%d%H%M%S", localtime(&t));
 	strftime(tmp, MAX_STR_SIZE, "_%Y%m%d_%H%M%S", localtime(&t));
 #ifdef WIN32
 	pos1 = strrchr(log_helper->file_name, '\\');
@@ -78,6 +90,7 @@ void renamelogfile(LOG_HELPER* log_helper)
     if (pos2) 
 	{
         strncpy(fullname, log_helper->file_name, pos2 - log_helper->file_name);
+        //snprintf(fullname, FILENAMESIZE - 1, "%s%s", tmp, pos2);
         strcat(fullname, tmp);
         strcat(fullname, pos2);
     }
@@ -137,11 +150,15 @@ static void log_level( LOG_HELPER* log_helper, int level, const char *fmt, va_li
 #endif
 	strcat(buff, temp_pid);
     strcat(buff," ");
+	/*strcat(buff, (const char*)GetCurrentThread());
+	strcat(buf, __FUCTION__)
+	strcat(buf, __LINE__)*/
 	time_t t;
     time(&t);
     strftime(tmp, MAX_STR_SIZE, "%Y-%m-%d %H:%M:%S", localtime(&t));
     strcat(buff,tmp);
     strcat(buff,"--");
+  //wlj//  pthread_mutex_lock(&mutex);
 
     if( log_helper != NULL ) 
 	{
@@ -161,6 +178,7 @@ static void log_level( LOG_HELPER* log_helper, int level, const char *fmt, va_li
                 if( log_fp == NULL ) 
 				{
                     log_helper->fp = NULL;
+                   //wlj// pthread_mutex_unlock(&mutex);
                     return;
                 }
                 log_helper->fp = log_fp;
@@ -171,11 +189,14 @@ static void log_level( LOG_HELPER* log_helper, int level, const char *fmt, va_li
 	{
     	log_fp = stdout;
     }
+    //vsprintf(tmp, fmt, ap);
     vsnprintf(tmp, 1024*5-1, fmt, ap);
     int buff_left_length = 1024*5-strlen(buff);
     strncat(buff,tmp, buff_left_length-1);
+    //fprintf(log_helper->fp, "%s\n", buff);
     fprintf(log_fp, "%s\n", buff);
     fflush(log_fp);
+ //wlj//   pthread_mutex_unlock(&mutex);
 }
 
 void log_info(LOG_HELPER* log_helper, const char *fmt0, ...) 
@@ -240,11 +261,15 @@ LOG_HELPER* open_logfile(const char* file_name)
 
     if( file_name != NULL ) 
 	{
+		//string strTemp = "G:\\code\\svn\\log\\hyperchain_p2p.log";
+	//	g_uufile.ReparePath(strTemp);
         FILE* fp = fopen(file_name,"a");
+		//FILE* fp = fopen(strTemp.c_str(), "a");
 		if( fp == NULL ) 
 		{
             return NULL;
         }
+	//	int strErr = GetLastError();
         log_helper = (LOG_HELPER*)calloc(1, sizeof(LOG_HELPER));
         log_helper->fp = fp;
         strcpy(log_helper->file_name, file_name);

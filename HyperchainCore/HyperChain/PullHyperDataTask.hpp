@@ -49,8 +49,8 @@ public:
 		hd->PullHyperDataRspexec(strpayload, msgbuf);
 		
 		DataBuffer<PullHyperDataRspTask> datamsgbuf(std::move(msgbuf));
-		nodemgr->sendTo(_sentnodeid, datamsgbuf);		
-
+		nodemgr->sendTo(_sentnodeid, datamsgbuf);
+		
 	}
 
 	void execRespond() override

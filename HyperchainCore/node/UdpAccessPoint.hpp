@@ -41,7 +41,7 @@ public:
 
 	UdpAccessPoint(string && objjsonstring)
 	{
-		init(std::move(objjsonstring));
+		init(std::forward<string>(objjsonstring));
 	}
 
 	bool isSame(IAccessPoint *other) const override
@@ -109,7 +109,7 @@ private:
 
 
 public:
-	static constexpr char* CLASSNAME = "UdpAP";
+	static constexpr const char* CLASSNAME = "UdpAP";
 
 private:
 	string _IP;

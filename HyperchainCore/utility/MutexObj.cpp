@@ -28,7 +28,8 @@ CMutexObj::CMutexObj()
 #ifdef WIN32
 	InitializeCriticalSection(&m_oSection);
 #else
-
+	//m_hMutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+	//pthread_mutex_init(&m_hMutex,NULL);
 	pthread_mutexattr_t   attr;   
 	pthread_mutexattr_init(&attr);   
 	pthread_mutexattr_settype(&attr,PTHREAD_MUTEX_RECURSIVE);   

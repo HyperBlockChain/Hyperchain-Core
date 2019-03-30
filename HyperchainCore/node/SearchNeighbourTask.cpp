@@ -19,7 +19,7 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
-#pragma once
+
 #include "../newLog.h"
 #include "Singleton.h"
 #include "NodeManager.h"
@@ -53,7 +53,7 @@ namespace SEED {
 
 			minutes timespan = std::chrono::duration_cast<minutes>(curr - _tp);
 			if (timespan.count() > 30) {
-				//30 minutes
+				
 				return true;
 			}
 			return false;
@@ -61,6 +61,8 @@ namespace SEED {
 	} NODE;
 
 	std::map<string, NODE> g_mapNodes;
+	std::mutex	_guard;
+
 	int getPeerList(const string & nodeid,string & peerlist)
 	{
 		json::value obj = json::value::array();
@@ -99,6 +101,7 @@ namespace SEED {
 void SearchNeighbourRspTask::exec()
 {
 	string nodeid(_fromNodeId.ToHexString());
+	std::lock_guard<std::mutex> lck(SEED::_guard);
 	SEED::g_mapNodes[nodeid] = SEED::NODE(_msg);
 
 	char logmsg[128] = { 0 };
@@ -109,7 +112,7 @@ void SearchNeighbourRspTask::exec()
 	string msgbuf;
 	int num = SEED::getPeerList(nodeid, msgbuf);
 	if (num <= 0) {
-		//no anything need to reply
+		
 		return;
 	}
 	snprintf(logmsg, 128, "found %d neighbours for peer:%s\n",num ,nodeid.c_str());
@@ -123,7 +126,7 @@ void SearchNeighbourRspTask::exec()
 
 void SearchNeighbourRspTask::execRespond()
 {
-	//save peer
+	
 	g_console_logger->debug("Handling SearchNeighbourRspTask Respond from seed server");
 
 	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();

@@ -32,8 +32,8 @@ if(UNIX)
 #############DEBUG
 add_definitions(-D_DEBUG)
 add_definitions(-DDEBUG)
-add_definitions("$ENV{CXXFLAGS} -O0 -Wall -g -rdynamic -ggdb")
-SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -rdynamic -ggdb")
+add_definitions("$ENV{CXXFLAGS} -O0 -Wall -g -rdynamic -ggdb -fstack-protector -fstack-protector-all")
+SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -rdynamic -ggdb -fstack-protector -fstack-protector-all")
 ##########################################################################
 elseif(WIN32)
 
@@ -63,13 +63,21 @@ if(SQLite3_FOUND)
     message(STATUS "Found SQLite3")
 endif()
 
+find_package(OpenSSL REQUIRED)
+if(OPENSSL_FOUND)
+    message(STATUS "Found openssl")
+endif()
+
 find_package(cpprestsdk REQUIRED)
 if(cpprestsdk_FOUND)
     message(STATUS "Found cpprestsdk")
 endif()
 
-
+#set(Boost_USE_STATIC_LIBS ON)
 find_package (Boost REQUIRED COMPONENTS system program_options date_time filesystem thread)
+
+find_package(unofficial-breakpad CONFIG REQUIRED)
+
 
 cmake_policy(SET CMP0071 NEW)
 
@@ -125,6 +133,7 @@ set(final_HEAD
 	${HttpUnit_HEAD}
 	${HyperChain_HEAD}
 	${HyperChain_HPP}
+	#${interface_HEAD}
 	${node_HEAD}
 	${node_HPP}
 	${utility_HEAD}
@@ -143,6 +152,7 @@ set(final_SRC
 	${headers_SRC}
 	${HttpUnit_SRC}
 	${HyperChain_SRC}
+	#${interface_SRC}
 	${node_SRC}
 	${utility_SRC}	
 	${wnd_SRC}
@@ -157,14 +167,17 @@ if(WIN32)
 set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /level='requireAdministrator' /uiAccess='false' /SUBSYSTEM:CONSOLE" )
 endif()
 
+#add_executable(${PROJECT_NAME} ${final_SRC} ${final_HEAD} ${WRAP_FILES} ${resource_SRC})
 add_executable(${PROJECT_NAME} ${final_SRC} ${final_HEAD} ${WRAP_FILES})
 
 if(WIN32)
 target_link_libraries(${PROJECT_NAME} bcrypt.lib)
 endif()
 
-target_link_libraries(${PROJECT_NAME} cpprestsdk::cpprest ${SQLITE3_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} cpprestsdk::cpprest OpenSSL::Crypto ${SQLITE3_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} Boost::system Boost::program_options)
+#target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::breakpad::libbreakpad_client)
+target_link_libraries(${PROJECT_NAME} unofficial::breakpad::libbreakpad_client)
 
 include(HyperChainCPack.cmake)
 configure_file (

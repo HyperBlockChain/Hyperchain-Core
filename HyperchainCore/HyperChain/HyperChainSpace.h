@@ -46,11 +46,18 @@ public:
 	~CHyperChainSpace();
 
 	void start();
+	void stop() {
+		m_bpull = false;
+		if (m_threadpull->joinable())
+			m_threadpull->join();
+	}
 	void GetHyperChainData(MULTI_MAP_HPSPACEDATA & out_HyperChainData);
 	void GetHyperChainShow(map<string, string>& out_HyperChainShow);
 	void GetLocalChainShow(vector<string> & out_LocalChainShow);
 	int GetLocalChainIDList(list<uint64> & out_LocalIDList);
+	size_t GetLocalChainIDSize() { return m_localhpidlist.size(); }
 	uint64 GetGlobalLatestHyperBlockNo();
+	int GetRemoteHyperBlockByID(uint64 globalHID);
 	void UpdataChainIDList();
 
 
@@ -67,14 +74,13 @@ private:
 	void AnalyticalChainData(string strbuf, string nodeid);
 	void SplitString(const string& s, vector<std::string>& v, const std::string& c);
 
-
 private:
 
-	string m_mynodeid;
-	list<uint64> m_localhpidlist;
+	string m_mynodeid;							
+	list<uint64> m_localhpidlist;			
 	vector <string> m_hyperidlistcompressed;
-	MULTI_MAP_HPSPACEDATA m_hpspacedata;//	<HyperID, <nodeID, timestamp>>
-	map<string, string> m_hpspaceshow; //<nodeID, HyperID Section(0;6667-6677;6679-6690;)>
+	MULTI_MAP_HPSPACEDATA m_hpspacedata;	
+	map<string, string> m_hpspaceshow;		
 	mutex m_datalock;
 	mutex m_showlock;
 	mutex m_listlock;

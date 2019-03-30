@@ -19,10 +19,12 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
+#include "newLog.h"
 #include "HyperData.h"
 #include "db/HyperchainDB.h"
-#include "node/TaskThreadPool.h"
 #include "node/Singleton.h"
+#include "node/TaskThreadPool.h"
+#include "consensus/hyperblockTask.hpp"
 #include "HyperChain/PullHyperDataTask.hpp"
 #include "../wnd/common.h"
 
@@ -42,16 +44,18 @@ CHyperData::~CHyperData()
 }
 
 
-void CHyperData::PullHyperDataByHID(uint64 hyid, string nodeid)
+void CHyperData::PullHyperDataByHID(uint64 hid, string nodeid)
 {
-	TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-	if (!taskpool)
-		return;
+	struct timeval timePtr;
+	CCommonStruct::gettimeofday_update(&timePtr);
 
-	string msg = "hyperid=";
-	msg += to_string(hyid);
+	DataBuffer<GetHyperBlockByNoReqTask> msgbuf(sizeof(T_P2PPROTOCOLGETHYPERBLOCKBYNOREQ));
+	T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ tGetHyperBlockByNoReq = reinterpret_cast<T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ>(msgbuf.payload());
+	tGetHyperBlockByNoReq->SetP2pprotocolgethyperblockbynoreq(
+		T_P2PPROTOCOLTYPE(P2P_PROTOCOL_GET_HYPERBLOCK_BY_NO_REQ, timePtr.tv_sec), hid);
 
-	taskpool->put(make_shared<PullHyperDataTask>(msg, nodeid));
+	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+	nodemgr->sendTo(CUInt128(nodeid), msgbuf);
 }
 
 void CHyperData::PullHyperDataRspexec(string buf, string & outmsg)
@@ -75,7 +79,7 @@ int CHyperData::PullHyperDataRspexecRespond(string & hblock)
 	assert(obj.is_array());
 
 	size_t num = obj.size();
-	for (int i = 0; i < num; i++)
+	for (size_t i = 0; i < num; i++)
 	{
 		string objstr = t2s(obj[i].serialize());
 		T_HYPERBLOCKDBINFO hblockinfo(objstr);
@@ -88,7 +92,7 @@ int CHyperData::PullHyperDataRspexecRespond(string & hblock)
 void CHyperData::GetBlockFromID(uint64 BlockNum, vector<string>& hyperdata)
 {
 	std::list<T_HYPERBLOCKDBINFO> queue;
-	int nRet = DBmgr::instance()->getHyperblocks(queue, BlockNum, BlockNum);
+	DBmgr::instance()->getHyperblocks(queue, BlockNum, BlockNum);
 	if (queue.size() == 0)
 		return;
 

@@ -50,15 +50,12 @@ public:
 
 	bool put(const char* ip, uint32_t port, const char *buf, size_t len)
 	{
-		size_t prefixlen = CUInt128::value + sizeof(TASKTYPE);
-		if (len < prefixlen) {
+		if (len < ProtocolHeaderLen) {
 			char logmsg[128] = { 0 };
 			snprintf(logmsg, 128, "Received invalid data from: %s:%d\n", ip, port);
 			cout << logmsg;
 			return true;
 		}
-
-		TaskThreadPool *pTaskThreadPool = Singleton<TaskThreadPool>::getInstance();
 
 		auto taskbuf = make_shared<string>(buf,len);
 		return put(ip, port, taskbuf);
@@ -66,16 +63,15 @@ public:
 
 	bool put(const char* ip, uint32_t port, TASKBUF taskbuf)
 	{
-		size_t prefixlen = CUInt128::value + sizeof(TASKTYPE);
 		size_t len = taskbuf->size();
-		if (len < prefixlen) {
+		if (len < ProtocolHeaderLen) {
 			char logmsg[128] = { 0 };
 			snprintf(logmsg, 128, "Received invalid data from: %s:%d\n", ip, port);
 			cout << logmsg;
 			return true;
 		}
 
-		//update neighbour node
+		
 		uint8_t nodeid[CUInt128::value];
 		memcpy(nodeid,taskbuf->c_str(),CUInt128::value);
 		HCNodeSH neighbourNode = make_shared<HCNode>(std::move(CUInt128(nodeid)));
@@ -84,12 +80,12 @@ public:
 		NodeManager *nodemanager = Singleton<NodeManager>::getInstance();
 		nodemanager->updateNode(neighbourNode);
 
-		//convert data into task object
-		TASKTYPE tt = *(TASKTYPE*)(taskbuf->c_str() + CUInt128::value);
+		
+		TASKTYPE tt = *(TASKTYPE*)(taskbuf->c_str() + CUInt128::value + sizeof(ProtocolVer));
 
 		shared_ptr<ITask> task = _taskTypeFactory.CreateShared<ITask>(static_cast<uint32_t>(tt), std::move(taskbuf));
 		if (!task) {
-			//Just as if the data handled
+			
 			char logmsg[128] = { 0 };
 			snprintf(logmsg, 128, "Received unregistered task data from %s:%d which cannot be handled, abandoned them.\n",ip,port);
 			cout << logmsg;
@@ -132,7 +128,7 @@ private:
 		_taskTypeFactory.RegisterType<ITask, GlobalBuddySendTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::GLOBAL_BUDDY_SEND_REQ));
 		_taskTypeFactory.RegisterType<ITask, GlobalBuddyRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::GLOBAL_BUDDY_RSP));
 
-		_taskTypeFactory.RegisterType<ITask, CopyHyperBlockReqTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::COPY_HYPER_BLOCK_REQ));
+		_taskTypeFactory.RegisterType<ITask, BoardcastHyperBlockTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::BOARDCAST_HYPER_BLOCK));
 		_taskTypeFactory.RegisterType<ITask, GetHyperBlockByNoReqTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::GET_HYPERBLOCK_BY_NO_REQ));
 	}
 private:

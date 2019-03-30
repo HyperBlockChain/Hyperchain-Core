@@ -41,7 +41,7 @@ DEALINGS IN THE SOFTWARE.
 
 using namespace std;
 
-//max seconds
+
 #define MAX_SECS_COUNTER (9999999999)
 #define MAX_SECS_COUNTER (9999999999)
 #define MAX_SEND_NAT_TRAVERSAL_NODE_NUM (2)
@@ -52,7 +52,7 @@ using namespace std;
 #define	MAX_NATTRAVERSAL_PERIOD					(10*60)
 #define RANDTIME						(60)
 #define LOCALBUDDYTIME                  (1*60)
-#define GLOBALBUDDYTIME                 (1.5*60)
+#define GLOBALBUDDYTIME                 (2*60)
 #define NEXTBUDDYTIME					(3*60-30)
 #define LIST_BUDDY_RSP_NUM				(3)
 #define BUDDYSCRIPT						("buddy_script")
@@ -78,6 +78,8 @@ using namespace std;
 #define NOT_START_BUDDY_NUM				(1)
 #define LEAST_START_GLOBAL_BUDDY_NUM    (2)
 #define HYPERBLOCK_SYNC_TIMES			(2)
+#define REQUEST_ID_LEN					(32)
+#define MATURITY_TIME					(10 * 60)
 
 enum _ePoeReqState
 {
@@ -87,8 +89,11 @@ enum _ePoeReqState
 	STOP,													
 	CONFIRMING,												
 	CONFIRMED,												
-	REJECTED,											
-
+	REJECTED,												
+//	OTHERREFUSEME,											
+//	ALLCONFIRMED,											
+//	ALLOTHERREFUSEME,										
+//	ALLMYREFUSEOTHER										
 };
 
 enum _eblocktype
@@ -113,8 +118,8 @@ enum _eNodeState
 enum _eChainState
 {
 	CHAIN_DEFAULT_STATE = 0,
-	CHAIN_CONFIRMING,										
-	CHAIN_CONFIRMED											
+	CHAIN_CONFIRMING,				
+	CHAIN_CONFIRMED					
 };
 #pragma pack(push,1)
 
@@ -125,8 +130,8 @@ enum _eChainState
 typedef struct _tLocalChain
 {
 	uint16	iId;							
-	uint64	iAllChainNodeNum;						
-	_eChainState	eState;							
+	uint64	iAllChainNodeNum;				
+	_eChainState	eState;					
 
 	void Set(uint16 id, uint64 allChainNodeNum, _eChainState state);
 
@@ -145,10 +150,10 @@ typedef struct _tPoeInfo
 	string				cCustomInfo;		
 	string				cRightOwner;		
 	string				cFileHash;			
-	int16				iFileState;								
-	uint64				tRegisTime;								
-	uint64				iFileSize;								
-	uint64				iBlocknum;								
+	int16				iFileState;			
+	uint64				tRegisTime;			
+	uint64				iFileSize;			
+	uint64				iBlocknum;			
 
 	_tPoeInfo()
 	{
@@ -182,11 +187,11 @@ typedef struct _tPoeInfo
 typedef struct _tChainQueryStru
 {
 	uint64		iBlockNo;								
-	uint64		iJoinedNodeNum;								
+	uint64		iJoinedNodeNum;							
 	uint64		iLocalBlockNum;							
-	uint16		iLocalChainNum;								
-						
-	uint64		tTimeStamp;									
+	uint16		iLocalChainNum;							
+	//uint16		iLongestChain;						
+	uint64		tTimeStamp;								
 	_tPoeInfo tPoeRecordInfo;
 
 	_tChainQueryStru()
@@ -195,7 +200,7 @@ typedef struct _tChainQueryStru
 		iLocalChainNum = 0;
 		iLocalBlockNum = 0;
 		iJoinedNodeNum = 0;
-		
+		//iLongestChain = 0;
 		tTimeStamp = 0;
 	}
 
@@ -224,6 +229,22 @@ typedef struct _tUpqueue
 	string strHash;
 	uint64 uiTime;
 }TUPQUEUE, *P_TUPQUEUE;
+
+typedef struct _tlocalblockaddress
+{
+	uint64 hid = -1;
+	uint16 chainnum = -1;
+	uint64 id = -1;
+	void set(uint64 uihid, uint16 chain, uint64 uiid){
+		hid = uihid;
+		chainnum = chain;
+		id = uiid;
+	}
+	bool isValid() {
+		return hid != uint64(-1) && id != (uint64)-1 && chainnum != (uint16)-1;
+	}
+}T_LOCALBLOCKADDRESS, *P_TLOCALBLOCKADDRESS;
+
 
 
 typedef struct _tBlockInfo
@@ -279,32 +300,32 @@ typedef struct _tNodeInfo
 
 typedef struct _tBlockPersistStru
 {
-	uint8  ucBlockType; 
+	uint8  ucBlockType;			
 
-	uint64 uiBlockId;
-	uint64 uiReferHyperBlockId;
+	uint64 uiBlockId;			
+	uint64 uiReferHyperBlockId; 
 	uint64 uiBlockTimeStamp;
-	uint64 uiLocalChainId;
+	uint64 uiLocalChainId;		
 
 	unsigned char strHyperBlockHash[DEF_SHA256_LEN];
-	unsigned char strPreHash[DEF_SHA256_LEN];  
+	unsigned char strPreHash[DEF_SHA256_LEN];		
 	string strScript;
 	string strAuth;
-	unsigned char strHashSelf[DEF_SHA256_LEN];
-	unsigned char strHashAll[DEF_SHA256_LEN]; 
+	unsigned char strHashSelf[DEF_SHA256_LEN];	
+	unsigned char strHashAll[DEF_SHA256_LEN];	
 
 	string strVersion;
+	uint32 difficulty = 1;							
 
 	string strPayload;
 
-	uint64 uiQueueID; 
+	uint64 uiQueueID = 0; 
 	_tBlockPersistStru() : strVersion("")
 	{
 		ucBlockType = 0;
 		uiBlockId = 0;
 		uiBlockTimeStamp = 0;
 		uiLocalChainId = 0;
-		uiQueueID = 0;
 
 		memset(strHyperBlockHash, 0, DEF_SHA256_LEN);
 		memset(strPreHash, 0, DEF_SHA256_LEN);
@@ -316,10 +337,10 @@ typedef struct _tBlockPersistStru
 	}
 
 	_tBlockPersistStru(T_SHA256 hashAll, T_SHA256  hyperBlockHash, T_SHA256  hashSelf, T_SHA256  preHash, string payLoad, string script, string auth,
-		uint8 blockType, uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp, uint64 localChainId, const string &version);
+		uint8 blockType, uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp, uint64 localChainId, const string &version, uint32 diff);
 
 	_tBlockPersistStru(T_SHA256 hashAll, T_SHA256  hyperBlockHash, T_SHA256  hashSelf, T_SHA256  preHash, string payLoad, string script, string auth,
-		uint8 blockType, uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp, uint64 localChainId, uint64 queueID, const string &version);
+		uint8 blockType, uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp, uint64 localChainId, uint64 queueID, const string &version, uint32 diff);
 
 	_tBlockPersistStru(string objjsonstring);
 	

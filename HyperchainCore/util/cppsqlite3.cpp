@@ -994,15 +994,20 @@ CppSQLite3Query CppSQLite3Statement::execQuery()
 
 void CppSQLite3Statement::bind(int nParam, const char* szValue)
 {
-    checkVM();
-    int nRes = sqlite3_bind_text(mpVM, nParam, szValue, -1, SQLITE_TRANSIENT);
+	return bind(nParam, szValue, -1);
+}
 
-    if (nRes != SQLITE_OK)
-    {
-        throw CppSQLite3Exception(nRes,
-            "Error binding string param",
-            DONT_DELETE_MSG);
-    }
+void CppSQLite3Statement::bind(int nParam, const char* szValue, size_t len)
+{
+	checkVM();
+	int nRes = sqlite3_bind_text(mpVM, nParam, szValue, len, SQLITE_TRANSIENT);
+
+	if (nRes != SQLITE_OK)
+	{
+		throw CppSQLite3Exception(nRes,
+			"Error binding string param",
+			DONT_DELETE_MSG);
+	}
 }
 
 

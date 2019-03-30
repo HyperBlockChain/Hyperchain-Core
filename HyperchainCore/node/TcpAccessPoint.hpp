@@ -97,7 +97,7 @@ private:
 	}
 
 public:
-	static constexpr char* CLASSNAME = "TcpAP";
+	static constexpr const char* CLASSNAME = "TcpAP";
 
 private:
 	string _IP;

@@ -29,12 +29,12 @@ DEALINGS IN THE SOFTWARE.
 #include <net/if.h>
 #include <arpa/inet.h>
 #include <sys/ioctl.h>
+#include <limits.h>
 #define SOCKET_ERROR (-1)
 #define LPHOSTENT hostent*
 
 #else
 #include <winsock2.h>
-
 #pragma comment(lib,"IPHLPAPI.lib")
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>  
@@ -44,13 +44,14 @@ DEALINGS IN THE SOFTWARE.
 #include <stdio.h>
 #include <stdlib.h>
 #include<WS2tcpip.h> 
-
+//#include <Ws2tcpip.h>
 #pragma comment(lib,"IPHLPAPI.lib")
 using namespace std;
 #endif
 
 #include <string.h>
-
+//#include <io.h>
+//#include <direct.h>
 #include <string>
 #include <vector>
 #include "../Log.h"
@@ -59,11 +60,7 @@ using namespace std;
 #define WORKING_BUFFER_SIZE 15000
 #define MAX_TRIES 3
 
-#define MALLOC（x）HeapAlloc（GetProcessHeap（），0，（x））
-#define FREE（x）HeapFree（GetProcessHeap（），0，（x））
-
-
-#define NAME_MAX 1024
+//#include "includeComm.h"
 #define MAX_SIZE 1024
 class UUFile
 {
@@ -83,7 +80,7 @@ public:
 		char buf[512];
 		struct ifreq *ifreq;
 		char* ip;
-
+		
 		ifconf.ifc_len = 512;
 		ifconf.ifc_buf = buf;
 		strcpy(outip, "127.0.0.1");
@@ -93,7 +90,7 @@ public:
 		}
 		ioctl(sockfd, SIOCGIFCONF, &ifconf);    
 		close(sockfd);
- 
+		
 		ifreq = (struct ifreq*)buf;
 		for (i = (ifconf.ifc_len / sizeof(struct ifreq)); i>0; i--)
 		{
@@ -157,18 +154,43 @@ public:
 							if ((0 != strcmp(bufTemp, "127.0.0.1")) && (NULL == wcsstr(ptr, L"Network")))
 							{
 								strcpy(outip, bufTemp);
-
+								//log_info(g_pLogHelper, "IP IS %s, name %s\n", outip, ptr);
+								//	break;
 							}
 						}
 					}
-					
+					/*else if (pUnicast->Address.lpSockaddr->sa_family == AF_INET6)
+					{
+						sockaddr_in6 *sa_in6 = (sockaddr_in6 *)pUnicast->Address.lpSockaddr;
+						sprintf(bufTemp, "IPV6:%s\n", inet_ntop(AF_INET6, &(sa_in6->sin6_addr), buff, bufflen));
+					}
+					else
+					{
+						printf("\tUNSPEC");
+					}*/
 					pUnicast = pUnicast->Next;
 				}
-				
+				//printf("Number of Unicast Addresses: %d\n", i);
 				pAddresses = pAddresses->Next;
 			}
 		}
-		
+		/*else {
+			LPVOID lpMsgBuf;
+			printf("Call to GetAdaptersAddresses failed.\n");
+			if (FormatMessage(
+				FORMAT_MESSAGE_ALLOCATE_BUFFER |
+				FORMAT_MESSAGE_FROM_SYSTEM |
+				FORMAT_MESSAGE_IGNORE_INSERTS,
+				NULL,
+				dwRetVal,
+				MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+				(LPTSTR)&lpMsgBuf,
+				0,
+				NULL)) {
+				printf("\tError: %s", lpMsgBuf);
+			}
+			LocalFree(lpMsgBuf);
+		}*/
 		free(pAddresses);
 
 		return 0;
@@ -181,7 +203,7 @@ public:
 		if (old_value.empty())
 			return;
 
-		int Pos = 0;
+		size_t Pos = 0;
 		while ((Pos = str.find(old_value, Pos)) != string::npos) {
 			str.erase(Pos, old_value.size());
 			str.insert(Pos, new_value);
@@ -194,7 +216,7 @@ public:
 		if (old_value.empty())
 			return;
 
-		int Pos = 8;
+		size_t Pos = 8;
 		while ((Pos = str.find(old_value, Pos)) != string::npos) {
 			str.erase(Pos, old_value.size());
 			str.insert(Pos, new_value);
@@ -242,11 +264,11 @@ public:
 			return mssAppPath;
 
 		//
-		char lcAppPath[NAME_MAX+1];
-		char lcFullPath[NAME_MAX+1];
+		char lcAppPath[PATH_MAX] = {0};
+		char lcFullPath[PATH_MAX] = {0};
 
 		sprintf(lcAppPath, "/proc/%d/exe", getpid());
-		readlink(lcAppPath, lcFullPath, NAME_MAX);
+		readlink(lcAppPath, lcFullPath, PATH_MAX-1);
 
 		int i=0;
 		for(i=strlen(lcFullPath); i>=0; i--)
@@ -268,7 +290,26 @@ public:
 
 	bool mkdirEx(const char *Path)
 	{
+		/*
+		string pathname = Path;
+		//    if(pathname.Right(1) != "\\")
+		//	     pathname += "\\" ;
 
+		int end = pathname.rfind('\\');
+		int pt = pathname.find('\\');
+		if (pathname[pt-1] == ':')
+		pt = pathname.find('\\', pt+1);
+
+		string path;
+
+		while(pt != -1 && pt<=end)
+		{
+		path = pathname.substr(0, pt+1);
+		if(_access(path.c_str(), 0) == -1)
+		_mkdir(path.c_str());
+		pt = pathname.find('\\', pt+1);
+		}
+		*/
 		return true;
 	}
 
@@ -293,7 +334,9 @@ public:
 	bool SaveFile(string &path,const string& content)
 	{
 		ReparePath(path);
-
+		//	if (_access(path.c_str(), 0) == -1) {
+		//		mkdirEx(path.c_str());
+		//	}
 
 		FILE* f=fopen(path.c_str(),"wb");
 		if(f==NULL)
@@ -306,7 +349,9 @@ public:
 	bool SaveFileAdd(string &path,const string& content)
 	{
 		ReparePath(path);
-
+		//	if (_access(path.c_str(), 0) == -1) {
+		//		mkdirEx(path.c_str());
+		//	}
 
 		FILE* f=fopen(path.c_str(),"a+");
 		if(f==NULL)
@@ -320,11 +365,11 @@ public:
 	{
 		string ItemText = "";
 		string SItem, EItem;
-		int Begin, End;
+		size_t Begin, End;
 
 		SItem = "<"  + aItem + ">";
 		EItem = "</" + aItem + ">";
-		int StrLen = SItem.size();
+		size_t StrLen = SItem.size();
 
 		if((Begin =  aLineData.find(SItem)) != string::npos){
 			End = aLineData.find(EItem, Begin + StrLen);
@@ -339,11 +384,11 @@ public:
 	{
 		string ItemText = "";
 		string SItem, EItem;
-		int Begin, End;
+		size_t Begin, End;
 
 		SItem = aFirstItem;
 		EItem = aSecondItem;
-		int StrLen = SItem.size();
+		size_t StrLen = SItem.size();
 
 		if((Begin =  aLineData.find(SItem)) != string::npos){
 			End = aLineData.find(EItem, Begin + StrLen);
@@ -364,15 +409,15 @@ public:
 		string strStart = "<" + strItem + ">";
 		string strEnd = "</" + strItem + ">";
 
-		int Start = 0;
-		int End   = 0;
+		size_t Start = 0;
+		size_t End   = 0;
 
 		while ((Start = FileContent.find(strStart, Start)) != string::npos) {
 			End = FileContent.find(strEnd, Start+1);
 			if (End > Start) {
 				string LineData = FileContent.substr(Start+strStart.size(), End-Start-strStart.size());
 				StringList.push_back(LineData);
-			
+				
 				Start = End;
 			} else break;
 		}
@@ -387,15 +432,15 @@ public:
 		if (FileContent.empty())
 			return StringList;
 
-		int Start = 0;
-		int End   = 0;
+		size_t Start = 0;
+		size_t End   = 0;
 
 		while ((Start = FileContent.find(strItem1, Start)) != string::npos) {
 			End = FileContent.find(strItem2, Start+1);
 			if (End > Start) {
 				string LineData = FileContent.substr(Start+strItem1.size(), End-Start-strItem1.size());
 				StringList.push_back(LineData);
-	
+				
 				Start = End;
 			} else break;
 		}
@@ -403,6 +448,18 @@ public:
 		return StringList;
 	}
 
+	/*void FormatTime(time_t time1, char *szTime)
+	{
+		struct tm tm1;
 
+#ifdef WIN32
+		tm1 = *localtime(&time1);
+#else
+		localtime_r(&time1, &tm1 );
+#endif
+		sprintf( szTime, "%4.4d%2.2d%2.2d%2.2d%2.2d%2.2d",
+			tm1.tm_year+1900, tm1.tm_mon+1, tm1.tm_mday,
+			tm1.tm_hour, tm1.tm_min,tm1.tm_sec);
+	}*/
 };
 #endif

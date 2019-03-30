@@ -25,9 +25,9 @@ DEALINGS IN THE SOFTWARE.
 #include "headers/inter_public.h"
 #include "headers/commonstruct.h"
 
-
 namespace DBSQL {
 
+	
 	const std::string EVIDENCES_TBL =
 		"CREATE TABLE IF NOT EXISTS evidence_tbl "
 		"("
@@ -56,7 +56,17 @@ namespace DBSQL {
 		"  [version]	varchar(32) DEFAULT '',"
 		"  [queue_id]	INTEGER DEFAULT 0,"
 		"  [chain_num]	INTEGER DEFAULT 0,"
+		"  [difficulty]	INTEGER DEFAULT 0,"
 		"  PRIMARY KEY (hash)"
+		");";
+
+	const std::string ONCHAINED_TBL =
+		"CREATE TABLE IF NOT EXISTS localblockonchained ("
+		"  [requestid]	varchar(32) DEFAULT ''," 
+		"  [hid]		INTEGER DEFAULT 0,"
+		"  [chain_num]	INTEGER DEFAULT 0,"
+		"  [id]	INTEGER DEFAULT 0,"			
+		"  PRIMARY KEY (requestid)"
 		");";
 
 	const std::string UPQUEUE_TBL =
@@ -87,13 +97,12 @@ namespace DBSQL {
 static const std::string scEvidenceInsert = "INSERT OR REPLACE INTO evidence_tbl(hash,blocknum,filename,custominfo,owner,filestate,regtime,filesize,extra) "
                                          "VALUES(?,?,?,?,?,?,?,?,?);";
 ////////////////////////////////////////////////////
-static const std::string scHyperblockInsert = "INSERT OR REPLACE INTO hyperblock(hash,id,type,hid,hhash,hash_prev,payload,ctime,queue_id,chain_num,version)  "
-"VALUES(?,?,?,?,?,?,?,?,?,?,?);";
+static const std::string scHyperblockInsert = "INSERT OR REPLACE INTO hyperblock(hash,id,type,hid,hhash,hash_prev,payload,ctime,queue_id,chain_num,version,difficulty)  "
+"VALUES(?,?,?,?,?,?,?,?,?,?,?,?);";
 ////////////////////////////////////////////////////
 static const std::string scUpqueueInsert = "INSERT OR REPLACE INTO upqueue(hash,ctime) "
 "VALUES(?,?);";
 ////////////////////////////////////////////////////
-static const std::string scGetOnChainStateSelect = "SELECT * FROM hyperblock WHERE ctime= ? AND hash = ?";
 
 static const std::string scGetNeighbors = "SELECT * FROM neighbornodes";
 ////////////////////////////////////////////////////
@@ -225,7 +234,7 @@ int DBmgr::insertEvidence(const TEVIDENCEINFO &evidence)
 {
     try
     {
-        //hash,blocknum,filename,custominfo,owner,filestate,regtime,filesize,extra
+        
         CppSQLite3Statement stmt = _db->compileStatement(scEvidenceInsert.c_str());
         stmt.bind(1, evidence.cFileHash.c_str());
 		stmt.bind(2, (sqlite_int64)evidence.iBlocknum);
@@ -274,7 +283,7 @@ int DBmgr::getEvidences(std::list<TEVIDENCEINFO> &evidences, int page, int size)
         CppSQLite3Query query = stmt.execQuery();
         while (!query.eof())
         {
-            //hash,blocknum,filename,custominfo,owner,filestate,regtime,filesize,extra
+            
             TEVIDENCEINFO evi;
             evi.cFileHash = query.getStringField("hash");
             evi.cFileName = query.getStringField("filename");
@@ -319,7 +328,7 @@ int DBmgr::getNoConfiringList(std::list<TEVIDENCEINFO>& evidences)
 		CppSQLite3Query query = stmt.execQuery();
 		while (!query.eof())
 		{
-			//hash,blocknum,filename,custominfo,owner,filestate,regtime,filesize,extra
+			
 			TEVIDENCEINFO evi;
 			evi.cFileHash = query.getStringField("hash");
 			evi.cFileName = query.getStringField("filename");
@@ -349,7 +358,7 @@ int DBmgr::updateEvidence(const TEVIDENCEINFO &evidence, int type)
 {
     try
     {
-        //hash,blocknum,filename,custominfo,owner,filestate,regtime,filesize,extra
+        
         std::string sql;
         if (1 == type){
             sql = "UPDATE evidence_tbl SET filestate=?"
@@ -448,6 +457,7 @@ int DBmgr::createTbls()
 {
     _db->execDML(DBSQL::EVIDENCES_TBL.c_str());
 	_db->execDML(DBSQL::HYPERBLOCK_TBL.c_str());
+	_db->execDML(DBSQL::ONCHAINED_TBL.c_str());
 	_db->execDML(DBSQL::UPQUEUE_TBL.c_str());
 	_db->execDML(DBSQL::MYSELF_TBL.c_str());
 	_db->execDML(DBSQL::NEIGHBORNODE_TBL.c_str());
@@ -456,10 +466,14 @@ int DBmgr::createTbls()
 
 int DBmgr::updateDB()
 {
-
-	if (findverinhyperblock() == 0)
-	{
-		updatahyperblockaddver();
+	
+	if (ifTblOrIndexExist("hyperblock", 1)) {
+		if (!ifColExist("hyperblock", "version")) {
+			exec("alter table hyperblock ADD version varchar(32) NOT NULL default ''");
+		}
+		if (!ifColExist("hyperblock", "difficulty")) {
+			exec("alter table hyperblock ADD difficulty integer default 0");
+		}
 	}
     return 0;
 }
@@ -471,7 +485,7 @@ string DBmgr::hash256tostring(const unsigned char* hash)
 	char ucBuf[10] = {0};
 
 	unsigned int uiNum = 0;
-	for(uiNum; uiNum < DEF_SHA256_LEN; uiNum ++)
+	for(; uiNum < DEF_SHA256_LEN; uiNum ++)
 	{
 		memset(ucBuf, 0, 10);
 		sprintf(ucBuf, "%02x", hash[uiNum]);
@@ -491,15 +505,15 @@ void DBmgr::strtohash256(unsigned char* out, const char* szHash)
     memset(str, 0, len);
     memcpy(str, szHash, len);
     for (int i = 0; i < len; i+=2) {
-
+        
         if(str[i] >= 'a' && str[i] <= 'f') str[i] = str[i] & ~0x20;
         if(str[i+1] >= 'a' && str[i] <= 'f') str[i+1] = str[i+1] & ~0x20;
-
+        
         if(str[i] >= 'A' && str[i] <= 'F')
             out[i/2] = (str[i]-'A'+10)<<4;
         else
             out[i/2] = (str[i] & ~0x30)<<4;
- 
+        
         if(str[i+1] >= 'A' && str[i+1] <= 'F')
             out[i/2] |= (str[i+1]-'A'+10);
         else
@@ -515,10 +529,7 @@ int DBmgr::insertHyperblock(const T_HYPERBLOCKDBINFO &hyperblock)
 			return updateHyperblock(hyperblock);
 		}
 
-		//hash,id,type,hid,hhash,hhash_prev,payload,ctime
 		CppSQLite3Statement stmt = _db->compileStatement(scHyperblockInsert.c_str());
-
-
 
 		stmt.bind(1, hash256tostring(hyperblock.strHashSelf).c_str());
 		stmt.bind(2, (sqlite_int64)hyperblock.uiBlockId);
@@ -531,6 +542,7 @@ int DBmgr::insertHyperblock(const T_HYPERBLOCKDBINFO &hyperblock)
 		stmt.bind(9, (sqlite_int64)hyperblock.uiQueueID);
 		stmt.bind(10, (sqlite_int64)hyperblock.uiLocalChainId);
 		stmt.bind(11, hyperblock.strVersion.c_str());
+		stmt.bind(12, (int)hyperblock.difficulty);
 
 		stmt.execDML();
 	}
@@ -561,7 +573,7 @@ int DBmgr::updateHyperblock(const T_HYPERBLOCKDBINFO &hyperblock)
 		"queue_id=?,"
 		"chain_num=?"
 		" WHERE hid=? and type=? and id=?;";
-		//hash,id,type,hid,hhash,hhash_prev,payload,ctime
+		
 		CppSQLite3Statement stmt = _db->compileStatement(sqlUpdate.c_str());
 		stmt.bind(1, hash256tostring(hyperblock.strHashSelf).c_str());
 		stmt.bind(2, (sqlite_int64)hyperblock.uiBlockId);
@@ -591,34 +603,110 @@ int DBmgr::updateHyperblock(const T_HYPERBLOCKDBINFO &hyperblock)
 
 int DBmgr::existHyperblock(const T_HYPERBLOCKDBINFO &hyperblock)
 {
-
 	int ret = 0;
-
-	try
-	{
+	try {
 		CppSQLite3Statement stmt;
-		std::string sql = "SELECT * FROM hyperblock where hid=? and type=? and id=?;";
+		std::string sql = "SELECT * FROM hyperblock where hid=? and type=? and id=? and chain_num=?;";
 
 		stmt = _db->compileStatement(sql.c_str());
 		stmt.bind(1, (sqlite_int64)hyperblock.uiReferHyperBlockId);
 		stmt.bind(2, (sqlite_int64)hyperblock.ucBlockType);
 		stmt.bind(3, (sqlite_int64)hyperblock.uiBlockId);
+		stmt.bind(4, (sqlite_int64)hyperblock.uiLocalChainId);
 
 		CppSQLite3Query query = stmt.execQuery();
-		if (!query.eof())
-		{
+		if (!query.eof()) {
 			return 1;
 		}
 	}
-	catch (CppSQLite3Exception& ex)
-	{
+	catch (CppSQLite3Exception& ex) {
 		g_daily_logger->error("DB existHyperblock; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
 		g_console_logger->error("DB existHyperblock; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
 		ret = ex.errorCode();
 	}
+	return ret;
+}
+
+int DBmgr::getLocalblock(T_HYPERBLOCKDBINFO &info, int hid, int id, int chain_num)
+{
+	int ret = 0;
+
+	try
+	{
+		CppSQLite3Statement stmt;
+		std::string sql = "SELECT * FROM hyperblock WHERE hid=? AND id=? AND chain_num=?;";
+
+		stmt = _db->compileStatement(sql.c_str());
+
+		stmt.bind(1, hid);
+		stmt.bind(2, id);
+		stmt.bind(3, chain_num);
+
+		CppSQLite3Query query = stmt.execQuery();
+		if (!query.eof())
+		{
+			strtohash256(info.strHashSelf, query.getStringField("hash"));
+
+			info.uiBlockId = query.getIntField("id");
+			info.ucBlockType = query.getIntField("type");
+			info.uiReferHyperBlockId = query.getIntField("hid");
+			strtohash256(info.strHyperBlockHash, query.getStringField("hhash"));
+			strtohash256(info.strPreHash, query.getStringField("hash_prev"));
+			info.strPayload = query.getStringField("payload");
+			info.uiBlockTimeStamp = query.getIntField("ctime");
+			info.strVersion = query.getStringField("version");
+			info.uiQueueID = query.getIntField("queue_id");
+			info.uiLocalChainId = query.getIntField("chain_num");
+			info.difficulty = query.getIntField("difficulty");
+
+			query.nextRow();
+		}
+	}
+	catch (CppSQLite3Exception& ex)
+	{
+		g_daily_logger->error("DB getLocalblocks; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
+		g_console_logger->error("DB getLocalblocks; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
+		ret = ex.errorCode();
+	}
 
 	return ret;
+}
 
+int DBmgr::getLocalchain(int hid, int chain_num, int &blocks, int &chain_difficulty)
+{
+	int ret = 0;
+
+	try
+	{
+		CppSQLite3Statement stmt;
+		std::string sql = "SELECT count(*) as blocks, sum(difficulty) as chain_difficulty FROM hyperblock WHERE hid=? AND chain_num=?;";
+
+		stmt = _db->compileStatement(sql.c_str());
+
+		stmt.bind(1, hid);
+		stmt.bind(2, chain_num);
+
+		CppSQLite3Query query = stmt.execQuery();
+		if (!query.eof())
+		{
+			blocks = query.getIntField("blocks");
+			if (blocks == 0)
+				return -1;
+
+			chain_difficulty = query.getIntField("chain_difficulty");
+		
+			query.nextRow();
+
+		}
+	}
+	catch (CppSQLite3Exception& ex)
+	{
+		g_daily_logger->error("DB getLocalchain; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
+		g_console_logger->error("DB getLocalchain; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
+		ret = ex.errorCode();
+	}
+
+	return ret;
 }
 
 int DBmgr::getHyperblock(std::list<T_HYPERBLOCKDBINFO> &queue, int page, int size)
@@ -647,22 +735,17 @@ int DBmgr::getHyperblock(std::list<T_HYPERBLOCKDBINFO> &queue, int page, int siz
 		while (!query.eof())
 		{
 			T_HYPERBLOCKDBINFO info;
-
 			strtohash256(info.strHashSelf, query.getStringField("hash"));
-
 			info.uiBlockId = query.getIntField("id");
 			info.ucBlockType = query.getIntField("type");
 			info.uiReferHyperBlockId = query.getIntField("hid");
-
 			strtohash256(info.strHyperBlockHash, query.getStringField("hhash"));
 			strtohash256(info.strPreHash, query.getStringField("hash_prev"));
-
 			info.strPayload = query.getStringField("payload");
 			info.uiBlockTimeStamp = query.getIntField("ctime");
 			info.strVersion = query.getStringField("version");
 			info.uiQueueID = query.getIntField("queue_id");
 			info.uiLocalChainId = query.getIntField("chain_num");
-
 
 			queue.push_back(info);
 			query.nextRow();
@@ -677,7 +760,6 @@ int DBmgr::getHyperblock(std::list<T_HYPERBLOCKDBINFO> &queue, int page, int siz
 
 	return ret;
 }
-
 
 int DBmgr::getHyperblocks(std::list<T_HYPERBLOCKDBINFO> &queue, int nStartHyperID, int nEndHyperID)
 {
@@ -709,6 +791,8 @@ int DBmgr::getHyperblocks(std::list<T_HYPERBLOCKDBINFO> &queue, int nStartHyperI
 			info.strVersion = query.getStringField("version");
 			info.uiQueueID = query.getIntField("queue_id");
 			info.uiLocalChainId = query.getIntField("chain_num");
+			info.difficulty = query.getIntField("difficulty");
+			
 			queue.push_back(info);
 			query.nextRow();
 		}
@@ -730,15 +814,13 @@ int DBmgr::getAllHyperblockNumInfo(std::list<uint64> &queue)
 	try
 	{
 		CppSQLite3Statement stmt;
-		std::string sql = "SELECT id FROM hyperblock WHERE type==1 ORDER BY hid;";
+		std::string sql = "SELECT id FROM hyperblock WHERE type=1 ORDER BY hid;";
 
 		stmt = _db->compileStatement(sql.c_str());
 
 		CppSQLite3Query query = stmt.execQuery();
 		while (!query.eof())
 		{
-
-
 			uint64 num = query.getIntField(0);
 			queue.push_back(num);
 			query.nextRow();
@@ -753,24 +835,23 @@ int DBmgr::getAllHyperblockNumInfo(std::list<uint64> &queue)
 
 	return ret;
 }
-int DBmgr::getHyperblockshead(std::list<T_HYPERBLOCKDBINFO> &queue, int nStartHyperID)
+
+int DBmgr::getHyperblockshead(T_HYPERBLOCKDBINFO &info, int nStartHyperID)
 {
 	int ret = 0;
 
 	try
 	{
 		CppSQLite3Statement stmt;
-		std::string sql = "SELECT * FROM hyperblock WHERE hid==? AND type==1 ORDER BY hid;";
+		std::string sql = "SELECT * FROM hyperblock WHERE hid=? AND type=1 ORDER BY hid;";
 
 		stmt = _db->compileStatement(sql.c_str());
 
 		stmt.bind(1, nStartHyperID);
-	
 
 		CppSQLite3Query query = stmt.execQuery();
 		while (!query.eof())
 		{
-			T_HYPERBLOCKDBINFO info;
 			strtohash256(info.strHashSelf, query.getStringField("hash"));
 
 			info.uiBlockId = query.getIntField("id");
@@ -785,7 +866,6 @@ int DBmgr::getHyperblockshead(std::list<T_HYPERBLOCKDBINFO> &queue, int nStartHy
 			info.uiLocalChainId = query.getIntField("chain_num");
 			info.strVersion = query.getStringField("version");
 
-			queue.push_back(info);
 			query.nextRow();
 		}
 	}
@@ -793,6 +873,38 @@ int DBmgr::getHyperblockshead(std::list<T_HYPERBLOCKDBINFO> &queue, int nStartHy
 	{
 		g_daily_logger->error("DB getHyperblockshead; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
 		g_console_logger->error("DB getHyperblockshead; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
+		ret = ex.errorCode();
+	}
+
+	return ret;
+
+}
+
+int DBmgr::getLocalblocksPayload(std::list<string> &queue, int nStartHyperID)
+{
+	int ret = 0;
+
+	try
+	{
+		CppSQLite3Statement stmt;
+		std::string sql = "SELECT payload FROM hyperblock WHERE hid=? AND type=2 ORDER BY hid;";
+
+		stmt = _db->compileStatement(sql.c_str());
+
+		stmt.bind(1, nStartHyperID);
+
+		CppSQLite3Query query = stmt.execQuery();
+		while (!query.eof())
+		{
+			string payload = query.getStringField(0);
+			queue.push_back(payload);
+			query.nextRow();			
+		}
+	}
+	catch (CppSQLite3Exception& ex)
+	{
+		g_daily_logger->error("DB getLocalblocksPayload; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
+		g_console_logger->error("DB getLocalblocksPayload; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
 		ret = ex.errorCode();
 	}
 
@@ -867,7 +979,7 @@ int DBmgr::getUpqueue(std::list<TUPQUEUE> &queue, int page, int size)
 		CppSQLite3Query query = stmt.execQuery();
 		while (!query.eof())
 		{
-			//hash,ctime
+			
 			TUPQUEUE evi;
 			evi.uiID = query.getIntField("id");
 			evi.strHash = query.getStringField("hash");
@@ -887,55 +999,6 @@ int DBmgr::getUpqueue(std::list<TUPQUEUE> &queue, int page, int size)
 
 	return ret;
 }
-
-
-int DBmgr::findverinhyperblock()
-{
-	int ret = 0;
-
-	try
-	{
-		CppSQLite3Statement stmt;
-		std::string sql = "select * from sqlite_master where name = 'hyperblock' and sql like '%version%'";
-
-		stmt = _db->compileStatement(sql.c_str());
-
-		CppSQLite3Query query = stmt.execQuery();
-		if (!query.eof())
-		{
-			ret = 1;
-		}
-	}
-	catch (CppSQLite3Exception& ex)
-	{
-		g_daily_logger->error("DB findverinhyperblock; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
-		g_console_logger->error("DB findverinhyperblock; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
-		ret = ex.errorCode();
-	}
-
-	return ret;
-}
-
-int DBmgr::updatahyperblockaddver()
-{
-	int ret = 0;
-
-	try
-	{
-		CppSQLite3Statement stmt;
-		std::string sql = "alter table hyperblock ADD version varchar(32) NOT NULL Default ''";
-		_db->execDML(sql.c_str());
-		ret = 1;
-	}
-	catch (CppSQLite3Exception& ex)
-	{
-		g_daily_logger->error("DB updatahyperblockaddver; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
-		g_console_logger->error("DB updatahyperblockaddver; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
-		ret = ex.errorCode();
-	}
-	return ret;
-}
-
 
 int DBmgr::getLatestHyperBlockNo()
 {
@@ -966,29 +1029,53 @@ int DBmgr::getLatestHyperBlockNo()
 
 }
 
+int DBmgr::updateOnChainState(const string &requestid, const T_LOCALBLOCKADDRESS& address)
+{
+	try {
+		exec("insert or replace into localblockonchained(requestid,hid,chain_num,id) values(?,?,?,?)",
+			requestid.c_str(),
+			(sqlite_int64)address.hid,
+			(sqlite_int64)address.chainnum,
+			(sqlite_int64)address.id);
 
-int DBmgr::getOnChainStateFromHashTime(string strlocalhash, uint64 time)
-{	
-	int ret = -1;
-	try
-	{
-		CppSQLite3Statement stmt = _db->compileStatement(scGetOnChainStateSelect.c_str());
-
-		stmt.bind(1, (sqlite_int64)time);
-		stmt.bind(2, strlocalhash.c_str());
-		CppSQLite3Query query = stmt.execQuery();
-		if (!query.eof()){
-			return query.getIntField("hid");
-		}
 	}
 	catch (CppSQLite3Exception& ex)
 	{
-		g_daily_logger->error("DB getOnChainStateFromHashTime; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
-		g_console_logger->error("DB getOnChainStateFromHashTime; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
-		ret = ex.errorCode();
-	
+		g_daily_logger->error("DB updateOnChainState; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
+		g_console_logger->error("DB updateOnChainState; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
+		return ex.errorCode();
 	}
-	return ret;
+
+	return 0;
+}
+
+int DBmgr::removeOnChainState(uint64 hid)
+{
+	try {
+		exec("delete from localblockonchained where hid = ?", (sqlite_int64)hid);
+	}
+	catch (CppSQLite3Exception& ex)
+	{
+		g_daily_logger->error("DB removeOnChainState; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
+		g_console_logger->error("DB removeOnChainState; error = {}, Message  = {}", ex.errorCode(), ex.errorMessage());
+		return ex.errorCode();
+	}
+
+	return 0;
+}
+
+
+T_LOCALBLOCKADDRESS DBmgr::getOnChainStateFromRequestID(const string &requestid)
+{	
+	T_LOCALBLOCKADDRESS addr;
+	query("SELECT hid,chain_num,id FROM localblockonchained WHERE requestid = ? ; ",
+		[this, &addr](CppSQLite3Query & q) {
+		addr.hid = q.getIntField("hid");
+		addr.chainnum = q.getIntField("chain_num");
+		addr.id = q.getIntField("id");
+	}, requestid.c_str());
+
+	return addr;
 }
 
 bool DBmgr::isBlockExisted(string &strblockhash)

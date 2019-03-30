@@ -195,8 +195,6 @@ void NodeManager::parse(const string &nodes)
 
 const CUInt128* NodeManager::FindNodeId(IAccessPoint *ap)
 {
-	int result = 0;
-
 	std::lock_guard<std::mutex> lck(_guard);
 	auto r = std::find_if(_nodemap.begin(), _nodemap.end(), [&](HCNodeMap::reference n) {
 

@@ -30,6 +30,7 @@ DEALINGS IN THE SOFTWARE.
 #include "db/dbmgr.h"
 #include "node/Singleton.h"
 #include "node/TaskThreadPool.h"
+#include "node/UdpAccessPoint.hpp"
 #include "HyperChain/HyperChainSpace.h"
 #include "HyperChain/HyperData.h"
 #include "node/NodeManager.h"
@@ -134,6 +135,7 @@ ConsoleCommandHandler::ConsoleCommandHandler() :
 	_commands.emplace_back(cmdstruct("i", std::bind(&ConsoleCommandHandler::showInnerDataStruct, this)));
 	_commands.emplace_back(cmdstruct("ll", std::bind(&ConsoleCommandHandler::setLoggerLevel, this, std::placeholders::_1)));
 	_commands.emplace_back(cmdstruct("llcss", std::bind(&ConsoleCommandHandler::setConsensusLoggerLevel, this, std::placeholders::_1)));
+	_commands.emplace_back(cmdstruct("test", std::bind(&ConsoleCommandHandler::enableTest, this, std::placeholders::_1)));
 	_commands.emplace_back(cmdstruct("exit", std::bind(&ConsoleCommandHandler::exit, this)));
 	_commands.emplace_back(cmdstruct("quit", std::bind(&ConsoleCommandHandler::exit, this)));
 	_commands.emplace_back(cmdstruct("q", std::bind(&ConsoleCommandHandler::exit, this)));
@@ -169,6 +171,7 @@ void ConsoleCommandHandler::exit()
 	cout << "Are you sure you want to exit(y/n)?";
 	string sInput;
 	cin >> sInput;
+
 	if (sInput == "y" || sInput == "Y") {
 		_isRunning = false;
 	}
@@ -224,6 +227,7 @@ void ConsoleCommandHandler::showHyperChainSpace()
 {
 	CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
 
+
 	map<string, string> HyperChainSpace;
 	HSpce->GetHyperChainShow(HyperChainSpace);
 	
@@ -237,6 +241,7 @@ void ConsoleCommandHandler::showHyperChainSpace()
 	cout << "HyperChainSpace:" << endl;
 	for (auto mdata : HyperChainSpace)
 	{
+
 		cout << "NodeID = " << mdata.first << ",HyperIDs = " << mdata.second << endl;
 	}
 
@@ -392,9 +397,17 @@ void ConsoleCommandHandler::searchLocalHyperBlock(const list<string> &commlist)
 	}
 }
 
+void showUdpDetails()
+{
+	size_t num = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance()->getUdpSendQueueSize();
+	cout << "Udp Send Queue Size:" << num << endl;
+	num = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance()->getUdpRecvQueueSize();
+	cout << "Udp Recv Queue Size:" << num << endl;
+}
+
 void showTaskDetails()
 {
-	uint16 num = Singleton<TaskThreadPool>::getInstance()->getQueueSize();
+	size_t num = Singleton<TaskThreadPool>::getInstance()->getQueueSize();
 	cout << "Task numbers in task pool:" << num << endl;
 	cout << Singleton<TaskThreadPool>::getInstance()->getQueueDetails() << endl;
 }
@@ -403,18 +416,24 @@ void ConsoleCommandHandler::showInnerDataStruct()
 {
 	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
 	HCNodeSH me = nodemgr->myself();
-	cout << "My nodeid:" << me->getNodeId<string>() << endl;
+	cout << "My NodeID:" << me->getNodeId<string>() << endl << endl;
 
 	showNeighborNode();
-	cout << endl;
+	cout << endl << endl;
 	showTaskDetails();
 
+	showUdpDetails();
+	cout << endl;
+
+	cout << "Block number waiting to consensus:" << g_tP2pManagerStatus.GetListOnChainReq().size() << endl;
+	cout << endl;
+		
 	ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::getInstance();
 	switch (g_tP2pManagerStatus.GetCurrentConsensusPhase())
 	{
 	case CONSENSUS_PHASE::PREPARE_LOCALBUDDY_PHASE:
 		cout << "Phase: Prepare to enter LOCALBUDDY_PHASE, "
-			 << "Consensus condition : " << consensuseng->isAbleToConsensus();
+			 << "Consensus condition : " << consensuseng->isAbleToConsensus() << endl;
 		break;
 	case CONSENSUS_PHASE::LOCALBUDDY_PHASE:
 		cout << "Phase: LOCALBUDDY_PHASE" << endl;
@@ -443,39 +462,70 @@ void ConsoleCommandHandler::showInnerDataStruct()
 void ConsoleCommandHandler::setLoggerLevelHelp(std::shared_ptr<spdlog::logger> & logger,
 										const list<string> &level)
 {
-	spdlog::level::level_enum lev = logger->level();;
+	unordered_map<string, spdlog::level::level_enum> maploglevel = {
+		{"trace",spdlog::level::trace},
+		{"debug",spdlog::level::debug},
+		{"info",spdlog::level::info},
+		{"warn",spdlog::level::warn},
+		{"err",spdlog::level::err},
+		{"critical",spdlog::level::critical},
+		{"off",spdlog::level::off},
+	};
+
+	spdlog::level::level_enum lev = logger->level();
 	if (level.size() > 1) {
 		auto pos = ++level.begin();
-		int i = std::stoi(pos->c_str());
-		lev = (spdlog::level::level_enum)i;
-		lev = lev > spdlog::level::off ? spdlog::level::off : lev;
+		if (maploglevel.count(*pos)) {
+			lev = maploglevel.at(*pos);
+		}
 		logger->set_level(lev);
 	}
+	using loglevelvaluetype = unordered_map<string, spdlog::level::level_enum>::value_type;
+	string levelname = "unknown";
+	std::find_if(maploglevel.begin(), maploglevel.end(), [&logger,&levelname](const loglevelvaluetype &ll) {
+		if (ll.second == logger->level()) {
+			levelname = ll.first;
+			return true;
+		}
+		return false;
+	});
 
-	std::printf("%s level is %d (trace=0,debug=1,info=2,warn=3,err=4,critical=5,off=6)\n",
-		logger->name().c_str(),
-		logger->level());
+
+	std::printf("%s log level is %s (trace,debug,info,warn,err,critical,off)\n", 
+				logger->name().c_str(), levelname.c_str());
 }
 
 void ConsoleCommandHandler::setLoggerLevel(const list<string> &level)
 {
 	setLoggerLevelHelp(g_console_logger, level);
 	return;
-	spdlog::level::level_enum lev = g_console_logger->level();;
-	if (level.size() > 1) {
-		auto pos = ++level.begin();
-		int i = std::stoi(pos->c_str());
-		lev = (spdlog::level::level_enum)i;
-		lev = lev > spdlog::level::off ? spdlog::level::off : lev;
-		g_console_logger->set_level(lev);
-	}
-
-	std::printf("Logger level is %d (trace=0,debug=1,info=2,warn=3,err=4,critical=5,off=6)\n",
-		g_console_logger->level());
 }
 
 void ConsoleCommandHandler::setConsensusLoggerLevel(const list<string> &level)
 {
 	setLoggerLevelHelp(g_consensus_console_logger, level);
 	return;
+}
+
+void ConsoleCommandHandler::enableTest(const list<string> &onoff)
+{
+	ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::instance();
+	if (onoff.size() > 1) {
+		auto option = ++onoff.begin();
+		if (*option == "on") {
+			consensuseng->startTest();
+			std::printf("Consensus test thread is started\n");
+		} else if (*option == "off") {
+			consensuseng->stopTest();
+			std::printf("Consensus test thread is stopped\n");
+		}
+	}
+	else {
+		if (consensuseng->isTestRunning()) {
+			std::printf("Consensus test thread is on\n");
+		}
+		else {
+			std::printf("Consensus test thread is off\n");
+		}
+	}
 }

@@ -78,6 +78,7 @@ private:
 	void setLoggerLevel(const list<string> &level);
 	void setLoggerLevelHelp(std::shared_ptr<spdlog::logger> & logger, const list<string> &level);
 	void setConsensusLoggerLevel(const list<string> &level);
+	void enableTest(const list<string> &onoff);
 
 	inline void showPrompt() {
 		cout << "hc $ ";

@@ -37,7 +37,7 @@ CHyperChainSpace::CHyperChainSpace(string nodeid)
 CHyperChainSpace::~CHyperChainSpace()
 {
 	m_bpull = false;
-	if(m_threadpull->joinable())
+	if (m_threadpull->joinable())
 	{
 		m_threadpull->join();
 	}
@@ -70,89 +70,97 @@ int CHyperChainSpace::GetLocalChainIDList(list<uint64> & out_LocalIDList)
 
 uint64 CHyperChainSpace::GetGlobalLatestHyperBlockNo()
 {
-	uint64 localHID = DBmgr::instance()->getLatestHyperBlockNo();
-
 	lock_guard<mutex> locker(m_datalock);
 	if (m_hpspacedata.size() == 0)
-		return localHID;
-	
+		return 0;
+
 	MULTI_MAP_HPSPACEDATA::reverse_iterator it = m_hpspacedata.rbegin();
 	if (it == m_hpspacedata.rend())
-		return localHID;
+		return 0;
 
-	uint64 globalHID = it->first;
+	return it->first;
+}
+
+int CHyperChainSpace::GetRemoteHyperBlockByID(uint64 globalHID)
+{
+	lock_guard<mutex> locker(m_datalock);
+	if (m_hpspacedata.size() == 0)
+		return -1;
+
+	MULTI_MAP_HPSPACEDATA::iterator it = m_hpspacedata.find(globalHID);
+	if (it == m_hpspacedata.end())
+		return -1;
+
 	MAP_NODE nodemap = it->second;
+	CHyperData * hd = Singleton<CHyperData>::instance();
 
-	if (globalHID <= localHID)
-		return localHID;
 
 	MAP_NODE::iterator iter = nodemap.begin();
-	CHyperData * hd = Singleton<CHyperData>::instance();
-	hd->PullHyperDataByHID(globalHID, iter->first);
-	return globalHID;
+	for (int i = 0; (i < 3) && (iter != nodemap.end()); iter++, i++) {
+
+		hd->PullHyperDataByHID(globalHID, iter->first);
+		return 0;
+
+	}
+	return 0;
 }
 
 int CHyperChainSpace::GetChainIDListFormLocal()
-{	
+{
 	lock_guard<mutex> lk(m_listlock);
-	uint64 ret = 0;
+	int ret = 0;
+
+	m_hyperidlistcompressed.clear();
 	m_localhpidlist.clear();
-	if (GetLocalChainIDList(m_localhpidlist) == 0)
+
+	if (GetLocalChainIDList(m_localhpidlist) != 0)
+		return ret;
+
+	if (m_localhpidlist.size() == 0)
+		return ret;
+
+	list<uint64>::iterator it = m_localhpidlist.begin();
+	uint64 nstart = m_localhpidlist.front();
+	uint64 nend = nstart;
+	string data;
+
+	for (auto li : m_localhpidlist)
 	{
-		if (m_localhpidlist.size() == 0)
-			return ret;
-
-		list<uint64>::iterator it = m_localhpidlist.begin();
-		uint64 nstart = m_localhpidlist.front();
-		uint64 nend = nstart;
-		string data;
-		m_hyperidlistcompressed.clear();
-
-		for (auto li : m_localhpidlist)
-		{		
-			if (li == nend || li - nend == 1)
-			{
-				nend = li;
-			}
-			else
-			{
-				//"nstart-nend"
-				if (nstart == nend)
-				{
-					data = to_string(nstart);
-				}
-				else
-				{
-					data = to_string(nstart) + "-" + to_string(nend);
-				}
-
-				m_hyperidlistcompressed.push_back(data);
-
-				nstart = li;
-				nend = nstart;
-
-			}
-			ret++;
-
-		}
-
-		if (nstart == nend)
-		{
-			data = to_string(nstart);
-		}
+		if (li == nend || li - nend == 1)
+			nend = li;
 		else
 		{
-			data = to_string(nstart) + "-" + to_string(nend);
+			
+			if (nstart == nend)
+				data = to_string(nstart);
+			else
+				data = to_string(nstart) + "-" + to_string(nend);
+
+			m_hyperidlistcompressed.push_back(data);
+
+			nstart = li;
+			nend = nstart;
 		}
 		ret++;
-		m_hyperidlistcompressed.push_back(data);
 	}
+
+	if (nstart == nend)
+	{
+		data = to_string(nstart);
+	}
+	else
+	{
+		data = to_string(nstart) + "-" + to_string(nend);
+	}
+	ret++;
+	m_hyperidlistcompressed.push_back(data);
 
 	return ret;
 }
 
 void CHyperChainSpace::AnalyticalChainData(string strbuf, string nodeid)
 {
+	
 	string::size_type np = strbuf.find("HyperID=");
 	if (np != string::npos)
 	{
@@ -176,22 +184,25 @@ void CHyperChainSpace::AnalyticalChainData(string strbuf, string nodeid)
 		string strIDtoID = sid;
 		ns = strIDtoID.find("-");
 
-		
+
 		if ((ns != string::npos) && (ns > 0))
 		{
-			uint64 IDS = stoi(strIDtoID.substr(0, ns));
-			uint64 IDE = stoi(strIDtoID.substr(ns + 1, strIDtoID.length() - 1));
+			uint64 IDS = stoull(strIDtoID.substr(0, ns));
+			uint64 IDE = stoull(strIDtoID.substr(ns + 1, strIDtoID.length() - 1));
 
 			for (uint64 ID = IDS; ID < IDE + 1; ID++)
 			{
 				m_hpspacedata[ID].insert(make_pair(nodeid, system_clock::now()));
+
 			}
 
 		}
 		else
 		{
-			uint64 ID = stoi(strIDtoID);
+			uint64 ID = stoull(strIDtoID);
+
 			m_hpspacedata[ID].insert(make_pair(nodeid, system_clock::now()));
+
 		}
 	}
 }
@@ -219,7 +230,7 @@ bool CHyperChainSpace::PullChainSpaceRspTaskEXC(string & mes)
 		return false;
 
 	mes += "HyperID=";
-	for (auto li: m_hyperidlistcompressed)
+	for (auto li : m_hyperidlistcompressed)
 	{
 		mes += li;
 		mes += ";";
@@ -259,16 +270,14 @@ void CHyperChainSpace::UpdataChainIDList()
 	GetLocalChainIDList(m_localhpidlist);
 }
 
-
 void CHyperChainSpace::start()
 {
+
 	GetChainIDListFormLocal();
 	m_bpull = true;
-	
+
 	m_threadpull.reset(new std::thread(&CHyperChainSpace::PullDataThread, this));
 }
-
-
 
 uint64 CHyperChainSpace::PullDataFromChainSpace()
 {
@@ -276,6 +285,7 @@ uint64 CHyperChainSpace::PullDataFromChainSpace()
 	TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
 	if (!taskpool)
 		return 0;
+
 
 	nret = GetChainIDListFormLocal();
 
@@ -287,9 +297,14 @@ uint64 CHyperChainSpace::PullDataFromChainSpace()
 
 void CHyperChainSpace::PullDataThread()
 {
+	int num = 0;
 	while (m_bpull)
 	{
 		PullDataFromChainSpace();
-		std::this_thread::sleep_for(std::chrono::seconds(5));
+		num = 0;
+		while (m_bpull && num < 100) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(200));
+			++num;
+		}
 	}
 }

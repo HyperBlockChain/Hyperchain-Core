@@ -54,15 +54,15 @@ int CHyperchainDB::AddHyperBlockDataRecord(HyperchainDB &hyperchainDB, T_HYPERBL
 
 	HyperchainDB::iterator it = hyperchainDB.find(uiHyperID);
 	if(it == hyperchainDB.end()) {
-	 
+	    
 		HyperBlockDB hyperBlock;
 
-		if (uiType == HYPER_BLOCK) { /
+		if (uiType == HYPER_BLOCK) { 
 			hyperBlock.hyperBlock = blockInfo;
 		}
 		else if (uiType == LOCAL_BLOCK)
 		{
-
+			//qDebug(blockInfo.strPayload.c_str());
 			LocalChainDB mapLocalChain;
 			LocalBlockDB mapLocalBlock;
 			mapLocalBlock.insert(LocalBlockDB::value_type(blockInfo.uiBlockId, blockInfo));
@@ -71,18 +71,18 @@ int CHyperchainDB::AddHyperBlockDataRecord(HyperchainDB &hyperchainDB, T_HYPERBL
 		else 
 			return 1;
 
-	
+		
 		hyperchainDB.insert(HyperchainDB::value_type(uiHyperID, hyperBlock));
 	}
 	else {
-	
+		
 		HyperBlockDB hyperBlock = it->second;
 		if (uiType == HYPER_BLOCK) {
 			hyperBlock.hyperBlock = blockInfo;
 		}
 		else if (uiType == LOCAL_BLOCK)
 		{
-	
+			//qDebug(blockInfo.strPayload.c_str());
 			LocalChainDB::iterator itLocalChain = hyperBlock.mapLocalChain.find(blockInfo.uiLocalChainId);
 			if (itLocalChain == hyperBlock.mapLocalChain.end()) { 
 				LocalChainDB mapLocalChain;
@@ -102,7 +102,7 @@ int CHyperchainDB::AddHyperBlockDataRecord(HyperchainDB &hyperchainDB, T_HYPERBL
 		else
 			return 1;
 
-	
+		
 		hyperchainDB[uiHyperID] = hyperBlock;
 	} 
 
@@ -111,7 +111,7 @@ int CHyperchainDB::AddHyperBlockDataRecord(HyperchainDB &hyperchainDB, T_HYPERBL
 
 int CHyperchainDB::cleanTmp(HyperchainDB &hyperchainDB)
 {
-
+	
 	if (hyperchainDB.size() > 0)
 	{
 		HyperchainDB::iterator it = hyperchainDB.begin();
@@ -140,7 +140,7 @@ int CHyperchainDB::getHyperBlocks(HyperchainDB &hyperchainDB, uint64 nStartHyper
 		if (nRet == 0)
 		{ 
 			for (auto info : queue) {
-				
+				//qDebug((const char*)info.strHashSelf);
 				CHyperchainDB::AddHyperBlockDataRecord(hyperchainDB, info);
 			}
 			return queue.size();
@@ -157,7 +157,7 @@ int CHyperchainDB::getAllHyperBlocks(HyperchainDB &hyperchainDB)
 	if (nRet == 0)
 	{ 
 		for (auto info : queue) {
-			
+			//qDebug((const char*)info.strHashSelf);
 			AddHyperBlockDataRecord(hyperchainDB, info);
 		}
 		return queue.size();
@@ -179,6 +179,7 @@ int CHyperchainDB::GetHyperBlockNumInfo(std::list<uint64> &HyperBlockNum)
 	
 	return 0;
 }
+
 
 int CHyperchainDB::GetLatestHyperBlock(HyperBlockDB &hyperblockDB)
 {

@@ -46,10 +46,16 @@ using namespace std;
 
 
 
+
+
 typedef map<uint64, T_HYPERBLOCKDBINFO> LocalBlockDB;
 
 
+
+
+
 typedef map<uint64, LocalBlockDB> LocalChainDB;
+
 
 
 struct HyperBlockDB
@@ -64,12 +70,14 @@ struct HyperBlockDB
 };
 
 
+
+
 typedef map<uint64, HyperBlockDB> HyperchainDB;
 
 class CHyperchainDB
 {
 public:
-
+	
 	static int cleanTmp(HyperchainDB &hyperchainDB);
 	static int AddHyperBlockDataRecord(HyperchainDB &hyperchainDB, T_HYPERBLOCKDBINFO blockInfo);
 
@@ -77,19 +85,22 @@ public:
 	CHyperchainDB();
 	~CHyperchainDB();
 public:
-
+	
 	static int saveHyperBlockToDB(const T_HYPERBLOCKDBINFO &hyperblock);
 
+	
 	static int saveHyperBlocksToDB(const vector<T_HYPERBLOCKDBINFO> &vHyperblock);
 
+	
 	static int getHyperBlocks(HyperchainDB &hyperchainDB, uint64 nStartHyperID, uint64 nEndHyperID);
 
+	
 	static int getAllHyperBlocks(HyperchainDB &hyperchainDB);
 
-
+	
 	static uint64 GetLatestHyperBlockNo();
 
-
+	
 	static int GetLatestHyperBlock(HyperBlockDB &hyperblockDB);
 
 	static int GetHyperBlockNumInfo(std::list<uint64> &HyperBlockNum);
