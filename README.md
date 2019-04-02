@@ -29,9 +29,9 @@ Official Web site [www.hyperchain.net](https://www.hyperchain.net)
 Branch of old Elementary version please refer to [Hyperchain-Core-YH](https://github.com/HyperBlockChain/Hyperchain-Core-YH)
 
 # Product powered by Hyperchain
-Paralism [Paralism.com] (https://www.paralism.com) the first parallel blockchain powered new economic infrastructure.
+Paralism [Paralism.com](https://www.paralism.com), the first parallel blockchain powered new economic infrastructure.
 
-吾有 UYOO [uyoo.io](https://www.uyoo.io "Uyoo Homepage") a world wide cross platform copyright content trading infrastructure.
+吾有 UYOO [uyoo.io](https://www.uyoo.io "Uyoo Homepage"), a world wide cross platform copyright content trading infrastructure.
 
 more products coming soon...
 
