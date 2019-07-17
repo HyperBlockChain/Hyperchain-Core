@@ -35,13 +35,7 @@ public:
 	SeedCommunication() : _isExit(false)
 	{}
 
-	~SeedCommunication()
-	{
-		_isExit = true;
-		if (_thread && _thread->joinable()) {
-			_thread->join();
-		}
-	}
+	~SeedCommunication() {}
 
 	void pullPeerlistFromSeedServer()
 	{
@@ -59,10 +53,17 @@ public:
 		}
 	}
 
-	bool start()
+	void start()
 	{
-		_thread.reset(new std::thread(&SeedCommunication::pullPeerlistFromSeedServer,this));
-		return true;
+		_thread.reset(new std::thread(&SeedCommunication::pullPeerlistFromSeedServer, this));
+	}
+
+	void stop()
+	{
+		_isExit = true;
+		if (_thread && _thread->joinable()) {
+			_thread->join();
+		}
 	}
 
 private:

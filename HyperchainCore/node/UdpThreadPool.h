@@ -34,6 +34,7 @@ DEALINGS IN THE SOFTWARE.
 #include <map>
 #ifdef WIN32
 #include <winsock2.h>
+#include<ws2tcpip.h>
 #pragma comment(lib,"WS2_32.LIB")
 #else
 #include <sys/socket.h>
@@ -52,101 +53,101 @@ using std::chrono::system_clock;
 #define SLICE_HEADER  '2'
 
 #define UDP_SLICE_MAX_SIZE	1024
-#define MAX_BUFFER_SIZE		1088			
-#define MAX_SEND_TIMES		3				
-#define MAX_INTERVAL_TIME	10				
-#define MAX_RECV_LIST_COUNT	5000			
+#define MAX_BUFFER_SIZE		1088			//HC: UDP_SLICE_MAX_SIZE + 64
+#define MAX_SEND_TIMES		3				//HC: Maximum number of retries
+#define MAX_INTERVAL_TIME	10				//HC: Maximum interval(ms)
+#define MAX_RECV_LIST_COUNT	5000			//HC: Maximum list length
 
 enum _erecvflag
 {
-	DEFAULT = 0,
-	ACK_FLAG
+    DEFAULT = 0,
+    ACK_FLAG
 };
 
 typedef struct _tudpheader
 {
-	uint8_t HeaderType;			
-	uint32_t uPacketNum;
-	uint32_t uDataBufCrc;
-	uint32_t uBufLen;
-	uint8_t PacketType;			
-	uint8_t Version;			
-	uint16_t uSliceTotalNum;
+    uint8_t HeaderType;			//HC: PACKET_HEADER = '1'; SLICE_HEADER = '2'
+    uint32_t uPacketNum;
+    uint32_t uDataBufCrc;
+    uint32_t uBufLen;
+    uint8_t PacketType;			//HC: SYN_TYPE = '1'; ACK_TYPE = '2'
+    uint8_t Version;			//HC: current version = '1'
+    uint16_t uSliceTotalNum;
 }T_UDPHEADER, *T_PUDPHEADER;
 
 typedef struct _tudpnode
-{	
-	string Ip;
-	uint32_t Port;
-	uint16_t ClearFlag;
-	uint16_t RetryTimes;
-	std::time_t NextSendTime;
-	char bitmap[128];
-	T_UDPHEADER UdpHeader;
-	char *DataBuf;
+{
+    string Ip;
+    uint32_t Port;
+    uint16_t ClearFlag;
+    uint16_t RetryTimes;
+    std::time_t NextSendTime;
+    vector<uint8_t> bitmap;
+    T_UDPHEADER UdpHeader;
+    char *DataBuf;
 }T_UDPNODE, *T_PUDPNODE;
 
 //Slice Header
 typedef struct _tudpsliceheader
 {
-	uint8_t HeaderType;			 
-	uint8_t SliceType;			 
-	uint32_t uPacketNum;		 
-	uint16_t uSliceTotalNum;	 
-	uint16_t uSliceCurrIndex;	 
-	uint32_t uSliceBufCrc;
-	uint32_t uSliceBufLen;		 
-	uint32_t uSliceDataOffset;   
+    uint8_t HeaderType;			 //HC: PACKET_HEADER = '1'; SLICE_HEADER = '2'
+    uint8_t SliceType;			 //HC: SYN_TYPE = '1'; ACK_TYPE = '2'
+    uint32_t uPacketNum;		 //HC: Packet number
+    uint16_t uSliceTotalNum;	 //HC: The total number of slices
+    uint16_t uSliceCurrIndex;	 //HC: current slice index
+    uint32_t uSliceBufCrc;
+    uint32_t uSliceBufLen;		 //HC: slice data length
+    uint32_t uSliceDataOffset;   //HC: Offset in the entire packet
 }T_UDPSLICEHEADER, *T_PUDPSLICEHEADER;
 
 typedef struct _tudpslicenode
 {
-	T_UDPSLICEHEADER SliceHeader;
-	char SliceBuf[UDP_SLICE_MAX_SIZE];
+    T_UDPSLICEHEADER SliceHeader;
+    char SliceBuf[UDP_SLICE_MAX_SIZE];
 }T_UDPSLICENODE, *T_PUDPSLICENODE;
 
 typedef struct _trecvnode
 {
-	struct sockaddr_in fromAddr;
-	char recvbuf[MAX_BUFFER_SIZE];
-	int recvNum;
+    struct sockaddr_in fromAddr;
+    char recvbuf[MAX_BUFFER_SIZE];
+    int recvNum;
 }T_RECVNODE, *T_PRECVNODE;
 
 typedef struct _tpacketkey
 {
-	string Ip;
-	uint32_t Port;
-	uint32_t uPacketNum;
+    string Ip;
+    uint32_t Port;
+    uint32_t uPacketNum;
 
-	_tpacketkey(string ip, uint32_t port, uint32_t packetnum) : Ip(ip), Port(port), uPacketNum(packetnum) {}
+    _tpacketkey(string ip, uint32_t port, uint32_t packetnum) : Ip(ip), Port(port), uPacketNum(packetnum) {}
 
-	bool operator<(_tpacketkey const& other) const
-	{
-		if (Ip < other.Ip) { return true; }
-		if (Ip > other.Ip) { return false; }
-		if (Port < other.Port) { return true; }
-		if (Port > other.Port) { return false; }
-		return uPacketNum < other.uPacketNum;
-	}
+    bool operator<(_tpacketkey const& other) const
+    {
+        if (Ip < other.Ip) { return true; }
+        if (Ip > other.Ip) { return false; }
+        if (Port < other.Port) { return true; }
+        if (Port > other.Port) { return false; }
+        return uPacketNum < other.uPacketNum;
+    }
 }T_PACKETKEY;
 
 typedef struct _tpacketnode
 {
-	T_UDPHEADER _udpheader;
-	system_clock::time_point _tp;
+    T_UDPHEADER _udpheader;
+    system_clock::time_point _tp;
 public:
-	_tpacketnode() : _tp(system_clock::now()) {}
-	bool isTimeOut() {
-		using minutes = std::chrono::duration<double, ratio<60>>;
-		system_clock::time_point curr = system_clock::now();
+    _tpacketnode() : _tp(system_clock::now()) {}
+    bool isTimeOut() {
+        using minutes = std::chrono::duration<double, ratio<60>>;
+        system_clock::time_point curr = system_clock::now();
 
-		minutes timespan = std::chrono::duration_cast<minutes>(curr - _tp);
-		if (timespan.count() > 20) {
-			
-			return true;
-		}
-		return false;
-	}
+        minutes timespan = std::chrono::duration_cast<minutes>(curr - _tp);
+        if (timespan.count() > 20) {
+            //HC: 20 minutes
+            return true;
+        }
+        return false;
+    }
 }T_PACKETNODE;
 
 typedef list<T_UDPSLICENODE>	LIST_T_UDPSLICENODE;
@@ -166,54 +167,52 @@ typedef MULTI_MAP_PACKETDATA::iterator    ITR_MULTI_MAP_PACKETDATA;
 class UdpThreadPool
 {
 public:
-	UdpThreadPool(const char* localIp, uint32_t localPort, uint32_t numthreads = thread::hardware_concurrency(), uint32_t maxnumtasks = MAX_RECV_LIST_COUNT);
-	~UdpThreadPool();
-	int send(const string &peerIP, uint32_t peerPort, const char * buf, size_t len);
-	void start();
-	void stop();
-	size_t getUdpSendQueueSize() {
-		return m_sendList.size();
-	}
-
-	size_t getUdpRecvQueueSize() {
-		return m_recvList.size();
-	}
+    UdpThreadPool(const char* localIp, uint32_t localPort = 8115, uint32_t numthreads = thread::hardware_concurrency(), uint32_t maxnumtasks = MAX_RECV_LIST_COUNT);
+    ~UdpThreadPool();
+    int send(const string &peerIP, uint32_t peerPort, const char * buf, size_t len);
+    void start();
+    void stop();
+    size_t getUdpSendQueueSize() { return m_sendList.size(); }
+    size_t getUdpRecvQueueSize() { return m_recvList.size(); }
 
 private:
-	void Recv();
-	void RecvData();
-	void SendAgain();
-	void CheckExpired();
-	void CleanExpiredCache();
-	void slice_ack_resp_add(char *bitmap, uint16_t id);
-	int slice_ack_resp_check(char *bitmap, uint16_t id);
+    void Recv();
+    void RecvData();
+    void SendAgain();
+    void CheckExpired();
+    int  OpenUdpSocket();
+    void CloseUdpSocket();
+    bool UdpSocketIsValid();
+    void CleanExpiredCache();
+    void slice_ack_resp_add(vector<uint8_t> &bitmap, uint16_t id);
+    bool slice_ack_resp_check(vector<uint8_t> &bitmap, uint16_t id) const;
 
 private:
-	bool					m_isstop;
-	std::atomic<uint32_t>	m_packetNum;
-	uint32_t				m_localPort;
-	const char				*m_localIp;
+    bool					m_isstop;
+    std::atomic<uint32_t>	m_packetNum;
+    uint32_t				m_localPort;
+    const char				*m_localIp;
 #ifdef WIN32
-	SOCKET					m_listenFd;
+    SOCKET					m_listenFd;
 #else
-	int						m_listenFd;
+    int						m_listenFd;
 #endif
 
-	SyncQueue<T_PUDPNODE>	m_sendList;
-	SyncQueue<T_RECVNODE>	m_recvList;
-	std::thread				m_listenthread;
-	std::thread				m_checkthread;
-	std::list<std::thread>	m_sendthreads;
-	std::list<std::thread>	m_recvthreads;
-	uint32_t				m_sendthreads_num;
-	uint32_t				m_recvthreads_num;
+    SyncQueue<T_PUDPNODE>	m_sendList;
+    SyncQueue<T_RECVNODE>	m_recvList;
+    std::thread				m_listenthread;
+    std::thread				m_checkthread;
+    std::list<std::thread>	m_sendthreads;
+    std::list<std::thread>	m_recvthreads;
+    uint32_t				m_sendthreads_num;
+    uint32_t				m_recvthreads_num;
 
-	MAP_T_PUDPNODE			m_sendMap;
-	MAP_PACKETDATA			m_packetMap;
-	MULTI_MAP_PACKETDATA	m_recvMap;
+    MAP_T_PUDPNODE			m_sendMap;
+    MAP_PACKETDATA			m_packetMap;
+    MULTI_MAP_PACKETDATA	m_recvMap;
 
-	std::mutex				m_sendMapLock;
-	std::mutex				m_packetMapLock;
-	std::mutex				m_recvMapLock;
+    std::mutex				m_sendMapLock;
+    std::mutex				m_packetMapLock;
+    std::mutex				m_recvMapLock;
 };
 #pragma once

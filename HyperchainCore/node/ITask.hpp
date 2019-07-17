@@ -67,7 +67,7 @@ const size_t ProtocolHeaderLen = CUInt128::value + sizeof(ProtocolVer) + sizeof(
 
 class ITask
 {
-public: 
+public:
 	ITask() {}
 	ITask(TASKBUF && recvbuf) : _isRespond(true), _recvbuf(std::move(recvbuf)) {
 
@@ -82,7 +82,7 @@ public:
 	virtual ~ITask() {}
 	virtual void exec() = 0;
 	virtual void execRespond() = 0;
-	
+
 	bool isRespond() { return _isRespond; }
 
 protected:

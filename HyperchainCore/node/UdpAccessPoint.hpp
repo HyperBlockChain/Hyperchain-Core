@@ -66,6 +66,9 @@ public:
 	int write(const char *buf, size_t len) override
 	{
 		UdpThreadPool *pUdpThreadPool = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance();
+		if (pUdpThreadPool == nullptr){
+			return -1;
+		}
 		return pUdpThreadPool->send(_IP,_port,buf, len);
 	}
 

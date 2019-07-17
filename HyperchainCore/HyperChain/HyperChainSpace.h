@@ -23,7 +23,6 @@ DEALINGS IN THE SOFTWARE.
 #include <iostream>
 #include <string>
 #include <vector>
-#include <chrono>
 #include <list>
 #include <map>
 #include <set>
@@ -34,14 +33,10 @@ DEALINGS IN THE SOFTWARE.
 #include <mutex>
 #include "../Types.h"
 using namespace std;
-using std::chrono::system_clock;
-
-typedef map<string, system_clock::time_point> MAP_NODE;
-typedef map<uint64, MAP_NODE> MULTI_MAP_HPSPACEDATA;
 
 class CHyperChainSpace
 {
-public:	
+public:
 	CHyperChainSpace(string nodeid);
 	~CHyperChainSpace();
 
@@ -51,7 +46,7 @@ public:
 		if (m_threadpull->joinable())
 			m_threadpull->join();
 	}
-	void GetHyperChainData(MULTI_MAP_HPSPACEDATA & out_HyperChainData);
+	void GetHyperChainData(map<uint64, set<string>>& out_HyperChainData);
 	void GetHyperChainShow(map<string, string>& out_HyperChainShow);
 	void GetLocalChainShow(vector<string> & out_LocalChainShow);
 	int GetLocalChainIDList(list<uint64> & out_LocalIDList);
@@ -65,22 +60,22 @@ public:
 
 	bool PullChainSpaceRspTaskEXC(string & mes);
 	void PullChainSpaceRspTaskRSP(string  mes, string nodeid);
-		
+
 private:
 	void PullDataThread();
 	int GetChainIDListFormLocal();
 	bool FindIDExistInChainIDList(uint64 id);
-	
+
 	void AnalyticalChainData(string strbuf, string nodeid);
 	void SplitString(const string& s, vector<std::string>& v, const std::string& c);
 
 private:
 
-	string m_mynodeid;							
-	list<uint64> m_localhpidlist;			
-	vector <string> m_hyperidlistcompressed;
-	MULTI_MAP_HPSPACEDATA m_hpspacedata;	
-	map<string, string> m_hpspaceshow;		
+	string m_mynodeid;						//HC: 本节点kadid	
+	list<uint64> m_localhpidlist;			//HC: 本地超块ID
+	vector <string> m_hyperidlistcompressed;//HC: 本地超块ID 网络发送文本格式 "ID-ID"
+	map<uint64, set<string>> m_hpspacedata;	//HC: 链空间 <HyperID, <nodeID>>
+	map<string, string> m_hpspaceshow;		//HC: <nodeID, HyperID Section(0;6667-6677;6679-6690;)>
 	mutex m_datalock;
 	mutex m_showlock;
 	mutex m_listlock;

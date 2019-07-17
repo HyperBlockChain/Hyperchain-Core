@@ -3,7 +3,7 @@
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this
 software and associated documentation files (the "Software"), to deal in the Software
 without restriction, including without limitation the rights to use, copy, modify, merge,
 publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
@@ -12,7 +12,7 @@ to whom the Software is furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all copies or
 substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
 INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
 PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
 FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
@@ -25,12 +25,12 @@ DEALINGS IN THE SOFTWARE.
 
 #include<iostream>
 #include<vector>
-#ifdef WIN32  
-#include <time.h>  
-#else  
-#include <sys/time.h>  
+#ifdef WIN32
+#include <time.h>
+#else
+#include <sys/time.h>
 #include <iconv.h>
-#endif  
+#endif
 #include<stdio.h>
 #include<stdlib.h>
 #include <string.h>
@@ -41,7 +41,7 @@ DEALINGS IN THE SOFTWARE.
 
 using namespace std;
 
-
+//HC: max seconds
 #define MAX_SECS_COUNTER (9999999999)
 #define MAX_SECS_COUNTER (9999999999)
 #define MAX_SEND_NAT_TRAVERSAL_NODE_NUM (2)
@@ -69,7 +69,7 @@ using namespace std;
 #define ONE_MIN						    (60*ONE_SECOND)
 #define INIT_TIME						(10)
 #define ONE_KILO						(1024)
-#define FIVE_MINI						(5*60)  
+#define FIVE_MINI						(5*60)
 #define ONE_HOUR						(60*60)
 #define UNICODE_POS					    (2)
 #define DIVIDEND_NUM					(2)
@@ -83,43 +83,43 @@ using namespace std;
 
 enum _ePoeReqState
 {
-	DEFAULT_REGISREQ_STATE = 0,
-	RECV,													
-	SEND,													
-	STOP,													
-	CONFIRMING,												
-	CONFIRMED,												
-	REJECTED,												
-//	OTHERREFUSEME,											
-//	ALLCONFIRMED,											
-//	ALLOTHERREFUSEME,										
-//	ALLMYREFUSEOTHER										
+    DEFAULT_REGISREQ_STATE = 0,
+    RECV,													//HC: 已接收
+    SEND,													//HC: 已发送
+    STOP,													//HC: 中止
+    CONFIRMING,												//HC: 待确认
+    CONFIRMED,												//HC: 已确认
+    REJECTED,												//HC: 已拒绝
+//	OTHERREFUSEME,											//HC: 被拒绝
+//	ALLCONFIRMED,											//HC: 累计已确认
+//	ALLOTHERREFUSEME,										//HC: 累计被拒绝
+//	ALLMYREFUSEOTHER										//HC: 累计已拒绝
 };
 
 enum _eblocktype
 {
-	HYPER_BLOCK = 1,
-	LOCAL_BLOCK
+    HYPER_BLOCK = 1,
+    LOCAL_BLOCK
 };
 
 enum _eNodeState
 {
-	DEFAULT_NODE_STATE = 0,
-	SYNC_DATA_STATE,		
-	IDLE_STATE,				
-	LOCAL_BUDDY_STATE,		
-	GLOBAL_BUDDY_STATE,		
-	ON_CHAIN_SUCCESS,		
-	ON_CHAIN_FAILED,		
-	NODE_MALICE				
+    DEFAULT_NODE_STATE = 0,
+    SYNC_DATA_STATE,		//HC: 正在同步数据
+    IDLE_STATE,				//HC: 空闲状态
+    LOCAL_BUDDY_STATE,		//HC: 局部共识
+    GLOBAL_BUDDY_STATE,		//HC: 全局共识
+    ON_CHAIN_SUCCESS,		//HC: 上链成功
+    ON_CHAIN_FAILED,		//HC: 上链失败
+    NODE_MALICE				//HC: 恶意节点
 };
 
 
 enum _eChainState
 {
-	CHAIN_DEFAULT_STATE = 0,
-	CHAIN_CONFIRMING,				
-	CHAIN_CONFIRMED					
+    CHAIN_DEFAULT_STATE = 0,
+    CHAIN_CONFIRMING,				//HC: 链中所有block全部确认（UI中对应的绿色）
+    CHAIN_CONFIRMED					//HC: 链中有未确认的block（UI中对应的黄色）
 };
 #pragma pack(push,1)
 
@@ -129,275 +129,180 @@ enum _eChainState
 
 typedef struct _tLocalChain
 {
-	uint16	iId;							
-	uint64	iAllChainNodeNum;				
-	_eChainState	eState;					
+    uint16	iId;							//HC: 链标识
+    uint64	iAllChainNodeNum;				//HC: 链中节点数量
+    _eChainState	eState;					//HC: 链的状态
 
-	void Set(uint16 id, uint64 allChainNodeNum, _eChainState state);
+    void Set(uint16 id, uint64 allChainNodeNum, _eChainState state);
 
-	uint16 GetID()const;
+    uint16 GetID()const;
 
-	uint64 GetChainNodesNum()const;
+    uint64 GetChainNodesNum()const;
 
-	_eChainState GetChainState()const;
+    _eChainState GetChainState()const;
 
 }TGETFRIENDCHAININFO, *P_TGETFRIENDCHAININFO;
 
-
+//HC: 一个存证文件信息
 typedef struct _tPoeInfo
 {
-	string				cFileName;			
-	string				cCustomInfo;		
-	string				cRightOwner;		
-	string				cFileHash;			
-	int16				iFileState;			
-	uint64				tRegisTime;			
-	uint64				iFileSize;			
-	uint64				iBlocknum;			
+    string				cFileName;			//HC: 文件名
+    string				cCustomInfo;		//HC: 自定义信息
+    string				cRightOwner;		//HC: 文件所有者
+    string				cFileHash;			//HC: 文件hash
+    int16				iFileState;			//HC: 文件状态
+    uint64				tRegisTime;			//HC: 存证时间
+    uint64				iFileSize;			//HC: 文件大小
+    uint64				iBlocknum;			//HC: 块号
 
-	_tPoeInfo()
-	{
-		cFileName = "";
-		cCustomInfo = "";
-		cRightOwner = "";
-		cFileHash = "";
-		iFileSize = 0;
-		iFileState = DEFAULT_REGISREQ_STATE; 
-		tRegisTime = 0;  
-		iBlocknum = 0;
-	}
+    _tPoeInfo()
+    {
+        cFileName = "";
+        cCustomInfo = "";
+        cRightOwner = "";
+        cFileHash = "";
+        iFileSize = 0;
+        iFileState = DEFAULT_REGISREQ_STATE;
+        tRegisTime = 0;
+        iBlocknum = 0;
+    }
 
-	void Set(string fileName,string customInfo,string rightOwner,string fileHash,
-		int16 fileState,uint64 regisTime,uint64 fileSize,uint64 blockNum);
+    void Set(string fileName, string customInfo, string rightOwner, string fileHash,
+        int16 fileState, uint64 regisTime, uint64 fileSize, uint64 blockNum);
 
-	string GetFileName()const;
-	string GetFileHash()const;
-	int16 GetFileState()const;
-	string GetBlockNum()const;
-	uint64 GetFileSize()const;
-	string GetRightOwner()const;
-	uint64 GetRegisTime()const;
-	string GetCustomInfo()const;
+    string GetFileName()const;
+    string GetFileHash()const;
+    int16 GetFileState()const;
+    string GetBlockNum()const;
+    uint64 GetFileSize()const;
+    string GetRightOwner()const;
+    uint64 GetRegisTime()const;
+    string GetCustomInfo()const;
 
 
 
 }TEVIDENCEINFO, *P_TEVIDENCEINFO;
 
-
+//HC: 浏览器显示信息
 typedef struct _tChainQueryStru
 {
-	uint64		iBlockNo;								
-	uint64		iJoinedNodeNum;							
-	uint64		iLocalBlockNum;							
-	uint16		iLocalChainNum;							
-	//uint16		iLongestChain;						
-	uint64		tTimeStamp;								
-	_tPoeInfo tPoeRecordInfo;
+    uint64		iBlockNo;								//HC: 块号
+    uint64		iJoinedNodeNum;							//HC: 参与节点数
+    uint64		iLocalBlockNum;							//HC: 数据块个数
+    uint16		iLocalChainNum;							//HC: 数据链条
+    //uint16		iLongestChain;						//HC: 最长链
+    uint64		tTimeStamp;								//HC: 时间戳
+    _tPoeInfo tPoeRecordInfo;
 
-	_tChainQueryStru()
-	{
-		iBlockNo = 0;
-		iLocalChainNum = 0;
-		iLocalBlockNum = 0;
-		iJoinedNodeNum = 0;
-		//iLongestChain = 0;
-		tTimeStamp = 0;
-	}
+    _tChainQueryStru()
+    {
+        iBlockNo = 0;
+        iLocalChainNum = 0;
+        iLocalBlockNum = 0;
+        iJoinedNodeNum = 0;
+        //iLongestChain = 0;
+        tTimeStamp = 0;
+    }
 
-	void Set(uint64 blockNo, uint64 joinedNodeNum, uint64 localBlockNum, uint16 localChainNum, uint64 timeStamp,
-		_tPoeInfo poeRecordInfo);
+    void Set(uint64 blockNo, uint64 joinedNodeNum, uint64 localBlockNum, uint16 localChainNum, uint64 timeStamp,
+        _tPoeInfo poeRecordInfo);
 
-	uint64 GetBlockNo()const;
+    uint64 GetBlockNo()const;
 
-	uint64 GetJoinedNodeNum()const;
+    uint64 GetJoinedNodeNum()const;
 
-	uint64 GetLocalBlockNum()const;
+    uint64 GetLocalBlockNum()const;
 
-	uint16 GetLocalChainNUm()const;
+    uint16 GetLocalChainNUm()const;
 
-	uint64 GetTimeStamp()const;
+    uint64 GetTimeStamp()const;
 
-	_tPoeInfo GetPoeRecordInfo()const;
+    _tPoeInfo GetPoeRecordInfo()const;
 
 }TBROWSERSHOWINFO, *P_TBROWSERSHOWINFO;
 #pragma pack(pop)
 
-
+//HC: by:changhua
 typedef struct _tUpqueue
 {
-	uint64 uiID;
-	string strHash;
-	uint64 uiTime;
+    uint64 uiID;
+    string strHash;
+    uint64 uiTime;
 }TUPQUEUE, *P_TUPQUEUE;
 
 typedef struct _tlocalblockaddress
 {
-	uint64 hid = -1;
-	uint16 chainnum = -1;
-	uint64 id = -1;
-	void set(uint64 uihid, uint16 chain, uint64 uiid){
-		hid = uihid;
-		chainnum = chain;
-		id = uiid;
-	}
-	bool isValid() {
-		return hid != uint64(-1) && id != (uint64)-1 && chainnum != (uint16)-1;
-	}
+    uint64 hid = -1;            //HC: hyper block id
+    uint16 chainnum = -1;
+	uint16 id = -1;
+    string ns;                  //HC: namespace
+
+    void set(uint64 uihid, uint16 chain, uint16 uiid, string nspace ="") {
+        hid = uihid;
+        chainnum = chain;
+        id = uiid;
+        ns = nspace;
+    }
+    bool isValid() {
+        return hid != uint64(-1) && id != (uint16)-1 && chainnum != (uint16)-1;
+    }
 }T_LOCALBLOCKADDRESS, *P_TLOCALBLOCKADDRESS;
 
 
 
+
+
+//HC: 每一个块信息
 typedef struct _tBlockInfo
 {
-	uint64 iBlockNo;
-	uint64 iCreatTime;
-	_tPoeInfo tPoeRecordInfo;
+    uint64 iBlockNo;
+    uint64 iCreatTime;
+    _tPoeInfo tPoeRecordInfo;
 
-	void Set(uint64 blockNo, uint64 createTime, _tPoeInfo poeRecordInfo);
+    void Set(uint64 blockNo, uint64 createTime, _tPoeInfo poeRecordInfo);
 
-	uint64 GetBlockNo()const;
+    uint64 GetBlockNo()const;
 
-	uint64 GetCreateTime()const;
+    uint64 GetCreateTime()const;
 
-	_tPoeInfo GetPoeRecordInfo()const;
+    _tPoeInfo GetPoeRecordInfo()const;
 
-}TBLOCKINFO, *P_TBLOCKINFO;    
+}TBLOCKINFO, *P_TBLOCKINFO;
 
 typedef struct _tHBlockDlgInfo
 {
-	uint64 iBlockNo;
-	uint64 iCreatTime;
-	uint64 iLocalBlockNum;
-	string strHHash;
-	string strVersion;
+    uint64 iBlockNo;
+    uint64 iCreatTime;
+    uint64 iLocalBlockNum;
+    string strHHash;
+    string strVersion;
 
-	void Set(uint64 blockNo, uint64 createTime, uint64 localBlockNum, string HHash, string version);
+    void Set(uint64 blockNo, uint64 createTime, uint64 localBlockNum, string HHash, string version);
 
-	uint64 GetBlockNo()const;
+    uint64 GetBlockNo()const;
 
-	uint64 GetCreateTime()const;
+    uint64 GetCreateTime()const;
 
-	uint64 GetLocalBlockNum()const;
+    uint64 GetLocalBlockNum()const;
 
-	string GetParentHash()const;
+    string GetParentHash()const;
 
 }THBLOCKDLGINFO, *P_THBLOCKDLGINFO;
 
 typedef struct _tNodeInfo
 {
-	uint64 uiNodeState;
-	string strNodeIp;
+    uint64 uiNodeState;
+    string strNodeIp;
 
-	_tNodeInfo(){};
-	_tNodeInfo(uint64 nodeState, string nodeIp);
-	void Set(uint64 nodeState, string nodeIp);
+    _tNodeInfo() {};
+    _tNodeInfo(uint64 nodeState, string nodeIp);
+    void Set(uint64 nodeState, string nodeIp);
 
-	uint64 GetNodeState()const;
+    uint64 GetNodeState()const;
 
-	string GetNodeIp()const;
+    string GetNodeIp()const;
 
 }TNODEINFO, *P_TNODEINFO;
-
-typedef struct _tBlockPersistStru
-{
-	uint8  ucBlockType;			
-
-	uint64 uiBlockId;			
-	uint64 uiReferHyperBlockId; 
-	uint64 uiBlockTimeStamp;
-	uint64 uiLocalChainId;		
-
-	unsigned char strHyperBlockHash[DEF_SHA256_LEN];
-	unsigned char strPreHash[DEF_SHA256_LEN];		
-	string strScript;
-	string strAuth;
-	unsigned char strHashSelf[DEF_SHA256_LEN];	
-	unsigned char strHashAll[DEF_SHA256_LEN];	
-
-	string strVersion;
-	uint32 difficulty = 1;							
-
-	string strPayload;
-
-	uint64 uiQueueID = 0; 
-	_tBlockPersistStru() : strVersion("")
-	{
-		ucBlockType = 0;
-		uiBlockId = 0;
-		uiBlockTimeStamp = 0;
-		uiLocalChainId = 0;
-
-		memset(strHyperBlockHash, 0, DEF_SHA256_LEN);
-		memset(strPreHash, 0, DEF_SHA256_LEN);
-		strScript = "";
-		strAuth = "";
-		memset(strHashSelf, 0, DEF_SHA256_LEN);
-		memset(strHashAll, 0, DEF_SHA256_LEN);
-		strPayload = "";
-	}
-
-	_tBlockPersistStru(T_SHA256 hashAll, T_SHA256  hyperBlockHash, T_SHA256  hashSelf, T_SHA256  preHash, string payLoad, string script, string auth,
-		uint8 blockType, uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp, uint64 localChainId, const string &version, uint32 diff);
-
-	_tBlockPersistStru(T_SHA256 hashAll, T_SHA256  hyperBlockHash, T_SHA256  hashSelf, T_SHA256  preHash, string payLoad, string script, string auth,
-		uint8 blockType, uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp, uint64 localChainId, uint64 queueID, const string &version, uint32 diff);
-
-	_tBlockPersistStru(string objjsonstring);
-	
-	void Set(uint8 blockType);
-
-	void Set(uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp, uint64 localChainId);
-
-	void Set(string payLoad);
-
-	void Set(unsigned char hyperBlockHash[], unsigned char preHash[],string script,string auth,
-		unsigned char hashSelf[],unsigned char hashAll[]);
-
-	void Set(T_SHA256  hashAll, T_SHA256  hashSelf, T_SHA256  preHash, string payLoad, string script, string auth,
-		uint8 blockType, uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp);
-
-	void Set(T_SHA256  hyperBlockHash, T_SHA256  hashSelf, T_SHA256  preHash, string payLoad, string script, string auth,
-		uint8 blockType, uint64 blockId, uint64 referHyperBlockId, uint64 blockTimeStamp, uint64 localChainId);
-
-	uint8 GetBlockType()const;
-
-	uint64 GetBlockId()const;
-
-	uint64 GetReferHyperBlockId()const;
-
-	uint64 GetBlockTimeStamp()const;
-
-	uint64 GetLocalChainId()const;
-
-	uint64 GetQueueID()const;	
-
-	string GetAuth()const;
-
-	string GetScript()const;
-
-	string GetPayload()const;
-
-	T_SHA256 GetPreHash()const;
-
-	T_SHA256 GetHashSelf()const;
-
-	T_SHA256 GetHashAll()const;
-
-	T_SHA256 GetHyperBlockHash()const;
-
-	string GetVersion()const;
-
-	string hash256tostring(const unsigned char* hash);
-	void strtohash256(unsigned char* out, const char* szHash);
-
-	string serialize();
-
-
-}T_HYPERBLOCKDBINFO, *T_PHYPERBLOCKDBINFO;
-
-
-typedef vector<T_HYPERBLOCKDBINFO>				VEC_T_HYPERBLOCKDBINFO;
-typedef VEC_T_HYPERBLOCKDBINFO::iterator		ITR_VEC_T_HYPERBLOCKDBINFO;
 
 typedef vector<P_TBLOCKINFO>					VEC_T_BLOCKINFO;
 typedef VEC_T_BLOCKINFO::iterator				ITR_VEC_T_BLOCKINFO;
@@ -411,7 +316,7 @@ typedef VEC_T_BROWSERSHOWINFO::iterator			ITR_VEC_T_BROWSERSHOWINFO;
 typedef vector<P_TEVIDENCEINFO>					VEC_T_EVIDENCEINFO;
 typedef VEC_T_EVIDENCEINFO::iterator			ITR_VEC_T_EVIDENCEINFO;
 
-
+//HC: by changhua
 typedef vector<P_TUPQUEUE>						VEC_T_UPQUEUEINFO;
 typedef VEC_T_UPQUEUEINFO::iterator				ITR_VEC_T_UPQUEUEINFO;
 

@@ -65,6 +65,7 @@ const char ALPHABET_MAP[128] = {
 int EncodeBase58(const unsigned char *bytes, int len, unsigned char result[]) 
 {
 	unsigned char *digits = new unsigned char[len * 2];
+	memset(digits,0,len*2);
 
 	int digitslen = 1;
 	for (int i = 0; i < len; i++) {
@@ -93,7 +94,6 @@ int EncodeBase58(const unsigned char *bytes, int len, unsigned char result[])
 }
 
 // result must be declared (for the worst case): char result[len * 2];
-
 int DecodeBase58(const unsigned char *str, int len, unsigned char *result) 
 {
 	result[0] = 0;

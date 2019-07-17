@@ -25,7 +25,6 @@ DEALINGS IN THE SOFTWARE.
 #include "node/Singleton.h"
 #include "node/TaskThreadPool.h"
 #include "consensus/hyperblockTask.hpp"
-#include "HyperChain/PullHyperDataTask.hpp"
 #include "../wnd/common.h"
 
 #include <iostream>
@@ -43,89 +42,16 @@ CHyperData::~CHyperData()
 {
 }
 
-
 void CHyperData::PullHyperDataByHID(uint64 hid, string nodeid)
 {
-	struct timeval timePtr;
-	CCommonStruct::gettimeofday_update(&timePtr);
+    struct timeval timePtr;
+    CCommonStruct::gettimeofday_update(&timePtr);
 
-	DataBuffer<GetHyperBlockByNoReqTask> msgbuf(sizeof(T_P2PPROTOCOLGETHYPERBLOCKBYNOREQ));
-	T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ tGetHyperBlockByNoReq = reinterpret_cast<T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ>(msgbuf.payload());
-	tGetHyperBlockByNoReq->SetP2pprotocolgethyperblockbynoreq(
-		T_P2PPROTOCOLTYPE(P2P_PROTOCOL_GET_HYPERBLOCK_BY_NO_REQ, timePtr.tv_sec), hid);
+    DataBuffer<GetHyperBlockByNoReqTask> msgbuf(sizeof(T_P2PPROTOCOLGETHYPERBLOCKBYNOREQ));
+    T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ tGetHyperBlockByNoReq = reinterpret_cast<T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ>(msgbuf.payload());
+    tGetHyperBlockByNoReq->SetP2pprotocolgethyperblockbynoreq(
+        T_P2PPROTOCOLTYPE(P2P_PROTOCOL_GET_HYPERBLOCK_BY_NO_REQ, timePtr.tv_sec), hid);
 
-	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-	nodemgr->sendTo(CUInt128(nodeid), msgbuf);
-}
-
-void CHyperData::PullHyperDataRspexec(string buf, string & outmsg)
-{
-	string hyperdata = buf;
-	string::size_type np = hyperdata.find("hyperid=");
-	if (np != string::npos)
-	{
-		string strhyid(hyperdata.begin() + 8, hyperdata.end());
-		uint64 hyperid = stoi(strhyid);
-		GetHyperBlockByID(hyperid, outmsg);
-	}
-}
-
-int CHyperData::PullHyperDataRspexecRespond(string & hblock)
-{
-	if (hblock.size() == 0)
-		return -1;
-
-	json::value obj = json::value::parse(s2t(hblock));
-	assert(obj.is_array());
-
-	size_t num = obj.size();
-	for (size_t i = 0; i < num; i++)
-	{
-		string objstr = t2s(obj[i].serialize());
-		T_HYPERBLOCKDBINFO hblockinfo(objstr);
-		DBmgr::instance()->insertHyperblock(hblockinfo);
-	}
-
-	return 0;
-}
-
-void CHyperData::GetBlockFromID(uint64 BlockNum, vector<string>& hyperdata)
-{
-	std::list<T_HYPERBLOCKDBINFO> queue;
-	DBmgr::instance()->getHyperblocks(queue, BlockNum, BlockNum);
-	if (queue.size() == 0)
-		return;
-
-	for (auto info : queue)
-	{
-		hyperdata.push_back(info.serialize());
-	}
-}
-
-void CHyperData::GetHyperBlockByID(uint64 BlockNum, string & hyperdata)
-{
-	json::value obj = json::value::array();
-	std::list<T_HYPERBLOCKDBINFO> queue;
-	int nRet = DBmgr::instance()->getHyperblocks(queue, BlockNum, BlockNum);
-	if (nRet != 0)
-		return;
-
-	if (queue.size() == 0)
-		return;
-
-	int i = 0;
-	for (auto info : queue) 
-	{
-		if (info.ucBlockType == 1) {
-			obj[0] = json::value::parse(s2t(info.serialize()));
-		}
-		else if (info.ucBlockType == 2) {
-			obj[i] = json::value::parse(s2t(info.serialize()));
-		}
-		++i;
-	}
-
-	std::stringstream oss;
-	obj.serialize(oss);
-	hyperdata = std::move(oss.str());
+    NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+    nodemgr->sendTo(CUInt128(nodeid), msgbuf);
 }

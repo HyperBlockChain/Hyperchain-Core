@@ -25,208 +25,235 @@ DEALINGS IN THE SOFTWARE.
 
 #include "includeComm.h"
 
+#include <boost/serialization/serialization.hpp>
+#include <boost/serialization/array.hpp>
+#include <boost/serialization/version.hpp>
+
 #include <string>
+#include <array>
+
 using namespace std;
 
 typedef struct _tsha256
 {
-	unsigned char pID[DEF_SHA256_LEN];
+    array<unsigned char, DEF_SHA256_LEN> pID;
 
-	_tsha256()
-	{
-	}
+    _tsha256() {}
 
-	_tsha256(int nNum)
-	{
-		memset(pID, nNum, DEF_SHA256_LEN);
-	}
+    _tsha256(int nNum)
+    {
+        pID.fill(nNum);
+    }
 
-	_tsha256(const unsigned char sha[DEF_SHA256_LEN])
-	{
-		for (int i = 0; i<DEF_SHA256_LEN; i++)
-			pID[i] = sha[i];
-	}
+    _tsha256(const unsigned char sha[DEF_SHA256_LEN])
+    {
+        for (int i = 0; i < DEF_SHA256_LEN; i++)
+            pID[i] = sha[i];
+    }
 
-	_tsha256(const _tsha256&sha)
-	{
-		for (int i = 0; i<DEF_SHA256_LEN; i++)
-			pID[i] = sha.pID[i];
-	}
+    _tsha256(const string sha)
+    {
+        for (int i = 0; i < DEF_SHA256_LEN; i++)
+            pID[i] = sha[i];
+    }
 
-	_tsha256 operator = (const _tsha256& arRes)
-	{
-		if(this != &arRes)
-		{
-			for(int i=0; i<DEF_SHA256_LEN; i++)
-				pID[i] = arRes.pID[i];
-		}
-		return *this;
-	}
+    _tsha256(const _tsha256&sha)
+    {
+        for (int i = 0; i < DEF_SHA256_LEN; i++)
+            pID[i] = sha.pID[i];
+    }
 
-	bool operator == (const _tsha256& arRes) const
-	{
-		if(this == &arRes)
-			return true;
+    _tsha256 operator = (const _tsha256& arRes)
+    {
+        if (this != &arRes) {
+            for (int i = 0; i < DEF_SHA256_LEN; i++)
+                pID[i] = arRes.pID[i];
+        }
+        return *this;
+    }
 
-		for(int i=0; i<DEF_SHA256_LEN; i++)
-		{
-			if(pID[i] != arRes.pID[i])
-				return false;
-		}
-		return true;
-	}
+    bool operator == (const _tsha256& arRes) const
+    {
+        if (this == &arRes)
+            return true;
 
-	bool operator != (const _tsha256& arRes) const
-	{
-		return !(*this == arRes);
-	}
+        for (int i = 0; i < DEF_SHA256_LEN; i++) {
+            if (pID[i] != arRes.pID[i])
+                return false;
+        }
+        return true;
+    }
 
-	bool operator < (const _tsha256& arRes) const
-	{
-		if(this == &arRes)
-			return false;
+    bool operator != (const _tsha256& arRes) const
+    {
+        return !(*this == arRes);
+    }
 
-		for(int i=0; i<DEF_SHA256_LEN; i++)
-		{
-			if(pID[i] < arRes.pID[i])
-			{
-				return true;
-			}
-			else if(pID[i] == arRes.pID[i])
-			{
-				continue;
-			}
-			else
-				return false;
+    bool operator < (const _tsha256& arRes) const
+    {
+        if (this == &arRes)
+            return false;
 
-		}
-		return false;
-	}
+        for (int i = 0; i < DEF_SHA256_LEN; i++) {
+            if (pID[i] < arRes.pID[i]) {
+                return true;
+            }
+            else if (pID[i] == arRes.pID[i]) {
+                continue;
+            }
+            else
+                return false;
 
-	bool operator > (const _tsha256& arRes) const
-	{
-		if(this == &arRes)
-			return false;
+        }
+        return false;
+    }
 
-		for(int i=0; i<DEF_SHA256_LEN; i++)
-		{
-			if(pID[i] > arRes.pID[i])
-			{
-				return true;
-			}
-			else if(pID[i] == arRes.pID[i])
-			{
-				continue;
-			}
-			else
-				return false;
+    bool operator > (const _tsha256& arRes) const
+    {
+        if (this == &arRes)
+            return false;
 
-		}
-		return false;
-	}
+        for (int i = 0; i < DEF_SHA256_LEN; i++) {
+            if (pID[i] > arRes.pID[i]) {
+                return true;
+            }
+            else if (pID[i] == arRes.pID[i]) {
+                continue;
+            }
+            else
+                return false;
+        }
+        return false;
+    }
 
-	void SetInit(int nNum)
-	{
-		memset(pID, nNum, DEF_SHA256_LEN);
-	}
+    void SetInit(int nNum)
+    {
+        pID.fill(nNum);
+    }
 
-	string toHexString() const
-	{
-		char ucBuf[DEF_SHA256_LEN * 2 + 1] = { 0 };
+    inline unsigned char* data() { return pID.data(); }
+    inline const unsigned char* data() const { return pID.data(); }
+    inline size_t size() const { return DEF_SHA256_LEN; }
 
-		unsigned int uiNum = 0;
-		char *p = ucBuf;
-		for (; uiNum < DEF_SHA256_LEN; uiNum++) {
-			sprintf(p, "%02x", pID[uiNum]);
-			p += 2;
-		}
-		return string(ucBuf);
-	}
+    string tostring() const
+    {
+        return string((const char*)pID.data(), DEF_SHA256_LEN);
+    }
+    string toHexString() const
+    {
+        char ucBuf[DEF_SHA256_LEN * 2 + 1] = { 0 };
+
+        unsigned int uiNum = 0;
+        char *p = ucBuf;
+        for (; uiNum < DEF_SHA256_LEN; uiNum++) {
+            sprintf(p, "%02x", pID[uiNum]);
+            p += 2;
+        }
+        return string(ucBuf);
+    }
+    bool isNull() {
+        char test[DEF_SHA256_LEN] = { 0 };
+        if (memcmp(pID.data(),test,DEF_SHA256_LEN) == 0) {
+            return true;
+        }
+        return false;
+    }
+private:
+    friend class boost::serialization::access;
+    template <typename Archive>
+    void serialize(Archive &ar, unsigned int version)
+    {
+        ar & boost::serialization::make_array(pID.data(), DEF_SHA256_LEN);
+    }
 
 }T_SHA256, *T_PSHA256;
+BOOST_CLASS_VERSION(T_SHA256, 0)
 
 typedef struct _tsha512
 {
-	unsigned char pID[DEF_SHA512_LEN];
+    array<unsigned char, DEF_SHA512_LEN> pID;
 
-	_tsha512()
-	{
-	}
+    _tsha512()
+    {
+    }
 
-	_tsha512(int nNum)
-	{
-		memset(pID, nNum, DEF_SHA512_LEN);
-	}
-	_tsha512 operator = (const _tsha512& arRes)
-	{
-		if (this != &arRes)
-		{
-			for (int i = 0; i<DEF_SHA512_LEN; i++)
-				pID[i] = arRes.pID[i];
-		}
-		return *this;
-	}
+    _tsha512(int nNum)
+    {
+        pID.fill(nNum);
+    }
 
-	bool operator == (const _tsha512& arRes) const
-	{
-		if (this == &arRes)
-			return true;
+    _tsha512 operator = (const _tsha512& arRes)
+    {
+        if (this != &arRes) {
+            for (int i = 0; i < DEF_SHA512_LEN; i++)
+                pID[i] = arRes.pID[i];
+        }
+        return *this;
+    }
 
-		for (int i = 0; i<DEF_SHA512_LEN; i++)
-		{
-			if (pID[i] != arRes.pID[i])
-				return false;
-		}
-		return true;
-	}
+    bool operator == (const _tsha512& arRes) const
+    {
+        if (this == &arRes)
+            return true;
 
-	bool operator < (const _tsha512& arRes) const
-	{
-		if (this == &arRes)
-			return false;
+        for (int i = 0; i < DEF_SHA512_LEN; i++) {
+            if (pID[i] != arRes.pID[i])
+                return false;
+        }
+        return true;
+    }
 
-		for (int i = 0; i<DEF_SHA512_LEN; i++)
-		{
-			if (pID[i] < arRes.pID[i])
-			{
-				return true;
-			}
-			else if (pID[i] == arRes.pID[i])
-			{
-				continue;
-			}
-			else
-				return false;
+    bool operator < (const _tsha512& arRes) const
+    {
+        if (this == &arRes)
+            return false;
 
-		}
-		return false;
-	}
+        for (int i = 0; i < DEF_SHA512_LEN; i++) {
+            if (pID[i] < arRes.pID[i]) {
+                return true;
+            }
+            else if (pID[i] == arRes.pID[i]) {
+                continue;
+            }
+            else
+                return false;
 
-	bool operator > (const _tsha512& arRes)
-	{
-		if (this == &arRes)
-			return false;
+        }
+        return false;
+    }
 
-		for (int i = 0; i<DEF_SHA512_LEN; i++)
-		{
-			if (pID[i] > arRes.pID[i])
-			{
-				return true;
-			}
-			else if (pID[i] == arRes.pID[i])
-			{
-				continue;
-			}
-			else
-				return false;
+    bool operator > (const _tsha512& arRes)
+    {
+        if (this == &arRes)
+            return false;
 
-		}
-		return false;
-	}
-	void SetInit(int nNum)
-	{
-		memset(pID, nNum, DEF_SHA512_LEN);
-	}
+        for (int i = 0; i < DEF_SHA512_LEN; i++) {
+            if (pID[i] > arRes.pID[i]) {
+                return true;
+            }
+            else if (pID[i] == arRes.pID[i]) {
+                continue;
+            }
+            else
+                return false;
+
+        }
+        return false;
+    }
+    void SetInit(int nNum)
+    {
+        pID.fill(nNum);
+    }
+
+    bool isNull() {
+        char test[DEF_SHA512_LEN] = { 0 };
+        if (memcmp(pID.data(),test,DEF_SHA512_LEN) == 0) {
+            return true;
+        }
+        return false;
+    }
+
+    inline unsigned char* data() { return pID.data(); }
 
 }T_SHA512, *T_PSHA512;
 

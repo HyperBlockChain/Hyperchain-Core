@@ -33,145 +33,145 @@ using namespace std;
 
 using HCNodeMap = std::map<CUInt128, std::shared_ptr<HCNode> >;
 
-template<typename T, ProtocolVer pro_ver=0>
+template<typename T, ProtocolVer pro_ver = 0>
 class DataBuffer {
 
 public:
-	DataBuffer(size_t payloadlen) :_data(std::string(payloadlen + ProtocolHeaderLen, 0)) {
-		setTaskMetaHeader();
-	}
+    DataBuffer(size_t payloadlen) :_data(std::string(payloadlen + ProtocolHeaderLen, 0)) {
+        setTaskMetaHeader();
+    }
 
-	DataBuffer(string &&payload) :_data(std::forward<string>(payload)) {
-		_data.insert(0, ProtocolHeaderLen, '\0');
-		setTaskMetaHeader();
-	}
+    DataBuffer(string &&payload) :_data(std::forward<string>(payload)) {
+        _data.insert(0, ProtocolHeaderLen, '\0');
+        setTaskMetaHeader();
+    }
 
-	operator string() {
-		return _data;
-	}
+    operator string() {
+        return _data;
+    }
 
-	string& tostring()
-	{
-		return _data;
-	}
+    string& tostring()
+    {
+        return _data;
+    }
 
-	void resize(size_t payloadlen)
-	{
-		_data.resize(payloadlen + ProtocolHeaderLen);
-	}
+    void resize(size_t payloadlen)
+    {
+        _data.resize(payloadlen + ProtocolHeaderLen);
+    }
 
-	char *payload() { return const_cast<char*>(_data.c_str() + ProtocolHeaderLen); }
+    char *payload() { return const_cast<char*>(_data.c_str() + ProtocolHeaderLen); }
 
-	typename std::enable_if<std::is_base_of<ITask, T>::value>::type
-	setHeader(uint8_t h[CUInt128::value]) {
-		memcpy(payloadoffset(0), h, CUInt128::value);
-	}
+    typename std::enable_if<std::is_base_of<ITask, T>::value>::type
+        setHeader(uint8_t h[CUInt128::value]) {
+        memcpy(payloadoffset(0), h, CUInt128::value);
+    }
 
-	typename std::enable_if<std::is_base_of<ITask, T>::value>::type
-	setHeader(CUInt128 &nodeid) {
+    typename std::enable_if<std::is_base_of<ITask, T>::value>::type
+        setHeader(CUInt128 &nodeid) {
 
-		uint8_t h[CUInt128::value];
-		nodeid.ToByteArray(h);
-		memcpy(payloadoffset(0), h, CUInt128::value);
-	}
-		
+        uint8_t h[CUInt128::value];
+        nodeid.ToByteArray(h);
+        memcpy(payloadoffset(0), h, CUInt128::value);
+    }
+
 private:
-	typename std::enable_if<std::is_base_of<ITask, T>::value>::type
-	setTaskMetaHeader() {
-		TASKTYPE t = T::value;
-		ProtocolVer *v = reinterpret_cast<ProtocolVer*>(payloadoffset(CUInt128::value));
-		*v = pro_ver;
-		memcpy(payloadoffset(CUInt128::value + sizeof(ProtocolVer)), (char*)&(t), sizeof(TASKTYPE));
-	}
-	char * payloadoffset(size_t offset) { return const_cast<char*>(_data.c_str() + offset); }
+    typename std::enable_if<std::is_base_of<ITask, T>::value>::type
+        setTaskMetaHeader() {
+        TASKTYPE t = T::value;
+        ProtocolVer *v = reinterpret_cast<ProtocolVer*>(payloadoffset(CUInt128::value));
+        *v = pro_ver;
+        memcpy(payloadoffset(CUInt128::value + sizeof(ProtocolVer)), (char*)&(t), sizeof(TASKTYPE));
+    }
+    char * payloadoffset(size_t offset) { return const_cast<char*>(_data.c_str() + offset); }
 
-	string _data;
+    string _data;
 };
 
 class NodeManager {
 
-public: 
-	
-	NodeManager() : _me(make_shared<HCNode>()) {}
-	NodeManager(const NodeManager &) = delete;
-	NodeManager & operator=(const NodeManager &) = delete;
+public:
 
-	~NodeManager() {}
+    NodeManager() : _me(make_shared<HCNode>()) {}
+    NodeManager(const NodeManager &) = delete;
+    NodeManager & operator=(const NodeManager &) = delete;
 
-	void myself(HCNodeSH &me) { _me = std::move(me); }
-	HCNodeSH & myself() { return _me; }
+    ~NodeManager() {}
 
-	void seedServer(HCNodeSH &seed) {_seed = std::move(seed);}
-	HCNodeSH & seedServer() { return _seed; }
+    void myself(HCNodeSH &me) { _me = std::move(me); }
+    HCNodeSH & myself() { return _me; }
 
-	HCNodeSH& getNode(const CUInt128 &nodeid);
-    
-	void addNode(HCNodeSH & node);
-	void updateNode(HCNodeSH & node);
+    void seedServer(HCNodeSH &seed) { _seed = std::move(seed); }
+    HCNodeSH & seedServer() { return _seed; }
 
-	template<typename T> 
-	void sendToAllNodes(DataBuffer<T> & msgbuf)
-	{
-		std::lock_guard<std::mutex> lck(_guard);
+    HCNodeSH& getNode(const CUInt128 &nodeid);
 
-		uint8_t b[CUInt128::value];
-		_me->getNodeId(b);
-		msgbuf.setHeader(b);
+    void addNode(HCNodeSH & node);
+    void updateNode(HCNodeSH & node);
 
-		std::for_each(_nodemap.begin(), _nodemap.end(), [&, this](HCNodeMap::reference node) {
-			node.second->send(msgbuf.tostring());
-		});
-	}
+    template<typename T>
+    void sendToAllNodes(DataBuffer<T> & msgbuf)
+    {
+        std::lock_guard<std::mutex> lck(_guard);
 
-	template<typename T>
-	int sendTo(HCNodeSH &targetNode, DataBuffer<T> & msgbuf)
-	{
-		uint8_t b[CUInt128::value];
-		_me->getNodeId(b);
+        uint8_t b[CUInt128::value];
+        _me->getNodeId(b);
+        msgbuf.setHeader(b);
 
-		msgbuf.setHeader(b);
-		return targetNode->send(msgbuf.tostring());
-	}
+        std::for_each(_nodemap.begin(), _nodemap.end(), [&, this](HCNodeMap::reference node) {
+            node.second->send(msgbuf.tostring());
+        });
+    }
 
-	template<typename T>
-	int sendTo(const CUInt128 &targetNodeid, DataBuffer<T> & msgbuf)
-	{
-		int result = 0;
-		std::lock_guard<std::mutex> lck(_guard);
-		auto r = std::find_if(_nodemap.begin(), _nodemap.end(), [&, this](const HCNodeMap::reference n) {
-			if (n.second->getNodeId<CUInt128>() == targetNodeid) {
-				result = this->sendTo(n.second, msgbuf);
-				return true;
-			}
-			return false;
-		});
+    template<typename T>
+    int sendTo(HCNodeSH &targetNode, DataBuffer<T> & msgbuf)
+    {
+        uint8_t b[CUInt128::value];
+        _me->getNodeId(b);
 
-		if (r == _nodemap.end()) {
-			g_console_logger->error( "cannot find the target node:{}", targetNodeid.ToHexString().c_str());
-			return 0;
-		}
+        msgbuf.setHeader(b);
+        return targetNode->send(msgbuf.tostring());
+    }
 
-		return result;
-	}
+    template<typename T>
+    int sendTo(const CUInt128 &targetNodeid, DataBuffer<T> & msgbuf)
+    {
+        int result = 0;
+        std::lock_guard<std::mutex> lck(_guard);
+        auto r = std::find_if(_nodemap.begin(), _nodemap.end(), [&, this](const HCNodeMap::reference n) {
+            if (n.second->getNodeId<CUInt128>() == targetNodeid) {
+                result = this->sendTo(n.second, msgbuf);
+                return true;
+            }
+            return false;
+        });
 
-	const HCNodeMap* getNodeMap();
-	size_t getNodeMapSize();
-	void loadMyself();
-	void saveMyself();
-	void loadNeighbourNodes();
-	void saveNeighbourNodes();
+        if (r == _nodemap.end()) {
+            g_console_logger->error("cannot find the target node:{}", targetNodeid.ToHexString().c_str());
+            return 0;
+        }
 
-	void parse(const string &nodes);
+        return result;
+    }
 
-	const CUInt128 * FindNodeId(IAccessPoint *ap);
+    const HCNodeMap* getNodeMap();
+    size_t getNodeMapSize();
+    void loadMyself();
+    void saveMyself();
+    void loadNeighbourNodes();
+    void saveNeighbourNodes();
 
+    void parse(const string &nodes);
 
-	string toString();
+    const CUInt128 * FindNodeId(IAccessPoint *ap);
 
-private: 
+    bool IsSeedServer(HCNodeSH & node);
+    string toString();
+
+private:
 
     HCNodeSH _me;
     HCNodeSH _seed;
-	HCNodeMap _nodemap;
-	mutex _guard;
+    HCNodeMap _nodemap;
+    mutex _guard;
 };

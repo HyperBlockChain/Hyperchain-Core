@@ -27,7 +27,6 @@ DEALINGS IN THE SOFTWARE.
 int code_convert(char *from_charset, char *to_charset, char *inbuf, int inlen, char *outbuf, int outlen)
 {
 	iconv_t cd;
-	int rc;
 	char **pin = &inbuf;
 	char **pout = &outbuf;
 
@@ -50,6 +49,15 @@ int g2u(char *inbuf, size_t inlen, char *outbuf, size_t outlen)
 }
 #endif
 
+//void convertUnCharToStr(char* str, unsigned char* UnChar, int ucLen)
+//{
+//	int i = 0;
+//	for (i = 0; i < ucLen; i++)
+//	{
+//		//格式化输str,每unsigned char 转换字符占两位置%x写输%X写输
+//		sprintf(str + i * UNICODE_POS, "%02x", UnChar[i]);
+//	}
+//}
 
 
 string ChangeStorageUnit(uint64 data, char uint)

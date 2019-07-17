@@ -28,16 +28,13 @@ using namespace std;
 class CHyperData
 {
 public:
-	CHyperData();
-	~CHyperData();
+    CHyperData();
+    ~CHyperData();
 
-	void PullHyperDataByHID(uint64 hyid, string nodeid);
-
-	void PullHyperDataRspexec(string buf, string & outmsg);
-	int PullHyperDataRspexecRespond(string & hblock);
+    void PullHyperDataByHID(uint64 hyid, string nodeid);
 
 private:
-	void GetBlockFromID(uint64 BlockNum, vector<string>& hyperdata);
-	void GetHyperBlockByID(uint64 BlockNum, string & hyperdata);
+    void GetBlockFromID(uint64 BlockNum, vector<string>& hyperdata);
+    void GetHyperBlockByID(uint64 BlockNum, string & hyperdata);
 };
 

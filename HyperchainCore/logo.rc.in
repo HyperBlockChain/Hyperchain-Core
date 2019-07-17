@@ -27,11 +27,11 @@ VS_VERSION_INFO VERSIONINFO
         BEGIN
             BLOCK "040904B0"
             BEGIN
-            VALUE "CompanyName","HyperChain Co., Ltd."
-            VALUE "FileDescription", "HyperChain"
+            VALUE "CompanyName","Hyperchain Inc."
+            VALUE "FileDescription", "Hyperchain"
             VALUE "FileVersion", "@MIRALL_VERSION_MAJOR@.@MIRALL_VERSION_MINOR@.@MIRALL_VERSION_PATCH@.@MIRALL_VERSION_BUILD@"
             VALUE "InternalName", "hc.exe"
-            VALUE "LegalCopyright", "Copyright (C)2018 HyperChain Co.Ltd."
+            VALUE "LegalCopyright", "Copyright (C)2016-2019 HyperChain Co.Ltd."
             VALUE "OriginalFilename", "hc.exe"
             VALUE "ProductName", "hc"
             VALUE "ProductVersion", "@MIRALL_VERSION_MAJOR@.@MIRALL_VERSION_MINOR@.@MIRALL_VERSION_PATCH@.@MIRALL_VERSION_BUILD@"

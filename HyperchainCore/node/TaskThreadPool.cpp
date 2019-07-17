@@ -21,45 +21,49 @@ DEALINGS IN THE SOFTWARE.
 */
 
 #include "TaskThreadPool.h"
-
+#include "newLog.h"
 //#include "../headers/UUFile.h"
 
-TaskThreadPool::TaskThreadPool(uint32_t numthreads, uint32_t maxnumtasks) : 
-	_numthreads(numthreads),_taskqueue(maxnumtasks), _isstop(false)
+TaskThreadPool::TaskThreadPool(uint32_t numthreads, uint32_t maxnumtasks) :
+    _numthreads(numthreads), _taskqueue(maxnumtasks), _isstop(false)
 {
-	std::function<void()> f = std::bind(&TaskThreadPool::exec_task, this);
-	for (size_t i = 0; i < _numthreads; i++) {
-		_threads.emplace_back(thread(f));
-	}
+    std::function<void()> f = std::bind(&TaskThreadPool::exec_task, this);
+    for (size_t i = 0; i < _numthreads; i++) {
+        _threads.emplace_back(thread(f));
+    }
 }
 
-void TaskThreadPool::stop() 
+void TaskThreadPool::stop()
 {
-	_taskqueue.stop();
-	_isstop = true;
-	for (auto& t : _threads) {
-		t.join();
-	}
-	_threads.clear();
+    _taskqueue.stop();
+    _isstop = true;
+    for (auto& t : _threads) {
+        t.join();
+    }
+    _threads.clear();
 }
 
 bool TaskThreadPool::put(QueueTask &&t)
 {
-	return _taskqueue.push(std::forward<QueueTask>(t));
+    bool ret = _taskqueue.push(std::forward<QueueTask>(t));
+    if (!ret) {
+        g_daily_logger->error("TaskThreadPool::put() _taskqueue put fail , size = {}", _taskqueue.size());
+    }
+    return ret;
 }
 
-void TaskThreadPool::exec_task() 
+void TaskThreadPool::exec_task()
 {
-	while (!_isstop) {
-		list<QueueTask> tasklist;
-		_taskqueue.pop(tasklist);
-		for (auto t : tasklist) {
-			if (t->isRespond()) {
-				t->execRespond();
-			}
-			else {
-				t->exec();
-			}
-		}
-	}
+    while (!_isstop) {
+        list<QueueTask> tasklist;
+        _taskqueue.pop(tasklist);
+        for (auto &t : tasklist) {
+            if (t->isRespond()) {
+                t->execRespond();
+            }
+            else {
+                t->exec();
+            }
+        }
+    }
 }

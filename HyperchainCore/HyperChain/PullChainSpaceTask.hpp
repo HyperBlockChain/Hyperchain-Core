@@ -29,53 +29,53 @@ using namespace std;
 
 class PullChainSpaceRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_SPACE_PULL_RSP> {
 public:
-	using ITask::ITask;
-	PullChainSpaceRspTask() {};
-	PullChainSpaceRspTask(CUInt128 nodeid) : ITask() { _sentnodeid = nodeid; }
-	~PullChainSpaceRspTask() {};
-	void exec() override
-	{
-		CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
-		NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+    using ITask::ITask;
+    PullChainSpaceRspTask() {};
+    PullChainSpaceRspTask(CUInt128 nodeid) : ITask() { _sentnodeid = nodeid; }
+    ~PullChainSpaceRspTask() {};
+    void exec() override
+    {
+        CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+        NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
 
-		string msgbuf = "";
+        string msgbuf = "";
 
-		if (sp && sp->PullChainSpaceRspTaskEXC(msgbuf))
-		{
-			DataBuffer<PullChainSpaceRspTask> datamsg(std::move(msgbuf));
+        if (sp && sp->PullChainSpaceRspTaskEXC(msgbuf))
+        {
+            DataBuffer<PullChainSpaceRspTask> datamsg(std::move(msgbuf));
 
-			nodemgr->sendTo(_sentnodeid, datamsg);
-		}
+            nodemgr->sendTo(_sentnodeid, datamsg);
+        }
 
-	}
+    }
 
-	void execRespond() override
-	{
-		CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
-		string msgbuf = _payload;
-		sp->PullChainSpaceRspTaskRSP(msgbuf, _sentnodeid.ToHexString());
-	}
+    void execRespond() override
+    {
+        CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+        string msgbuf = _payload;
+        sp->PullChainSpaceRspTaskRSP(msgbuf, _sentnodeid.ToHexString());
+    }
 };
 
 class PullChainSpaceTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_SPACE_PULL> {
 public:
-	using ITask::ITask;
-	PullChainSpaceTask() {};
-	~PullChainSpaceTask() {};
-	void exec() override
-	{
-		NodeManager *nodemgr = Singleton<NodeManager>::getInstance();		
+    using ITask::ITask;
+    PullChainSpaceTask() {};
+    ~PullChainSpaceTask() {};
+    void exec() override
+    {
+        NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
 
-		DataBuffer<PullChainSpaceTask> msgbuf(0);
+        DataBuffer<PullChainSpaceTask> msgbuf(0);
 
-		nodemgr->sendToAllNodes(msgbuf);
-	}
+        nodemgr->sendToAllNodes(msgbuf);
+    }
 
-	void execRespond() override
-	{
-		TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();	
-		taskpool->put(make_shared<PullChainSpaceRspTask>(_sentnodeid));
-	}
+    void execRespond() override
+    {
+        TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
+        taskpool->put(make_shared<PullChainSpaceRspTask>(_sentnodeid));
+    }
 
 };
 
