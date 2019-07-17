@@ -39,206 +39,203 @@ using namespace std;
 
 enum _enodestate
 {
-	IDLE = 0,
-	LOCAL_BUDDY,
-	GLOBAL_BUDDY
+    IDLE = 0,
+    LOCAL_BUDDY,
+    GLOBAL_BUDDY
 };
 
 typedef struct _tBuddyInfo
 {
-	uint64 uiCurBuddyNo;
-	uint16 usBlockNum;
-	uint16 usChainNum;
-	uint8 eBuddyState;
+    uint64 uiCurBuddyNo;
+    uint16 usBlockNum;
+    uint16 usChainNum;
+    uint8 eBuddyState;
 
-	uint64 GetCurBuddyNo()const;
-	uint16 GetBlockNum()const;
-	uint16 GetChainNum()const;
-	uint8 GetBuddyState()const;
+    uint64 GetCurBuddyNo()const;
+    uint16 GetBlockNum()const;
+    uint16 GetChainNum()const;
+    uint8 GetBuddyState()const;
 
-	void SetBlockNum(uint16 num);
+    void SetBlockNum(uint16 num);
 
 }T_STRUCTBUDDYINFO, *T_PSTRUCTBUDDYINFO;
 
 typedef struct _tOnChainHashInfo
 {
-	uint64 uiTime;
-	string strHash;
+    uint64 uiTime;
+    string strHash;
 
-	uint64 GetTime()const;
-	string GetHash()const;
+    uint64 GetTime()const;
+    string GetHash()const;
 
-	void Set(uint64 t, string h);
+    void Set(uint64 t, string h);
 
 }T_ONCHAINHASHINFO, *T_PONCHAINHASHINFO;
 
 enum class CONSENSUS_PHASE :char {
-	LOCALBUDDY_PHASE= 0,
-	GLOBALBUDDY_PHASE,
-	PERSISTENCE_CHAINDATA_PHASE,
-	PREPARE_LOCALBUDDY_PHASE
+    LOCALBUDDY_PHASE = 0,
+    GLOBALBUDDY_PHASE,
+    PERSISTENCE_CHAINDATA_PHASE,
+    PREPARE_LOCALBUDDY_PHASE
 };
 
 typedef struct _tp2pmanagerstatus
 {
-	bool bStartGlobalFlag;
+    bool bStartGlobalFlag;
 
-	std::atomic<bool> bHaveOnChainReq;
-	std::atomic<uint64> uiMaxBlockNum;
-	std::atomic<uint64> uiConsensusBlockNum;
-	uint16 usBuddyPeerCount;
-	uint16 uiNodeState;
-	uint64 uiSendRegisReqNum;
-	uint64 uiRecvRegisReqNum;
-	uint64 uiSendConfirmingRegisReqNum;
-	uint64 uiRecvConfirmingRegisReqNum;
-	T_HYPERBLOCK tPreHyperBlock;
-	T_LOCALBLOCK tPreLocalBlock;
-	T_PEERADDRESS tLocalBuddyAddr;
-	T_LOCALCONSENSUS curBuddyBlock;
+    std::atomic<bool> bHaveOnChainReq;
+    std::atomic<uint64> uiMaxBlockNum;
+    std::atomic<uint64> uiConsensusBlockNum;
+    uint16 usBuddyPeerCount;
+    uint16 uiNodeState;
+    uint64 uiSendRegisReqNum;
+    uint64 uiRecvRegisReqNum;
+    uint64 uiSendConfirmingRegisReqNum;
+    uint64 uiRecvConfirmingRegisReqNum;
+    T_HYPERBLOCK tPreHyperBlock;
+    T_LOCALBLOCK tPreLocalBlock;
+    T_PEERADDRESS tLocalBuddyAddr;
+    T_LOCALCONSENSUS curBuddyBlock;
 
-	CMutexObj		 MuxlistOnChainReq;
-	LIST_T_LOCALCONSENSUS listOnChainReq;
+    CMutexObj		 MuxlistOnChainReq;
+    LIST_T_LOCALCONSENSUS listOnChainReq;
 
-	CMutexObj		 MuxlistLocalBuddyChainInfo;
-	LIST_T_LOCALCONSENSUS listLocalBuddyChainInfo;
+    CMutexObj		 MuxlistLocalBuddyChainInfo;
+    LIST_T_LOCALCONSENSUS listLocalBuddyChainInfo;
 
-	CMutexObj		 MuxlistGlobalBuddyChainInfo;
-	LIST_LIST_GLOBALBUDDYINFO listGlobalBuddyChainInfo;
+    CMutexObj		 MuxlistGlobalBuddyChainInfo;
+    LIST_LIST_GLOBALBUDDYINFO listGlobalBuddyChainInfo;
 
-	CMutexObj		 MuxlistRecvLocalBuddyRsp;
-	LIST_T_BUDDYINFO  listRecvLocalBuddyRsp;
+    CMutexObj		 MuxlistRecvLocalBuddyRsp;
+    LIST_T_BUDDYINFO  listRecvLocalBuddyRsp;
 
-	CMutexObj		 MuxlistCurBuddyRsp;
-	LIST_T_BUDDYINFOSTATE listCurBuddyRsp;
+    CMutexObj		 MuxlistCurBuddyRsp;
+    LIST_T_BUDDYINFOSTATE listCurBuddyRsp;
 
-	CMutexObj		 MuxlistRecvLocalBuddyReq;
-	LIST_T_BUDDYINFO  listRecvLocalBuddyReq;
+    CMutexObj		 MuxlistRecvLocalBuddyReq;
+    LIST_T_BUDDYINFO  listRecvLocalBuddyReq;
 
-	CMutexObj		 MuxlistCurBuddyReq;
-	LIST_T_BUDDYINFOSTATE listCurBuddyReq;
+    CMutexObj		 MuxlistCurBuddyReq;
+    LIST_T_BUDDYINFOSTATE listCurBuddyReq;
 
-	CMutexObj			MuxMapSearchOnChain;
-	MAP_T_SEARCHONCHAIN mapSearchOnChain;
+    CMutexObj			MuxMapSearchOnChain;
+    MAP_T_SEARCHONCHAIN mapSearchOnChain;
 
-	uint64 uiSendPoeNum;
-	uint64 uiRecivePoeNum;
+    uint64 uiSendPoeNum;
+    uint64 uiRecivePoeNum;
 
-	T_STRUCTBUDDYINFO tBuddyInfo;
-
-
-	LIST_T_HYPERBLOCK   m_HchainBlockList;
-	CMutexObj			m_MuxHchainBlockList;
-
-	CMutexObj		 MuxRecvHyperblock;
-	bool isHyperblockReceivable = false;
-
-	
+    T_STRUCTBUDDYINFO tBuddyInfo;
 
 
-	void clearStatus();
+    LIST_T_HYPERBLOCK   m_HchainBlockList;
+    CMutexObj   m_MuxHchainBlockList;
 
-	_tp2pmanagerstatus()
-	{
-		clearStatus();
-	}
+    void clearStatus();
 
-	void setRecvHyperblockFlag(bool isReceivable);
+    _tp2pmanagerstatus()
+    {
+        clearStatus();
+    }
 
-	bool StartGlobalFlag()const;
+    bool StartGlobalFlag()const;
 
-	bool HaveOnChainReq()const;
+    bool HaveOnChainReq()const;
 
-	uint64 GetConsensusHyperBlockID()const;
+    //HC: 返回当前共识子块头里存放的前一个超块Hash,这不完全等同于本节点最新超块的hash
+    T_SHA256 GetConsensusPreHyperBlockHash()const;
 
-	uint16 GetBuddyPeerCount()const;
+    uint16 GetBuddyPeerCount()const;
 
-	uint16 GetNodeState()const;
+    uint16 GetNodeState()const;
 
-	uint64 GetSendRegisReqNum()const;
+    uint64 GetSendRegisReqNum()const;
 
-	uint64 GetRecvRegisReqNum()const;
+    uint64 GetRecvRegisReqNum()const;
 
-	uint64 GetSendConfirmingRegisReqNum()const;
+    uint64 GetSendConfirmingRegisReqNum()const;
 
-	uint64 GetRecvConfirmingRegisReqNum()const;
+    uint64 GetRecvConfirmingRegisReqNum()const;
 
-	uint64 GettTimeOfConsensus();
-	CONSENSUS_PHASE GetCurrentConsensusPhase() const;
+    uint64 GettTimeOfConsensus();
+    CONSENSUS_PHASE GetCurrentConsensusPhase() const;
 
-	bool LocalBuddyChainState()const;
+    bool LocalBuddyChainState()const;
 
-	T_PEERADDRESS GetLocalBuddyAddr()const;
+    T_PEERADDRESS GetLocalBuddyAddr()const;
 
-	
-	T_HYPERBLOCK& GetPreHyperBlock();
-	
-	uint64 GetMaxBlockID() const {
-		return uiMaxBlockNum;
-	}
+    //HC: notice to add mutex protect(m_MuxHchainBlockList) calling this function
+    T_HYPERBLOCK& GetPreHyperBlock();
 
-	T_SHA256 GetPreHyperBlockHash() {
-		CAutoMutexLock muxAuto(m_MuxHchainBlockList);
-		return tPreHyperBlock.GetBlockBaseInfo().GetHashSelf();
-	}
+    uint64 GetMaxBlockID() const {
+        return uiMaxBlockNum;
+    }
 
-	void GetPreHyperBlockIDAndHash(uint64 &id, T_SHA256 &hash) {
-		CAutoMutexLock muxAuto(m_MuxHchainBlockList);
-		hash = tPreHyperBlock.GetBlockBaseInfo().GetHashSelf();
-		id = tPreHyperBlock.GetBlockBaseInfo().GetID();
-	}
+    T_SHA256 GetPreHyperBlockHash() {
+        CAutoMutexLock muxAuto(m_MuxHchainBlockList);
+        return tPreHyperBlock.GetHashSelf();
+    }
 
-	uint64 GetSendPoeNum()const;
+    void GetPreHyperBlockIDAndHash(uint64 &id, T_SHA256 &hash) {
+        CAutoMutexLock muxAuto(m_MuxHchainBlockList);
+        hash = tPreHyperBlock.GetHashSelf();
+        id = tPreHyperBlock.GetID();
+    }
 
-	void SetSendPoeNum(uint64 num);
+    uint64 GetSendPoeNum()const;
 
-	LIST_T_LOCALCONSENSUS& GetListOnChainReq();
-	
-	void SetStartGlobalFlag(bool flag);
+    void SetSendPoeNum(uint64 num);
 
-	void SetHaveOnChainReq(bool haveOnChainReq);
+    LIST_T_LOCALCONSENSUS& GetListOnChainReq();
 
-	void SetNodeState(uint16 state);
+    void SetStartGlobalFlag(bool flag);
 
-	void SetSendRegisReqNum(uint64 num);
+    void SetHaveOnChainReq(bool haveOnChainReq);
 
-	void SetRecvRegisReqNum(uint64 num);
+    void SetNodeState(uint16 state);
 
-	void SetSendConfirmingRegisReqNum(uint64 num);
+    void SetSendRegisReqNum(uint64 num);
 
-	void SetRecvConfirmingRegisReqNum(uint64 num);
+    void SetRecvRegisReqNum(uint64 num);
 
-	void SetNextStartTimeNewest(uint64 t);
+    void SetSendConfirmingRegisReqNum(uint64 num);
 
-	void SetGlobalBuddyAddr(T_PEERADDRESS addr);
+    void SetRecvConfirmingRegisReqNum(uint64 num);
 
-	uint64 GetRecvPoeNum()const;
+    void SetNextStartTimeNewest(uint64 t);
 
-	void SetRecvPoeNum(uint64 num);
+    void SetGlobalBuddyAddr(T_PEERADDRESS addr);
 
-	T_STRUCTBUDDYINFO GetBuddyInfo()const;
+    uint64 GetRecvPoeNum()const;
 
-	void SetBuddyInfo(T_STRUCTBUDDYINFO info);
-	
-	
-	void loadHyperBlockCache();
-	bool updateHyperBlockCache(T_HYPERBLOCK &hyperBlock);
-	bool getHyperBlock(uint64 blockNum, T_HYPERBLOCK &hyperBlock);
+    void SetRecvPoeNum(uint64 num);
 
-	void updateLocalBuddyBlockToLatest();
-	
-	void cleanConsensusEnv();
+    T_STRUCTBUDDYINFO GetBuddyInfo()const;
 
-	void trackLocalBlock(const T_LOCALBLOCK & localblock);
-	void initOnChainingState(uint64 hid);
+    void SetBuddyInfo(T_STRUCTBUDDYINFO info);
+
+    //HC: hyper block cache function
+    void loadHyperBlockCache();
+    bool updateHyperBlockCache(T_HYPERBLOCK &hyperBlock);
+    bool getHyperBlock(uint64 blockNum, T_HYPERBLOCK &hyperBlock);
+    bool getHyperBlock(const T_SHA256 &hhash, T_HYPERBLOCK &hyperblock);
+
+    void updateLocalBuddyBlockToLatest();
+
+    void cleanConsensusEnv();
+
+    //HC:跟踪本地块上链状态
+    void trackLocalBlock(const T_LOCALBLOCK & localblock);
+    void initOnChainingState(uint64 hid);
+
 private:
+    void SetMaxBlockNum(uint64 num);
+    void SetPreHyperBlock(T_HYPERBLOCK&& h);
+    void SaveToLocalStorage(const T_HYPERBLOCK &tHyperBlock);
 
-	void SetMaxBlockNum(uint64 num);
-	void SetPreHyperBlock(const T_HYPERBLOCK&block);
-
-	bool loadHyperBlock(uint64 blockNum, T_HYPERBLOCK &hyperBlock);
-	bool isAcceptHyperBlock(uint64 blockNum, uint64 blockCount, T_SHA256 tHashSelf, bool isAlreadyExisted);
-	bool isMoreWellThanLocal(const T_HYPERBLOCK &localHyperBlock, uint64 blockid, uint64 blockcount,const T_SHA256& hhashself);
+    bool loadHyperBlock(uint64 blockNum, T_HYPERBLOCK &hyperBlock);
+    bool loadHyperBlock(const T_SHA256 &hhash, T_HYPERBLOCK &hyperBlock);
+    bool isAcceptHyperBlock(uint64 blockNum, uint64 blockCount, T_SHA256 tHashSelf, bool isAlreadyExisted);
+    bool isMoreWellThanLocal(const T_HYPERBLOCK &localHyperBlock, uint64 blockid, uint64 blockcount, const T_SHA256& hhashself);
 
 private:
 

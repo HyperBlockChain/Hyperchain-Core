@@ -27,7 +27,7 @@ DEALINGS IN THE SOFTWARE.
 
 struct Cmpare
 {
-	bool operator()(const T_PPEERINFO st1, const T_PPEERINFO  st2) const
+	bool operator()(const T_PPEERINFO &st1, const T_PPEERINFO  &st2) const
 	{
 		return (st1->GetTime() < st2->GetTime());
 	}
@@ -36,7 +36,7 @@ struct Cmpare
 
 struct CmpareRecvLocalBuddyReq
 {
-	bool operator()(const T_BUDDYINFO st1, const T_BUDDYINFO  st2) const
+	bool operator()(const T_BUDDYINFO &st1, const T_BUDDYINFO &st2) const
 	{
 		return (st1.GetType() < st2.GetType());
 	}
@@ -44,27 +44,27 @@ struct CmpareRecvLocalBuddyReq
 
 struct CmpareOnChain
 {
-	bool operator()(const T_LOCALCONSENSUS st1, const T_LOCALCONSENSUS  st2) const
+	bool operator()(const T_LOCALCONSENSUS &st1, const T_LOCALCONSENSUS  &st2) const
 	{
-		return (st1.GetLocalBlock().GetBlockBaseInfo().GetHashSelf() < st2.GetLocalBlock().GetBlockBaseInfo().GetHashSelf());
+		return (st1.GetLocalBlock().GetUUID() < st2.GetLocalBlock().GetUUID());
 	}
 };
 struct CmpareOnChainLocal
 {
-	bool operator()(const T_LOCALBLOCK st1, const T_LOCALBLOCK st2) const
+	bool operator()(const T_LOCALBLOCK &st1, const T_LOCALBLOCK &st2) const
 	{
-		return (st1.GetBlockBaseInfo().GetHashSelf() < st2.GetBlockBaseInfo().GetHashSelf());
+		return (st1.GetUUID() < st2.GetUUID());
 	}
 };
 
 struct CmpareGlobalBuddy
 {
-	bool operator()(LIST_T_LOCALCONSENSUS st1, LIST_T_LOCALCONSENSUS  st2) const
+	bool operator()(const LIST_T_LOCALCONSENSUS &st1, const LIST_T_LOCALCONSENSUS  &st2) const
 	{
-		ITR_LIST_T_LOCALCONSENSUS itr1 = st1.begin();
-		ITR_LIST_T_LOCALCONSENSUS itr2 = st2.begin();
+		auto itr1 = st1.begin();
+		auto itr2 = st2.begin();
 
-		return ((*itr1).GetLocalBlock().GetBlockBaseInfo().GetHashSelf() < (*itr2).GetLocalBlock().GetBlockBaseInfo().GetHashSelf());
+		return ((*itr1).GetLocalBlock().GetUUID() < (*itr2).GetLocalBlock().GetUUID());
 	}
 };
 

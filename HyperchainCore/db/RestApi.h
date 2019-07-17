@@ -3,7 +3,7 @@
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+Permission is hereby granted, free of charge, to any person obtaining a copy of this
 software and associated documentation files (the "Software"), to deal in the Software
 without restriction, including without limitation the rights to use, copy, modify, merge,
 publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
@@ -12,7 +12,7 @@ to whom the Software is furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all copies or
 substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
 INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
 PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
 FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
@@ -44,46 +44,54 @@ using namespace web::http::client;
 class CommandHandler
 {
 public:
-	CommandHandler() {}
-	CommandHandler(utility::string_t url, http_listener_config server_config);
-	pplx::task<void> open() { return m_listener.open(); }
-	pplx::task<void> close() { return m_listener.close(); }
+    CommandHandler() {}
+    CommandHandler(utility::string_t url, http_listener_config server_config);
+    pplx::task<void> open() { return m_listener.open(); }
+    pplx::task<void> close() { return m_listener.close(); }
 private:
-	
-	void handle_get(http_request message);
-	void handle_post(http_request message);
-	void handle_put(http_request message);
-	void handle_del(http_request message);
-	http_listener m_listener;
+
+    void handle_get(http_request message);
+    void handle_post(http_request message);
+    void handle_put(http_request message);
+    void handle_del(http_request message);
+    http_listener m_listener;
 };
 
 
 class RestApi
 {
 public:
-	RestApi() {}
-	~RestApi() {}
+    RestApi() {}
+    ~RestApi() {}
 public:
 
-	static int startRest();
-	static int stopRest();
+    static int startRest();
+    static int stopRest();
 public:
-	json::value blockToJsonValue(T_HYPERBLOCKDBINFO blockDBInfo);
-	json::value blockHeadToJsonValue(T_HYPERBLOCKDBINFO blockDBInfo, size_t hyperBlockSize);
-	
-	
-	json::value MakeRegistration(string strdata);
-	bool Upqueue(string strdata, vector<string>& out_vc);
+	void blockHeadToJsonValue(const T_LOCALBLOCK &localblock, json::value& val);
+	void blockBodyToJsonValue(const T_LOCALBLOCK &localblock, json::value& val);
+	void blockToJsonValue(const T_LOCALBLOCK& localblock, json::value& val);
 
-	json::value getLocalblock(uint64_t hid, uint64_t id, uint64_t chain_num);
-	json::value getLocalchain(uint64_t hid, uint64_t chain_num);
+	void blockHeadToJsonValue(const T_HYPERBLOCK &hyperblock, size_t hyperBlockSize, json::value& val);
+	void blockBodyToJsonValue(const T_HYPERBLOCK &hyperblock, json::value& val);
+	void blockToJsonValue(const T_HYPERBLOCK& hyperblock, size_t hyperBlockSize, json::value& val);
 
-	json::value getHyperblocks(uint64_t nStartId, uint64_t nNum);
+    json::value MakeRegistration(string strdata);
+    bool Upqueue(string strdata, vector<string>& out_vc);
 
-	json::value getOnchainState(const string & requestID);
+    json::value getLocalblock(uint64_t hid, uint16 id, uint16 chain_num);
+	json::value getLocalblockHead(uint64_t hid, uint16 id, uint16 chain_num);
+	json::value getLocalblockBody(uint64_t hid, uint16 id, uint16 chain_num);
 
-	json::value getHyperblocksHead(uint64_t nStartId);
-	int getLatestHyperBlockNo();
+	json::value getHyperblocks(uint64_t nStartId, uint64_t nNum);		//HC: include localblocks
+	json::value getHyperblockInfo(uint64_t hid);								//HC: not include localblocks
+	json::value getHyperblockHead(uint64_t hid);
+	json::value getHyperblockBody(uint64_t hid);
+
+    json::value getLocalchain(uint64_t hid, uint64_t chain_num);
+
+    json::value getOnchainState(const string & requestID);
+    //int getLatestHyperBlockNo();
 };
 
 

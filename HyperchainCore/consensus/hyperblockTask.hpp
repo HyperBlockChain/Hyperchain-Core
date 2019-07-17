@@ -20,10 +20,6 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 DEALINGS IN THE SOFTWARE.
 */
 
-
-#include <iostream>
-using namespace std;
-
 #include "../node/ITask.hpp"
 #include "../node/Singleton.h"
 #include "../node/NodeManager.h"
@@ -33,210 +29,136 @@ using namespace std;
 #include "../db/HyperchainDB.h"
 #include <openssl/evp.h>
 
+#include <boost/archive/binary_iarchive.hpp>
+#include <boost/archive/binary_oarchive.hpp>
+
+
+#include <iostream>
+using namespace std;
+
 extern void ReOnChainFun();
 extern void GetOnChainInfo();
-extern void SaveHyperBlockToLocal(T_HYPERBLOCK &tHyperBlock);
-extern void SaveLocalBlockToLocal(const T_HYPERBLOCK &tHyperBlock);
 extern bool isEndNode();
+extern void putStream(boost::archive::binary_oarchive &oa, T_HYPERBLOCK &hyperblock);
+
 
 class BoardcastHyperBlockTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::BOARDCAST_HYPER_BLOCK> {
 public:
-	using ITask::ITask;
-	BoardcastHyperBlockTask() {};
-	~BoardcastHyperBlockTask() {};
+    using ITask::ITask;
+    BoardcastHyperBlockTask() {};
+    ~BoardcastHyperBlockTask() {};
 
-	void exec() override
-	{
-		if (!isEndNode()) {
-			return;
-		}
+    void exec() override
+    {
+        if (!isEndNode()) {
+            return;
+        }
 
-		NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-		HCNodeSH & me = nodemgr->myself();
+        stringstream ssBuf;
+        boost::archive::binary_oarchive oa(ssBuf, boost::archive::archive_flags::no_header);
+        {
+            CAutoMutexLock muxAuto(g_tP2pManagerStatus.m_MuxHchainBlockList);
+            T_HYPERBLOCK &hyperblock = g_tP2pManagerStatus.GetPreHyperBlock();
+            putStream(oa, hyperblock);
+        }
+        DataBuffer<BoardcastHyperBlockTask> msgbuf(move(ssBuf.str()));
 
-		DataBuffer<BoardcastHyperBlockTask> msgbuf(0);
-		{
-			CAutoMutexLock muxAuto(g_tP2pManagerStatus.m_MuxHchainBlockList);
-			T_HYPERBLOCK &tHyperChainBlock = g_tP2pManagerStatus.GetPreHyperBlock();
+        NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+        nodemgr->sendToAllNodes(msgbuf);
+    }
 
-			T_PP2PPROTOCOLCOPYHYPERBLOCKREQ pP2pProtocolCopyHyperBlockReq = nullptr;
+    void execRespond() override
+    {
+        string sBuf(_payload, _payloadlen);
+        stringstream ssBuf(sBuf);
+        boost::archive::binary_iarchive ia(ssBuf, boost::archive::archive_flags::no_header);
 
-			uint32_t blockNum = tHyperChainBlock.GetChildBlockCount();
-
-			size_t ipP2pProtocolCopyHyperBlockReqLen = sizeof(T_P2PPROTOCOLCOPYHYPERBLOCKREQ) + sizeof(T_HYPERBLOCKSEND) + blockNum * sizeof(T_LOCALBLOCK);
-
-			
-			msgbuf.resize(ipP2pProtocolCopyHyperBlockReqLen);
-			pP2pProtocolCopyHyperBlockReq = reinterpret_cast<T_PP2PPROTOCOLCOPYHYPERBLOCKREQ>(msgbuf.payload());
-
-			T_P2PPROTOCOLTYPE pType;
-			struct timeval timeTemp;
-			CCommonStruct::gettimeofday_update(&timeTemp);
-			pType.SetP2pprotocoltype(P2P_PROTOCOL_COPY_HYPER_BLOCK_REQ, timeTemp.tv_sec);
-			T_PEERADDRESS pPeerAddr(me->getNodeId<CUInt128>());
-			pP2pProtocolCopyHyperBlockReq->SetP2pprotocolcopyhyperblockreq(pType, pPeerAddr,
-				tHyperChainBlock.GetBlockBaseInfo().GetID(), 3, blockNum, tHyperChainBlock.GetlistPayLoad().size());
-
-			T_PHYPERBLOCKSEND pHyperBlockSend;
-			pHyperBlockSend = (T_PHYPERBLOCKSEND)(pP2pProtocolCopyHyperBlockReq + 1);
-			pHyperBlockSend->SetHyperBlockSend(tHyperChainBlock.GetBlockBaseInfo(), 
-											tHyperChainBlock.GetMerkleHash(),
-											tHyperChainBlock.version,tHyperChainBlock.difficulty);
-
-			T_PLOCALBLOCK pPeerInfos;
-			pPeerInfos = (T_PLOCALBLOCK)(pHyperBlockSend + 1);
-
-			
-
-			int i = 0;
-			auto itrH = tHyperChainBlock.listPayLoad.begin();
-			for (; itrH != tHyperChainBlock.listPayLoad.end(); itrH++) {
-				ITR_LIST_T_LOCALBLOCK subItrH = (*itrH).begin();
-				for (; subItrH != (*itrH).end(); subItrH++) {
-					pPeerInfos[i] = (*subItrH);					
-					i++;
+        T_SHA256 hash;
+        T_HYPERBLOCK hyperblock;
+        try {
+            ia >> hash;
+            ia >> hyperblock;
+            uint32 count = hyperblock.GetChildChainsCount();
+            for (uint32 i=0; i < count; i++) {
+                LIST_T_LOCALBLOCK childchain;
+				uint32 blocknum;
+				ia >> blocknum;
+				for (uint32 j = 0; j < blocknum; j++) {
+					T_LOCALBLOCK block;
+					ia >> block;
+					childchain.push_back(std::move(block));
 				}
-			}
-		}
-		
-		nodemgr->sendToAllNodes(msgbuf);
-	}
+                hyperblock.AddChildChain(std::move(childchain));
+            }
+            ostringstream oss;
+            hyperblock.calculateHashSelf();
+            if(hash != hyperblock.GetHashSelf()) {
+                oss << "Received invalid hyper block: " << hyperblock.GetID() << " for hash error";
+                throw std::runtime_error(oss.str());
+            }
+            if (!hyperblock.verify()) {
+                oss << "Received invalid hyper block: " << hyperblock.GetID() << " for verification failed";
+                throw std::runtime_error(oss.str());
+            }
+        }
+        catch (runtime_error& e) {
+            g_consensus_console_logger->warn("{}", e.what());
+            return;
+        }
 
-	void execRespond() override
-	{
-		CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxRecvHyperblock);
-		if (!g_tP2pManagerStatus.isHyperblockReceivable) {
-			return;
-		}
-
-		T_PP2PPROTOCOLCOPYHYPERBLOCKREQ pP2pProtocolCopyHyperBlockReqRecv = (T_PP2PPROTOCOLCOPYHYPERBLOCKREQ)(_payload);
-
-		
-		T_HYPERBLOCK hyperblock;
-		T_PHYPERBLOCKSEND pHyperBlockInfosTemp;
-		pHyperBlockInfosTemp = (T_PHYPERBLOCKSEND)(pP2pProtocolCopyHyperBlockReqRecv + 1);
-		hyperblock.tBlockBaseInfo = pHyperBlockInfosTemp->GetBlockBaseInfo();
-		hyperblock.tMerkleHashAll = pHyperBlockInfosTemp->GetHashAll();
-		strncpy(hyperblock.version,pHyperBlockInfosTemp->version,MAX_VER_LEN);
-		hyperblock.difficulty = pHyperBlockInfosTemp->difficulty;
-
-		T_PLOCALBLOCK pLocalBlockTemp;
-		pLocalBlockTemp = (T_PLOCALBLOCK)(pHyperBlockInfosTemp + 1);
-
-		uint64 chainNumTemp = 1;
-		LIST_T_LOCALBLOCK listLocakBlockTemp;
-		for (uint64 i = 0; i < pP2pProtocolCopyHyperBlockReqRecv->GetBlockCount(); i++) {
-			T_LOCALBLOCK pLocalTemp;
-			pLocalTemp = *(pLocalBlockTemp + i);
-
-			if (pLocalTemp.GetAtChainNum() == chainNumTemp) {
-				listLocakBlockTemp.push_back(pLocalTemp);
-			}
-			else {
-				listLocakBlockTemp.sort(CmpareOnChainLocal());
-				hyperblock.listPayLoad.push_back(listLocakBlockTemp);
-				chainNumTemp = pLocalTemp.GetAtChainNum();
-				listLocakBlockTemp.clear();
-				listLocakBlockTemp.push_back(pLocalTemp);
-			}
-
-			if (i == pP2pProtocolCopyHyperBlockReqRecv->GetBlockCount() - 1) {
-				listLocakBlockTemp.sort(CmpareOnChainLocal());
-				hyperblock.listPayLoad.push_back(listLocakBlockTemp);
-			}
-		}
-		
-		if (g_tP2pManagerStatus.updateHyperBlockCache(hyperblock)) {
-			SaveHyperBlockToLocal(hyperblock);
-			SaveLocalBlockToLocal(hyperblock);
-		}
-	}
+        //HC: put hyper block into hyper block cache
+        g_tP2pManagerStatus.updateHyperBlockCache(hyperblock);
+    }
 };
 
 class GetHyperBlockByNoReqTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::GET_HYPERBLOCK_BY_NO_REQ> {
 public:
-	using ITask::ITask;
-	GetHyperBlockByNoReqTask(uint64 blockNum)
-	{
-		m_blockNum = blockNum;
-	}
+    using ITask::ITask;
+    GetHyperBlockByNoReqTask(uint64 blockNum)
+    {
+        m_blockNum = blockNum;
+    }
 
-	~GetHyperBlockByNoReqTask() {};
+    ~GetHyperBlockByNoReqTask() {};
 
-	void exec() override
-	{
-		struct timeval timePtr;
-		CCommonStruct::gettimeofday_update(&timePtr);
+    void exec() override
+    {
+        struct timeval timePtr;
+        CCommonStruct::gettimeofday_update(&timePtr);
 
-		DataBuffer<GetHyperBlockByNoReqTask> msgbuf(sizeof(T_P2PPROTOCOLGETHYPERBLOCKBYNOREQ));
-		T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ tGetHyperBlockByNoReq = reinterpret_cast<T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ>(msgbuf.payload());
-		tGetHyperBlockByNoReq->SetP2pprotocolgethyperblockbynoreq(
-								T_P2PPROTOCOLTYPE(P2P_PROTOCOL_GET_HYPERBLOCK_BY_NO_REQ, timePtr.tv_sec), m_blockNum);
+        DataBuffer<GetHyperBlockByNoReqTask> msgbuf(sizeof(T_P2PPROTOCOLGETHYPERBLOCKBYNOREQ));
+        T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ tGetHyperBlockByNoReq = reinterpret_cast<T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ>(msgbuf.payload());
+        tGetHyperBlockByNoReq->SetP2pprotocolgethyperblockbynoreq(
+            T_P2PPROTOCOLTYPE(P2P_PROTOCOL_GET_HYPERBLOCK_BY_NO_REQ, timePtr.tv_sec), m_blockNum);
 
-		NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-		nodemgr->sendToAllNodes(msgbuf);
-	}
+        NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+        nodemgr->sendToAllNodes(msgbuf);
+    }
 
-	void execRespond() override
-	{		
-		NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-		HCNodeSH & me = nodemgr->myself();
+    void execRespond() override
+    {
+        T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ pP2pProtocolGetHyperBlockByNoReq = (T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ)(_payload);
+        uint64 reqblockNum = pP2pProtocolGetHyperBlockByNoReq->GetBlockNum();
 
-		T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ pP2pProtocolGetHyperBlockByNoReq = (T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ)(_payload);
-		uint64 reqblockNum = pP2pProtocolGetHyperBlockByNoReq->GetBlockNum();
+        T_HYPERBLOCK hyperBlock;
+        if (!g_tP2pManagerStatus.getHyperBlock(reqblockNum, hyperBlock)) {
+            //HC: I haven't the hyper block.
+            return;
+        }
 
-		T_HYPERBLOCK hyperBlock;
-		if (!g_tP2pManagerStatus.getHyperBlock(reqblockNum, hyperBlock)) {
-			
-			return;
-		}
+        //HC: prepare to send the hyper block to the request node
+        stringstream ssBuf;
+        boost::archive::binary_oarchive oa(ssBuf, boost::archive::archive_flags::no_header);
 
-		
-		T_PP2PPROTOCOLCOPYHYPERBLOCKREQ pP2pProtocolCopyHyperBlockReq = nullptr;
+        putStream(oa, hyperBlock);
+        DataBuffer<BoardcastHyperBlockTask> msgbuf(move(ssBuf.str()));
 
-		uint32_t childblockcount = hyperBlock.GetChildBlockCount();
+        //HC: send to the request node
+        NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+        nodemgr->sendTo(_sentnodeid, msgbuf);
+    }
 
-		size_t iHyperBlockLen = sizeof(T_P2PPROTOCOLCOPYHYPERBLOCKREQ) + 
-												sizeof(T_HYPERBLOCKSEND) + 
-												childblockcount * sizeof(T_LOCALBLOCK);
-
-		
-		DataBuffer<BoardcastHyperBlockTask> msgbuf(iHyperBlockLen);
-		pP2pProtocolCopyHyperBlockReq = reinterpret_cast<T_PP2PPROTOCOLCOPYHYPERBLOCKREQ>(msgbuf.payload());
-
-		T_P2PPROTOCOLTYPE pType;
-		struct timeval timeTemp;
-		CCommonStruct::gettimeofday_update(&timeTemp);
-		pType.SetP2pprotocoltype(P2P_PROTOCOL_COPY_HYPER_BLOCK_REQ, timeTemp.tv_sec);
-		T_PEERADDRESS pPeerAddr(me->getNodeId<CUInt128>());
-		pP2pProtocolCopyHyperBlockReq->SetP2pprotocolcopyhyperblockreq(pType, pPeerAddr,
-			hyperBlock.GetBlockBaseInfo().GetID(), 0, childblockcount, hyperBlock.GetlistPayLoad().size());
-
-		T_PHYPERBLOCKSEND pHyperBlockSend;
-		pHyperBlockSend = (T_PHYPERBLOCKSEND)(pP2pProtocolCopyHyperBlockReq + 1);
-		pHyperBlockSend->SetHyperBlockSend(hyperBlock.GetBlockBaseInfo(), hyperBlock.GetMerkleHash(),
-											hyperBlock.version, hyperBlock.difficulty);
-
-		T_PLOCALBLOCK pPeerInfos;
-		pPeerInfos = (T_PLOCALBLOCK)(pHyperBlockSend + 1);
-
-		
-		int i = 0;
-		list<LIST_T_LOCALBLOCK>::iterator itrH = hyperBlock.listPayLoad.begin();
-		for (; itrH != hyperBlock.listPayLoad.end(); itrH++) {
-			ITR_LIST_T_LOCALBLOCK subItrH = itrH->begin();
-			for (; subItrH != itrH->end(); subItrH++) {
-				pPeerInfos[i] = *subItrH;
-				
-				i++;
-			}
-		}
-
-		
-		nodemgr->sendTo(_sentnodeid, msgbuf);
-	}
-
-	uint64_t m_blockNum;
+    uint64_t m_blockNum;
 };
 
 

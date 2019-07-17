@@ -35,103 +35,101 @@ DEALINGS IN THE SOFTWARE.
 #include "SearchNeighbourTask.h"
 #include "NodeManager.h"
 #include "HyperChain/PullChainSpaceTask.hpp"
-#include "HyperChain/PullHyperDataTask.hpp"
 #include "UdpAccessPoint.hpp"
 
 class UdpRecvDataHandler
 {
 public:
-	UdpRecvDataHandler()
-	{
-		registerType();
-	}
-	UdpRecvDataHandler(const UdpRecvDataHandler &) = delete;
-	UdpRecvDataHandler & operator=(const UdpRecvDataHandler &) = delete;
+    UdpRecvDataHandler()
+    {
+        registerType();
+    }
+    UdpRecvDataHandler(const UdpRecvDataHandler &) = delete;
+    UdpRecvDataHandler & operator=(const UdpRecvDataHandler &) = delete;
 
-	bool put(const char* ip, uint32_t port, const char *buf, size_t len)
-	{
-		if (len < ProtocolHeaderLen) {
-			char logmsg[128] = { 0 };
-			snprintf(logmsg, 128, "Received invalid data from: %s:%d\n", ip, port);
-			cout << logmsg;
-			return true;
-		}
+    bool put(const char* ip, uint32_t port, const char *buf, size_t len)
+    {
+        if (len < ProtocolHeaderLen) {
+            char logmsg[128] = { 0 };
+            snprintf(logmsg, 128, "Received invalid data from: %s:%d\n", ip, port);
+            cout << logmsg;
+            return true;
+        }
 
-		auto taskbuf = make_shared<string>(buf,len);
-		return put(ip, port, taskbuf);
-	}
+        auto taskbuf = make_shared<string>(buf, len);
+        return put(ip, port, taskbuf);
+    }
 
-	bool put(const char* ip, uint32_t port, TASKBUF taskbuf)
-	{
-		size_t len = taskbuf->size();
-		if (len < ProtocolHeaderLen) {
-			char logmsg[128] = { 0 };
-			snprintf(logmsg, 128, "Received invalid data from: %s:%d\n", ip, port);
-			cout << logmsg;
-			return true;
-		}
+    bool put(const char* ip, uint32_t port, TASKBUF taskbuf)
+    {
+        size_t len = taskbuf->size();
+        if (len < ProtocolHeaderLen) {
+            char logmsg[128] = { 0 };
+            snprintf(logmsg, 128, "Received invalid data from: %s:%d\n", ip, port);
+            cout << logmsg;
+            return true;
+        }
 
-		
-		uint8_t nodeid[CUInt128::value];
-		memcpy(nodeid,taskbuf->c_str(),CUInt128::value);
-		HCNodeSH neighbourNode = make_shared<HCNode>(std::move(CUInt128(nodeid)));
-		neighbourNode->addAP(make_shared<UdpAccessPoint>(ip,port));
+        uint8_t nodeid[CUInt128::value];
+        memcpy(nodeid, taskbuf->c_str(), CUInt128::value);
+        HCNodeSH neighbourNode = make_shared<HCNode>(std::move(CUInt128(nodeid)));
+        neighbourNode->addAP(make_shared<UdpAccessPoint>(ip, port));
 
-		NodeManager *nodemanager = Singleton<NodeManager>::getInstance();
-		nodemanager->updateNode(neighbourNode);
+        NodeManager *nodemanager = Singleton<NodeManager>::getInstance();
+        if (false == nodemanager->IsSeedServer(neighbourNode)) {
+            //HC: if isn't seedserver, update neighbour node
+            nodemanager->updateNode(neighbourNode);
+        }
 
-		
-		TASKTYPE tt = *(TASKTYPE*)(taskbuf->c_str() + CUInt128::value + sizeof(ProtocolVer));
+        //HC: convert data into task object
+        TASKTYPE tt = *(TASKTYPE*)(taskbuf->c_str() + CUInt128::value + sizeof(ProtocolVer));
 
-		shared_ptr<ITask> task = _taskTypeFactory.CreateShared<ITask>(static_cast<uint32_t>(tt), std::move(taskbuf));
-		if (!task) {
-			
-			char logmsg[128] = { 0 };
-			snprintf(logmsg, 128, "Received unregistered task data from %s:%d which cannot be handled, abandoned them.\n",ip,port);
-			cout << logmsg;
-			return true;
-		}
+        shared_ptr<ITask> task = _taskTypeFactory.CreateShared<ITask>(static_cast<uint32_t>(tt), std::move(taskbuf));
+        if (!task) {
+            //HC: Just as if the data handled
+            char logmsg[128] = { 0 };
+            snprintf(logmsg, 128, "Received unregistered task data from %s:%d which cannot be handled, abandoned them.\n", ip, port);
+            cout << logmsg;
+            return true;
+        }
 
-		TaskThreadPool *pTaskThreadPool = Singleton<TaskThreadPool>::getInstance();
-		return pTaskThreadPool->put(std::move(task));
-	}
+        TaskThreadPool *pTaskThreadPool = Singleton<TaskThreadPool>::getInstance();
+        return pTaskThreadPool->put(std::move(task));
+    }
 
 private:
-	
-	void registerType()
-	{
-		_taskTypeFactory.RegisterType<ITask,SearchTask,TASKBUF&&>(static_cast<uint32_t>(TASKTYPE::HYPER_CHAIN_SEARCH));
-		_taskTypeFactory.RegisterType<ITask,SearchRspTask,TASKBUF&&>(static_cast<uint32_t>(TASKTYPE::HYPER_CHAIN_SEARCH_RSP));
 
-		_taskTypeFactory.RegisterType<ITask,OnChainTask,TASKBUF>(static_cast<uint32_t>(TASKTYPE::ON_CHAIN));
-		_taskTypeFactory.RegisterType<ITask,OnChainRspTask,TASKBUF>(static_cast<uint32_t>(TASKTYPE::ON_CHAIN_RSP));
+    void registerType()
+    {
+        _taskTypeFactory.RegisterType<ITask, SearchTask, TASKBUF&&>(static_cast<uint32_t>(TASKTYPE::HYPER_CHAIN_SEARCH));
+        _taskTypeFactory.RegisterType<ITask, SearchRspTask, TASKBUF&&>(static_cast<uint32_t>(TASKTYPE::HYPER_CHAIN_SEARCH_RSP));
 
-		_taskTypeFactory.RegisterType<ITask, OnChainConfirmTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::ON_CHAIN_CONFIRM));
-		_taskTypeFactory.RegisterType<ITask, OnChainConfirmRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::ON_CHAIN_CONFIRM_RSP));
-		_taskTypeFactory.RegisterType<ITask, OnChainWaitTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::ON_CHAIN_WAIT));
+        _taskTypeFactory.RegisterType<ITask, OnChainTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::ON_CHAIN));
+        _taskTypeFactory.RegisterType<ITask, OnChainRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::ON_CHAIN_RSP));
 
-		_taskTypeFactory.RegisterType<ITask, CopyBlockTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::COPY_BLOCK));
+        _taskTypeFactory.RegisterType<ITask, OnChainConfirmTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::ON_CHAIN_CONFIRM));
+        _taskTypeFactory.RegisterType<ITask, OnChainConfirmRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::ON_CHAIN_CONFIRM_RSP));
+        _taskTypeFactory.RegisterType<ITask, OnChainWaitTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::ON_CHAIN_WAIT));
 
-		_taskTypeFactory.RegisterType<ITask, OnChainRefuseTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::ON_CHAIN_REFUSE));
+        _taskTypeFactory.RegisterType<ITask, CopyBlockTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::COPY_BLOCK));
 
-		_taskTypeFactory.RegisterType<ITask,SearchNeighbourTask,TASKBUF>(static_cast<uint32_t>(TASKTYPE::SEARCH_NEIGHBOUR));
-		_taskTypeFactory.RegisterType<ITask,SearchNeighbourRspTask,TASKBUF>(static_cast<uint32_t>(TASKTYPE::SEARCH_NEIGHBOUR_RSP));
+        _taskTypeFactory.RegisterType<ITask, OnChainRefuseTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::ON_CHAIN_REFUSE));
+
+        _taskTypeFactory.RegisterType<ITask, SearchNeighbourTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::SEARCH_NEIGHBOUR));
+        _taskTypeFactory.RegisterType<ITask, SearchNeighbourRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::SEARCH_NEIGHBOUR_RSP));
 
 
 		_taskTypeFactory.RegisterType<ITask, PullChainSpaceTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::HYPER_CHAIN_SPACE_PULL));
 		_taskTypeFactory.RegisterType<ITask, PullChainSpaceRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::HYPER_CHAIN_SPACE_PULL_RSP));
 
-		_taskTypeFactory.RegisterType<ITask, PullHyperDataTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::HYPER_CHAIN_HYPERDATA_PULL));
-		_taskTypeFactory.RegisterType<ITask, PullHyperDataRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::HYPER_CHAIN_HYPERDATA_PULL_RSP));
+        _taskTypeFactory.RegisterType<ITask, GlobalBuddyStartTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::GLOBAL_BUDDY_START_REQ));
+        _taskTypeFactory.RegisterType<ITask, GlobalBuddySendTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::GLOBAL_BUDDY_SEND_REQ));
+        _taskTypeFactory.RegisterType<ITask, GlobalBuddyRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::GLOBAL_BUDDY_RSP));
 
-		_taskTypeFactory.RegisterType<ITask, GlobalBuddyStartTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::GLOBAL_BUDDY_START_REQ));
-		_taskTypeFactory.RegisterType<ITask, GlobalBuddySendTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::GLOBAL_BUDDY_SEND_REQ));
-		_taskTypeFactory.RegisterType<ITask, GlobalBuddyRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::GLOBAL_BUDDY_RSP));
-
-		_taskTypeFactory.RegisterType<ITask, BoardcastHyperBlockTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::BOARDCAST_HYPER_BLOCK));
-		_taskTypeFactory.RegisterType<ITask, GetHyperBlockByNoReqTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::GET_HYPERBLOCK_BY_NO_REQ));
-	}
+        _taskTypeFactory.RegisterType<ITask, BoardcastHyperBlockTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::BOARDCAST_HYPER_BLOCK));
+        _taskTypeFactory.RegisterType<ITask, GetHyperBlockByNoReqTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::GET_HYPERBLOCK_BY_NO_REQ));
+    }
 private:
 
-	objectFactory _taskTypeFactory;
+    objectFactory _taskTypeFactory;
 };

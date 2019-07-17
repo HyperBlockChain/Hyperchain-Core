@@ -40,115 +40,115 @@ using namespace web;
 #include "ITask.hpp"
 namespace SEED {
 
-	typedef struct tagnode
-	{
-		string _nodeinfo;
-		system_clock::time_point _tp;
-	public:
-		tagnode() {}
-		tagnode(string nodeinfo) : _nodeinfo(nodeinfo), _tp(system_clock::now()) {}
-		bool isTimeOut() {
-			using minutes = std::chrono::duration<double, ratio<60>>;
-			system_clock::time_point curr = system_clock::now();
+    typedef struct tagnode
+    {
+        string _nodeinfo;
+        system_clock::time_point _tp;
+    public:
+        tagnode() {}
+        tagnode(string nodeinfo) : _nodeinfo(nodeinfo), _tp(system_clock::now()) {}
+        bool isTimeOut() {
+            using minutes = std::chrono::duration<double, ratio<60>>;
+            system_clock::time_point curr = system_clock::now();
 
-			minutes timespan = std::chrono::duration_cast<minutes>(curr - _tp);
-			if (timespan.count() > 30) {
-				
-				return true;
-			}
-			return false;
-		}
-	} NODE;
+            minutes timespan = std::chrono::duration_cast<minutes>(curr - _tp);
+            if (timespan.count() > 3) {
+                //HC: 3 minutes
+                return true;
+            }
+            return false;
+        }
+    } NODE;
 
-	std::map<string, NODE> g_mapNodes;
-	std::mutex	_guard;
+    std::map<string, NODE> g_mapNodes;
+    std::mutex	_guard;
 
-	int getPeerList(const string & nodeid,string & peerlist)
-	{
-		json::value obj = json::value::array();
+    int getPeerList(const string & nodeid, string & peerlist)
+    {
+        json::value obj = json::value::array();
 
-		int i = 0;
-		size_t maxlen = (64 - 1) * 1024;
-		size_t len = 0;
-		auto it = g_mapNodes.begin();
-		for (; it != g_mapNodes.end();) {
-			if (it->second.isTimeOut()) {
-				g_mapNodes.erase(it++);
-				continue;
-			}
-			if (it->first == nodeid) {
-				++it;
-				continue;
-			}
+        int i = 0;
+        size_t maxlen = (64 - 1) * 1024;
+        size_t len = 0;
+        auto it = g_mapNodes.begin();
+        for (; it != g_mapNodes.end();) {
+            if (it->second.isTimeOut()) {
+                g_mapNodes.erase(it++);
+                continue;
+            }
+            if (it->first == nodeid) {
+                ++it;
+                continue;
+            }
 
-			if (len + it->second._nodeinfo.size() > maxlen) {
-				break;
-			}
+            if (len + it->second._nodeinfo.size() > maxlen) {
+                break;
+            }
 
-			len += it->second._nodeinfo.size();
-			obj[i] = json::value::parse(s2t(it->second._nodeinfo));
-			++i;
-			++it;
-		}
-		std::stringstream oss;
-		obj.serialize(oss);
-		peerlist = std::move(oss.str());
+            len += it->second._nodeinfo.size();
+            obj[i] = json::value::parse(s2t(it->second._nodeinfo));
+            ++i;
+            ++it;
+        }
+        std::stringstream oss;
+        obj.serialize(oss);
+        peerlist = std::move(oss.str());
 
-		return i; 
-	}
+        return i;
+    }
 }
 
 void SearchNeighbourRspTask::exec()
 {
-	string nodeid(_fromNodeId.ToHexString());
-	std::lock_guard<std::mutex> lck(SEED::_guard);
-	SEED::g_mapNodes[nodeid] = SEED::NODE(_msg);
+    string nodeid(_fromNodeId.ToHexString());
+    std::lock_guard<std::mutex> lck(SEED::_guard);
+    SEED::g_mapNodes[nodeid] = SEED::NODE(_msg);
 
-	char logmsg[128] = { 0 };
-	snprintf(logmsg, 128, "Handling SearchNeighbourRspTask from peer:%s\n", nodeid.c_str());
-	g_console_logger->debug(logmsg);
+    char logmsg[128] = { 0 };
+    snprintf(logmsg, 128, "Handling SearchNeighbourRspTask from peer:%s\n", nodeid.c_str());
+    g_console_logger->debug(logmsg);
 
 
-	string msgbuf;
-	int num = SEED::getPeerList(nodeid, msgbuf);
-	if (num <= 0) {
-		
-		return;
-	}
-	snprintf(logmsg, 128, "found %d neighbours for peer:%s\n",num ,nodeid.c_str());
-	g_console_logger->debug(logmsg);
+    string msgbuf;
+    int num = SEED::getPeerList(nodeid, msgbuf);
+    if (num <= 0) {
+        //HC: no anything need to reply
+        return;
+    }
+    snprintf(logmsg, 128, "found %d neighbours for peer:%s\n", num, nodeid.c_str());
+    g_console_logger->debug(logmsg);
 
-	DataBuffer<SearchNeighbourRspTask> datamsgbuf(std::move(msgbuf));
+    DataBuffer<SearchNeighbourRspTask> datamsgbuf(std::move(msgbuf));
 
-	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-	nodemgr->sendTo(_fromNodeId, datamsgbuf);
+    NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+    nodemgr->sendTo(_fromNodeId, datamsgbuf);
 }
 
 void SearchNeighbourRspTask::execRespond()
 {
-	
-	g_console_logger->debug("Handling SearchNeighbourRspTask Respond from seed server");
+    //HC: save peer
+    g_console_logger->debug("Handling SearchNeighbourRspTask Respond from seed server");
 
-	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-	nodemgr->parse(_payload);
+    NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+    nodemgr->parse(_payload);
 }
 
 void SearchNeighbourTask::exec()
 {
-	NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-	HCNodeSH seedserver = nodemgr->seedServer();
+    NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+    HCNodeSH seedserver = nodemgr->seedServer();
 
-	string msgbuf = nodemgr->myself()->serialize();
-	DataBuffer<SearchNeighbourTask> datamsgbuf(std::move(msgbuf));
+    string msgbuf = nodemgr->myself()->serialize();
+    DataBuffer<SearchNeighbourTask> datamsgbuf(std::move(msgbuf));
 
-	nodemgr->sendTo(seedserver, datamsgbuf);
+    nodemgr->sendTo(seedserver, datamsgbuf);
 
 }
 
 void SearchNeighbourTask::execRespond()
 {
-	TaskThreadPool *taskpool = Singleton<TaskThreadPool>::instance();
-	taskpool->put(make_shared<SearchNeighbourRspTask>(std::move(_sentnodeid), _payload));
+    TaskThreadPool *taskpool = Singleton<TaskThreadPool>::instance();
+    taskpool->put(make_shared<SearchNeighbourRspTask>(std::move(_sentnodeid), _payload));
 }
 
 

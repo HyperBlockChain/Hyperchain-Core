@@ -1,91 +1,58 @@
-//
-// This file is part of the aMule Project.
-//
-// Copyright (c) 2008-2011 Dévai Tamás ( gonosztopi@amule.org )
-// Copyright (c) 2004-2011 Angel Vidal ( kry@amule.org )
-// Copyright (c) 2004-2011 aMule Team ( admin@amule.org / http://www.amule.org )
-// Copyright (c) 2003-2011 Barry Dunne (http://www.emule-project.net)
-//
-// Any parts of this program derived from the xMule, lMule or eMule project,
-// or contributed by third-party developers are copyrighted by their
-// respective authors.
-//
-// This program is free software; you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation; either version 2 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA
-//
+/*Copyright 2016-2019 hyperchain.net (Hyperchain)
 
+Distributed under the MIT software license, see the accompanying
+file COPYING or https://opensource.org/licenses/MIT.
 
-// Note To Mods //
-/*
-Please do not change anything here and release it..
-There is going to be a new forum created just for the Kademlia side of the client..
-If you feel there is an error or a way to improve something, please
-post it in the forum first and let us look at it.. If it is a real improvement,
-it will be added to the offical client.. Changing something without knowing
-what all it does can cause great harm to the network if released in mass form..
-Any mod that changes anything within the Kademlia side will not be allowed to advertise
-there client on the eMule forum..
+Permission is hereby granted, free of charge, to any person obtaining a copy of this
+software and associated documentation files (the "Software"), to deal in the Software
+without restriction, including without limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
+to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 */
 #include <assert.h>
 
 #include <iomanip>
 #include <sstream>
 #include <string.h>
+#include <stdexcept>
 using namespace std;
 
 #include "UInt128.h"
 
 
-//#include "../../ArchSpecific.h"
-//#include <common/Format.h>	// Needed for CFormat
-
-
-
 CUInt128::CUInt128(const CUInt128 &value, unsigned numBits)
 {
-	// Copy the whole uint32s
 	unsigned numULONGs = numBits / 32;
 	for (unsigned i = 0; i < numULONGs; i++) {
-		Set32BitChunk(i, value.Get32BitChunk(i));
+		set32BitChunk(i, value.get32BitChunk(i));
 	}
 
-	// Copy the remaining bits
 	for (unsigned i = numULONGs * 32; i < numBits; i++) {
-		SetBitNumber(i, value.GetBitNumber(i));
+		setBitNumber(i, value.getBitNumber(i));
 	}
 
-	// Fill the remaining bits of the current 32-bit chunk with random bits
-	// (Not seeding based on time to allow multiple different ones to be created in quick succession)
 	numULONGs = (numBits + 31) / 32;
 	for (unsigned i = numBits; i < numULONGs * 32; i++) {
-		SetBitNumber(i, rand() % 2);
+		setBitNumber(i, rand() % 2);
 	}
 
-	// Pad with random bytes
 	for (unsigned i = numULONGs; i < 3; i++) {
-		Set32BitChunk(i, rand());
+		set32BitChunk(i, rand());
 	}
 }
 
 std::string CUInt128::ToHexString() const
 {
-	//wxString str;
-
-	//for (int i = 3; i >= 0; i--) {
-	//	str.Append(CFormat(wxT("%08X")) % m_data.u32_data[i]);
-	//}
-
 	std::ostringstream oss;
 	oss.flags(ios::hex);
 
@@ -96,32 +63,8 @@ std::string CUInt128::ToHexString() const
 	return oss.str();
 }
 
-std::string CUInt128::ToBinaryString(bool trim) const
-{
-	//wxString str;
-	//str.Alloc(128);
-	//int b;
-	//for (int i = 0; i < 128; i++) {
-	//	b = GetBitNumber(i);
-	//	if ((!trim) || (b != 0)) {
-	//		str.Append(b ? wxT("1") : wxT("0"));
-	//		trim = false;
-	//	}
-	//}
-	//if (str.Len() == 0) {
-	//	str = wxT("0");
-	//}
-	//return str;
-	return "";
-}
-
 CUInt128& CUInt128::SetValueBE(const uint8_t *valueBE) throw()
 {
-	/*m_data.u32_data[3] = wxUINT32_SWAP_ON_LE(RawPeekUInt32(valueBE));
-	m_data.u32_data[2] = wxUINT32_SWAP_ON_LE(RawPeekUInt32(valueBE + 4));
-	m_data.u32_data[1] = wxUINT32_SWAP_ON_LE(RawPeekUInt32(valueBE + 8));
-	m_data.u32_data[0] = wxUINT32_SWAP_ON_LE(RawPeekUInt32(valueBE + 12));*/
-
 	m_data.u32_data[3] = *(uint32_t*)valueBE;
 	m_data.u32_data[2] = *(uint32_t*)(valueBE + 4);
 	m_data.u32_data[1] = *(uint32_t*)(valueBE + 8);
@@ -131,7 +74,9 @@ CUInt128& CUInt128::SetValueBE(const uint8_t *valueBE) throw()
 
 CUInt128& CUInt128::SetHexString(const std::string & s) throw()
 {
-	assert(s.size() == 2 * sizeof(m_data.u32_data[0]) * sizeof(m_data.u32_data) / sizeof(m_data.u32_data[0]));
+	if (s.size() != 2 * sizeof(m_data.u32_data[0]) * sizeof(m_data.u32_data) / sizeof(m_data.u32_data[0])) {
+		throw std::runtime_error("invalid Node ID");
+	}
 	istringstream iss;
 	istringstream stream;
 
@@ -153,33 +98,11 @@ CUInt128& CUInt128::SetHexString(const std::string & s) throw()
 
 void CUInt128::ToByteArray(uint8_t *b) const
 {
-	/*wxCHECK_RET(b != NULL, wxT("Destination buffer missing."));
-
-	RawPokeUInt32(b,      wxUINT32_SWAP_ON_LE(m_data.u32_data[3]));
-	RawPokeUInt32(b + 4,  wxUINT32_SWAP_ON_LE(m_data.u32_data[2]));
-	RawPokeUInt32(b + 8,  wxUINT32_SWAP_ON_LE(m_data.u32_data[1]));
-	RawPokeUInt32(b + 12, wxUINT32_SWAP_ON_LE(m_data.u32_data[0]));*/
-
 	assert(b != nullptr);
 	memcpy(b, &m_data.u32_data[3], 4);
 	memcpy(b+4, &m_data.u32_data[2], 4);
 	memcpy(b+8, &m_data.u32_data[1], 4);
 	memcpy(b+12, &m_data.u32_data[0], 4);
-
-	//*(b) = m_data.u32_data[3];
-	//*(b + 4) = m_data.u32_data[2];
-	//*(b + 8) = m_data.u32_data[1];
-	//*(b + 12) = m_data.u32_data[0];
-}
-
-void CUInt128::StoreCryptValue(uint8_t *buf) const
-{
-	//wxCHECK_RET(buf != NULL, wxT("Destination buffer missing."));
-
-	//RawPokeUInt32(buf,      wxUINT32_SWAP_ON_BE(m_data.u32_data[3]));
-	//RawPokeUInt32(buf + 4,  wxUINT32_SWAP_ON_BE(m_data.u32_data[2]));
-	//RawPokeUInt32(buf + 8,  wxUINT32_SWAP_ON_BE(m_data.u32_data[1]));
-	//RawPokeUInt32(buf + 12, wxUINT32_SWAP_ON_BE(m_data.u32_data[0]));
 }
 
 int CUInt128::CompareTo(const CUInt128 &other) const throw()
@@ -236,7 +159,7 @@ CUInt128& CUInt128::ShiftLeft(unsigned bits) throw()
 		return *this;
 
 	if (bits > 127) {
-		SetValue((uint32_t)0);
+		setValue((uint32_t)0);
 		return *this;
 	}
 
@@ -257,4 +180,3 @@ CUInt128& CUInt128::ShiftLeft(unsigned bits) throw()
 
 	return *this;
 }
-// File_checked_for_headers

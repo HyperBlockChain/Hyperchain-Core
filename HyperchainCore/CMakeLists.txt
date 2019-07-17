@@ -2,7 +2,7 @@
 #Distributed under the MIT software license, see the accompanying
 #file COPYING or https://opensource.org/licenses/MIT.
 
-#Permission is hereby granted, free of charge, to any person obtaining a copy of this 
+#Permission is hereby granted, free of charge, to any person obtaining a copy of this
 #software and associated documentation files (the "Software"), to deal in the Software
 #without restriction, including without limitation the rights to use, copy, modify, merge,
 #publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons
@@ -11,7 +11,7 @@
 #The above copyright notice and this permission notice shall be included in all copies or
 #substantial portions of the Software.
 
-#THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+#THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
 #INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
 #PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
 
@@ -25,8 +25,8 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.7)
 set(CMAKE_CXX_STANDARD 11)
 
 if(UNIX)
-#SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g2 -ggdb")  
-#SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall") 
+#SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g2 -ggdb")
+#SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall")
 
 ##########################################################################
 #############DEBUG
@@ -41,8 +41,8 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /MD")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od /MDd")
 
 endif()
-	
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules") 
+
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules")
 
 PROJECT(hc)
 
@@ -74,9 +74,13 @@ if(cpprestsdk_FOUND)
 endif()
 
 #set(Boost_USE_STATIC_LIBS ON)
-find_package (Boost REQUIRED COMPONENTS system program_options date_time filesystem thread)
+find_package (Boost REQUIRED COMPONENTS system program_options date_time filesystem thread serialization)
 
-find_package(unofficial-breakpad CONFIG REQUIRED)
+if(UNIX)
+    find_package(breakpad REQUIRED)
+elseif(WIN32)
+    find_package(unofficial-breakpad CONFIG REQUIRED)
+endif()
 
 
 cmake_policy(SET CMP0071 NEW)
@@ -127,7 +131,7 @@ FILE(GLOB consensus_HEAD "consensus/*.h")
 
 #All source files
 set(final_HEAD
-    ${main_HEAD}	
+    ${main_HEAD}
 	${crypto_HEAD}
 	${headers_HEAD}
 	${HttpUnit_HEAD}
@@ -144,7 +148,7 @@ set(final_HEAD
 	${spdlog_HEAD}
 	${consensus_HEAD}
 	)
- 
+
 set(final_SRC
     ${main_SRC}
 	${crypto_SRC}
@@ -154,14 +158,14 @@ set(final_SRC
 	${HyperChain_SRC}
 	#${interface_SRC}
 	${node_SRC}
-	${utility_SRC}	
+	${utility_SRC}
 	${wnd_SRC}
 	${db_SRC}
 	${util_SRC}
 	${consensus_SRC}
 	)
-	
-set(resource_SRC ${CMAKE_BINARY_DIR}/logo.rc)	
+
+set(resource_SRC ${CMAKE_BINARY_DIR}/logo.rc)
 
 if(WIN32)
 set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /level='requireAdministrator' /uiAccess='false' /SUBSYSTEM:CONSOLE" )
@@ -175,7 +179,7 @@ target_link_libraries(${PROJECT_NAME} bcrypt.lib)
 endif()
 
 target_link_libraries(${PROJECT_NAME} cpprestsdk::cpprest OpenSSL::Crypto ${SQLITE3_LIBRARIES})
-target_link_libraries(${PROJECT_NAME} Boost::system Boost::program_options)
+target_link_libraries(${PROJECT_NAME} Boost::system Boost::program_options Boost::serialization)
 #target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::breakpad::libbreakpad_client)
 target_link_libraries(${PROJECT_NAME} unofficial::breakpad::libbreakpad_client)
 

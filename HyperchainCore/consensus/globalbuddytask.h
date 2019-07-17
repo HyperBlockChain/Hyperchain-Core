@@ -40,7 +40,7 @@ public:
 	using ITask::ITask;
 
 	~GlobalBuddyStartTask() {};
-	
+
 	void exec() override;
 	void execRespond() override;
 };
@@ -65,7 +65,12 @@ public:
 	~GlobalBuddyRspTask() {};
 
 	void exec() override;
-	void execRespond() override;
+
+
+    void execRespond() override;
+
+private:
+    void replyChildChains(T_P2PPROTOCOLGLOBALBUDDYHEADER &globalBuddyReqRecv);
 
 private:
 	string _buf;

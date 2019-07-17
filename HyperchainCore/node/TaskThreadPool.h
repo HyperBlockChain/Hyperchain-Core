@@ -34,50 +34,51 @@ using namespace std;
 #include "SyncQueue.h"
 class TaskThreadPool {
 
-public: 
-	using QueueTask = shared_ptr<ITask>;
+public:
+    using QueueTask = shared_ptr<ITask>;
 
-	TaskThreadPool(uint32_t numthreads = thread::hardware_concurrency(),uint32_t maxnumtasks = 5000);
-	TaskThreadPool(const TaskThreadPool &) = delete;
-	TaskThreadPool & operator=(const TaskThreadPool &) = delete;
-	~TaskThreadPool() { stop(); }
+    TaskThreadPool(uint32_t numthreads = thread::hardware_concurrency(), uint32_t maxnumtasks = 5000);
+    TaskThreadPool(const TaskThreadPool &) = delete;
+    TaskThreadPool & operator=(const TaskThreadPool &) = delete;
+    ~TaskThreadPool() { stop(); }
 
-	bool put(QueueTask &&t);
+    bool put(QueueTask &&t);
 
-	void stop();
-	void exec_task();
+    void stop();
+    void exec_task();
 
-	size_t getQueueSize() {
-		return _taskqueue.size();
-	}
-	string getQueueDetails() {
+    size_t getQueueSize() {
+        return _taskqueue.size();
+    }
+    string getQueueDetails() {
 
-		std::unordered_map<string, uint16> tt;
-		{
-			std::unique_lock<std::mutex> lck(_taskqueue.guard());
-			std::list<QueueTask> tsklist = _taskqueue.tasklist();
+        std::unordered_map<string, uint16> tt;
+        {
+            std::unique_lock<std::mutex> lck(_taskqueue.guard());
+            std::list<QueueTask> tsklist = _taskqueue.tasklist();
 
-			for (auto it = tsklist.begin(); it != tsklist.end(); it++) {
-				string t = typeid(*it->get()).name();
-				if (tt.count(t) == 0) {
-					tt[t] = 1;
-				} else {
-					tt[t] += 1;
-				}
-			}
-		}
-		ostringstream oss;
-		for (auto task : tt) {
-			oss << task.first << ":" << task.second << endl;
-		}
-		return oss.str();
-	}
+            for (auto it = tsklist.begin(); it != tsklist.end(); it++) {
+                string t = typeid(*it->get()).name();
+                if (tt.count(t) == 0) {
+                    tt[t] = 1;
+                }
+                else {
+                    tt[t] += 1;
+                }
+            }
+        }
+        ostringstream oss;
+        for (auto &task : tt) {
+            oss << task.first << ":" << task.second << endl;
+        }
+        return oss.str();
+    }
 
 private:
 
-	uint32_t _numthreads;
+    uint32_t _numthreads;
     SyncQueue<QueueTask> _taskqueue;
     std::list<std::thread> _threads;
 
-	bool _isstop;
+    bool _isstop;
 };

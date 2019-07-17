@@ -48,7 +48,7 @@ private:
 	void* 			m_pCParam;
 };
 
-
+//定义
 template<typename pCallbackFunc>
 TCallbackFuncObj<pCallbackFunc>::TCallbackFuncObj() : m_pCF(NULL)
 , m_pCParam(NULL)

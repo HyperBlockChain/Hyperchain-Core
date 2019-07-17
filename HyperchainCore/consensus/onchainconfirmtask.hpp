@@ -23,8 +23,6 @@ DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <iostream>
-using namespace std;
 
 #include "../node/ITask.hpp"
 #include "../node/Singleton.h"
@@ -33,8 +31,13 @@ using namespace std;
 #include "buddyinfo.h"
 #include "headers/lambda.h"
 
+#include <boost/archive/binary_iarchive.hpp>
+#include <boost/archive/binary_oarchive.hpp>
+
+#include <iostream>
+using namespace std;
+
 extern void SendRefuseReq(const CUInt128 &peerid, const string &hash, uint8 type);
-extern void ChangeLocalBlockPreHash(LIST_T_LOCALCONSENSUS &localList);
 extern bool JudgExistAtLocalBuddy(LIST_T_LOCALCONSENSUS localList, T_LOCALCONSENSUS localBlockInfo);
 
 extern void SendCopyLocalBlock(T_LOCALCONSENSUS &localBlock);
@@ -45,335 +48,372 @@ extern bool isConfirming(string &currBuddyHash);
 
 class OnChainConfirmRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::ON_CHAIN_CONFIRM_RSP> {
 public:
-	using ITask::ITask;
+    using ITask::ITask;
 
-	OnChainConfirmRspTask(const CUInt128 &peerid, uint64 uiHyperBlockNum, const string & hash) :
-		_peerid(peerid), _uiHyperBlockNum(uiHyperBlockNum),_hash(hash) {}
+    OnChainConfirmRspTask(const CUInt128 &peerid, uint64 uiHyperBlockNum, const string & hash) :
+        _peerid(peerid), _uiHyperBlockNum(uiHyperBlockNum), _hash(hash) {}
 
-	~OnChainConfirmRspTask() {};
+    ~OnChainConfirmRspTask() {};
 
-	void exec() override
-	{
-		g_consensus_console_logger->info("Send OnChainConfirmRspTask to {}\n", _peerid.ToHexString().c_str());
+    void exec() override
+    {
+        g_consensus_console_logger->info("Send OnChainConfirmRspTask to {}\n", _peerid.ToHexString().c_str());
 
-		
-		T_PP2PPROTOCOLONCHAINCONFIRMRSP pP2pProtocolOnChainConfirmRsp = nullptr;
+        //HC: Run to here, buddy is formed
+        T_PP2PPROTOCOLONCHAINCONFIRMRSP pP2pProtocolOnChainConfirmRsp = nullptr;
 
-		int ipP2pProtocolOnChainConfirmRspLen = sizeof(T_P2PPROTOCOLONCHAINCONFIRMRSP);
+        int ipP2pProtocolOnChainConfirmRspLen = sizeof(T_P2PPROTOCOLONCHAINCONFIRMRSP);
 
-		DataBuffer<OnChainConfirmRspTask> msgbuf(ipP2pProtocolOnChainConfirmRspLen);
-		pP2pProtocolOnChainConfirmRsp = reinterpret_cast<T_PP2PPROTOCOLONCHAINCONFIRMRSP>(msgbuf.payload());
+        DataBuffer<OnChainConfirmRspTask> msgbuf(ipP2pProtocolOnChainConfirmRspLen);
+        pP2pProtocolOnChainConfirmRsp = reinterpret_cast<T_PP2PPROTOCOLONCHAINCONFIRMRSP>(msgbuf.payload());
 
-		struct timeval timeTemp;
-		CCommonStruct::gettimeofday_update(&timeTemp);
+        struct timeval timeTemp;
+        CCommonStruct::gettimeofday_update(&timeTemp);
 
-		pP2pProtocolOnChainConfirmRsp->uiHyperBlockNum = _uiHyperBlockNum;
-		pP2pProtocolOnChainConfirmRsp->SetInitHash(0);
-		pP2pProtocolOnChainConfirmRsp->SetP2pprotocolonchainconfirmrsp(
-			T_P2PPROTOCOLRSP(T_P2PPROTOCOLTYPE(P2P_PROTOCOL_ON_CHAIN_CONFIRM_RSP, timeTemp.tv_sec), P2P_PROTOCOL_SUCCESS), 
-			const_cast<char*>(_hash.c_str()));
+        pP2pProtocolOnChainConfirmRsp->uiHyperBlockNum = _uiHyperBlockNum;
+        pP2pProtocolOnChainConfirmRsp->SetInitHash(0);
+        pP2pProtocolOnChainConfirmRsp->SetP2pprotocolonchainconfirmrsp(
+            T_P2PPROTOCOLRSP(T_P2PPROTOCOLTYPE(P2P_PROTOCOL_ON_CHAIN_CONFIRM_RSP, timeTemp.tv_sec), P2P_PROTOCOL_SUCCESS),
+            const_cast<char*>(_hash.c_str()));
 
-		NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+        NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
 
-		nodemgr->sendTo(_peerid, msgbuf);
+        nodemgr->sendTo(_peerid, msgbuf);
 
-	}
+    }
 
-	void execRespond() override
-	{
-		g_consensus_console_logger->info("Received OnChainConfirmRspTask from {}",_sentnodeid.ToHexString());
-		T_PP2PPROTOCOLONCHAINCONFIRMRSP pP2pProtocolOnChainConfirmRspRecv = (T_PP2PPROTOCOLONCHAINCONFIRMRSP)(_payload);
+    void execRespond() override
+    {
+        g_consensus_console_logger->info("Received OnChainConfirmRspTask from {}", _sentnodeid.ToHexString());
+        T_PP2PPROTOCOLONCHAINCONFIRMRSP pP2pProtocolOnChainConfirmRspRecv = (T_PP2PPROTOCOLONCHAINCONFIRMRSP)(_payload);
 
-		CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
-		{
-			CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxlistCurBuddyRsp);
-			auto itr = g_tP2pManagerStatus.listCurBuddyRsp.begin();
-			for (; itr != g_tP2pManagerStatus.listCurBuddyRsp.end();) {
-				if (0 == strncmp((*itr).strBuddyHash, pP2pProtocolOnChainConfirmRspRecv->GetHash(), DEF_STR_HASH256_LEN) &&
-					(*itr).GetBuddyState() == SEND_CONFIRM) {
-					PutIntoConsensusList(*itr);
-					int i = 0;
-					for (auto &b : g_tP2pManagerStatus.listLocalBuddyChainInfo) {
-						g_consensus_console_logger->info("OnChainConfirmRspTask: listLocalBuddyChainInfo: {} {}", ++i, b.GetLocalBlock().GetPayLoad().GetPayLoad());
-					}
-				}
-				else if ((*itr).GetBuddyState() != CONSENSUS_CONFIRMED) {
-					SendRefuseReq((*itr).GetPeerAddrOut()._nodeid,
-						string((*itr).strBuddyHash, DEF_STR_HASH256_LEN), RECV_REQ);
-					itr = g_tP2pManagerStatus.listCurBuddyRsp.erase(itr);
-					continue;
-				}
-				++itr;
-			}
-		}
+        CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
+        {
+            CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxlistCurBuddyRsp);
+            auto itr = g_tP2pManagerStatus.listCurBuddyRsp.begin();
+            for (; itr != g_tP2pManagerStatus.listCurBuddyRsp.end();) {
+                if (0 == strncmp((*itr).strBuddyHash, pP2pProtocolOnChainConfirmRspRecv->GetHash(), DEF_STR_HASH256_LEN) &&
+                    (*itr).GetBuddyState() == SEND_CONFIRM) {
+                    PutIntoConsensusList(*itr);
+                    int i = 0;
+                    for (auto &b : g_tP2pManagerStatus.listLocalBuddyChainInfo) {
+                        g_consensus_console_logger->info("OnChainConfirmRspTask: listLocalBuddyChainInfo: {} {}", ++i, b.GetLocalBlock().GetPayLoadPreview());
+                    }
+                }
+                else if ((*itr).GetBuddyState() != CONSENSUS_CONFIRMED) {
+                    SendRefuseReq((*itr).GetPeerAddrOut()._nodeid,
+                        string((*itr).strBuddyHash, DEF_STR_HASH256_LEN), RECV_REQ);
+                    itr = g_tP2pManagerStatus.listCurBuddyRsp.erase(itr);
+                    continue;
+                }
+                ++itr;
+            }
+        }
 
-		{
-			CAutoMutexLock muxAuto2(g_tP2pManagerStatus.MuxlistCurBuddyReq);
-			auto itrReq = g_tP2pManagerStatus.listCurBuddyReq.begin();
-			for (; itrReq != g_tP2pManagerStatus.listCurBuddyReq.end();) {
-				if (0 == strncmp((*itrReq).strBuddyHash, pP2pProtocolOnChainConfirmRspRecv->strHash, DEF_STR_HASH256_LEN)) {
-					itrReq->uibuddyState = CONSENSUS_CONFIRMED;
-				}
-				else {
+        {
+            CAutoMutexLock muxAuto2(g_tP2pManagerStatus.MuxlistCurBuddyReq);
+            auto itrReq = g_tP2pManagerStatus.listCurBuddyReq.begin();
+            for (; itrReq != g_tP2pManagerStatus.listCurBuddyReq.end();) {
+                if (0 == strncmp((*itrReq).strBuddyHash, pP2pProtocolOnChainConfirmRspRecv->strHash, DEF_STR_HASH256_LEN)) {
+                    itrReq->uibuddyState = CONSENSUS_CONFIRMED;
+                }
+                else {
 
-					SendRefuseReq((*itrReq).GetPeerAddrOut()._nodeid,
-						string((*itrReq).strBuddyHash, DEF_STR_HASH256_LEN), RECV_RSP);
-					itrReq = g_tP2pManagerStatus.listCurBuddyReq.erase(itrReq);
-					continue;
-				}
-				++itrReq;
-			}
-		}
+                    SendRefuseReq((*itrReq).GetPeerAddrOut()._nodeid,
+                        string((*itrReq).strBuddyHash, DEF_STR_HASH256_LEN), RECV_RSP);
+                    itrReq = g_tP2pManagerStatus.listCurBuddyReq.erase(itrReq);
+                    continue;
+                }
+                ++itrReq;
+            }
+        }
 
-		g_consensus_console_logger->info("OnChainConfirmRspTask: listCurBuddyReq size: {} listCurBuddyRsp size: {}", 
-										g_tP2pManagerStatus.listCurBuddyReq.size(),
-										g_tP2pManagerStatus.listCurBuddyRsp.size());
+        g_consensus_console_logger->info("OnChainConfirmRspTask: listCurBuddyReq size: {} listCurBuddyRsp size: {}",
+            g_tP2pManagerStatus.listCurBuddyReq.size(),
+            g_tP2pManagerStatus.listCurBuddyRsp.size());
 
-		CAutoMutexLock muxAuto3(g_tP2pManagerStatus.MuxlistRecvLocalBuddyRsp);
-		g_tP2pManagerStatus.listRecvLocalBuddyRsp.clear();
+        CAutoMutexLock muxAuto3(g_tP2pManagerStatus.MuxlistRecvLocalBuddyRsp);
+        g_tP2pManagerStatus.listRecvLocalBuddyRsp.clear();
 
-		CAutoMutexLock muxAuto4(g_tP2pManagerStatus.MuxlistRecvLocalBuddyReq);
-		g_tP2pManagerStatus.listRecvLocalBuddyReq.clear();
-	}
+        CAutoMutexLock muxAuto4(g_tP2pManagerStatus.MuxlistRecvLocalBuddyReq);
+        g_tP2pManagerStatus.listRecvLocalBuddyReq.clear();
+    }
 
 private:
-	CUInt128 _peerid;
-	uint64_t _uiHyperBlockNum;
-	string _hash;
+    CUInt128 _peerid;
+    uint64_t _uiHyperBlockNum;
+    string _hash;
 };
 
 class OnChainConfirmTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::ON_CHAIN_CONFIRM> {
 public:
-	using ITask::ITask;
+    using ITask::ITask;
 
-	OnChainConfirmTask(const CUInt128 &peerid, uint64 uiHyperBlockNum,
-		string hash, uint8 state) : _peerid(peerid), _uiHyperBlockNum(uiHyperBlockNum), _hash(hash), _state(state) {}
+    OnChainConfirmTask(const CUInt128 &peerid, uint64 uiHyperBlockNum,
+        string hash, uint8 state) : _peerid(peerid), _uiHyperBlockNum(uiHyperBlockNum), _hash(hash), _state(state) {}
 
-	~OnChainConfirmTask() {};
-	void exec() override
-	{
-		{
-			CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistCurBuddyRsp);
-			for (auto &buddy : g_tP2pManagerStatus.listCurBuddyRsp) {
-				if (buddy.GetBuddyState() == SEND_CONFIRM) {
-					g_consensus_console_logger->info("OnChainConfirmTask: already sent out Confirm");
-					return;
-				}
-			}
+    ~OnChainConfirmTask() {};
+    void exec() override
+    {
+        {
+            CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistCurBuddyRsp);
+            for (auto &buddy : g_tP2pManagerStatus.listCurBuddyRsp) {
+                if (buddy.GetBuddyState() == SEND_CONFIRM) {
+                    g_consensus_console_logger->info("OnChainConfirmTask: already sent out Confirm");
+                    return;
+                }
+            }
 
-			bool isFind = false;
-			for (auto &chain : g_tP2pManagerStatus.listCurBuddyRsp) {
-				if (0 == strncmp(chain.GetBuddyHash(), _hash.c_str(), DEF_STR_HASH256_LEN)) {
-					chain.SetBuddyState(SEND_CONFIRM);
-					g_consensus_console_logger->info("OnChainConfirmTask: set buddy state SEND_CONFIRM");
-					isFind = true;
-					break;
-				}
-			}
-			if (!isFind) {
-				return;
-			}
-		}
+            bool isFind = false;
+            for (auto &chain : g_tP2pManagerStatus.listCurBuddyRsp) {
+                if (0 == strncmp(chain.GetBuddyHash(), _hash.c_str(), DEF_STR_HASH256_LEN)) {
+                    chain.SetBuddyState(SEND_CONFIRM);
+                    g_consensus_console_logger->info("OnChainConfirmTask: set buddy state SEND_CONFIRM");
+                    isFind = true;
+                    break;
+                }
+            }
+            if (!isFind) {
+                return;
+            }
+        }
 
-		char logmsg[128] = { 0 };
-		snprintf(logmsg, 128, "Send OnChainConfirmTask to peer:%s\n", _peerid.ToHexString().c_str());
-		g_consensus_console_logger->info(logmsg);
+        char logmsg[128] = { 0 };
+        snprintf(logmsg, 128, "Send OnChainConfirmTask to peer:%s\n", _peerid.ToHexString().c_str());
+        g_consensus_console_logger->info(logmsg);
 
-		T_PP2PPROTOCOLONCHAINCONFIRM pP2pProtocolOnChainConfirm = nullptr;
+        T_PP2PPROTOCOLONCHAINCONFIRM pP2pProtocolOnChainConfirm = nullptr;
 
-		int ipP2pProtocolOnChainConfirmLen = sizeof(T_P2PPROTOCOLONCHAINCONFIRM);
+        int ipP2pProtocolOnChainConfirmLen = sizeof(T_P2PPROTOCOLONCHAINCONFIRM);
 
-		DataBuffer<OnChainConfirmTask> msgbuf(ipP2pProtocolOnChainConfirmLen);
-		pP2pProtocolOnChainConfirm = reinterpret_cast<T_PP2PPROTOCOLONCHAINCONFIRM>(msgbuf.payload());
+        DataBuffer<OnChainConfirmTask> msgbuf(ipP2pProtocolOnChainConfirmLen);
+        pP2pProtocolOnChainConfirm = reinterpret_cast<T_PP2PPROTOCOLONCHAINCONFIRM>(msgbuf.payload());
 
-		struct timeval timeTemp;
-		CCommonStruct::gettimeofday_update(&timeTemp);
-		pP2pProtocolOnChainConfirm->SetInitHash(0);
-		pP2pProtocolOnChainConfirm->uiHyperBlockNum = _uiHyperBlockNum;
-		pP2pProtocolOnChainConfirm->SetP2pprotocolonchainconfirm(
-			T_P2PPROTOCOLRSP(T_P2PPROTOCOLTYPE(P2P_PROTOCOL_ON_CHAIN_CONFIRM, timeTemp.tv_sec), _state), 
-			const_cast<char*> (_hash.c_str()));
+        struct timeval timeTemp;
+        CCommonStruct::gettimeofday_update(&timeTemp);
+        pP2pProtocolOnChainConfirm->SetInitHash(0);
+        pP2pProtocolOnChainConfirm->uiHyperBlockNum = _uiHyperBlockNum;
+        pP2pProtocolOnChainConfirm->SetP2pprotocolonchainconfirm(
+            T_P2PPROTOCOLRSP(T_P2PPROTOCOLTYPE(P2P_PROTOCOL_ON_CHAIN_CONFIRM, timeTemp.tv_sec), _state),
+            const_cast<char*> (_hash.c_str()));
 
-		NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-		nodemgr->sendTo(_peerid, msgbuf);
-		
-	}
+        NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+        nodemgr->sendTo(_peerid, msgbuf);
 
-	void execRespond() override
-	{
-		T_PP2PPROTOCOLONCHAINCONFIRM pP2pProtocolOnChainConfirmRecv = (T_PP2PPROTOCOLONCHAINCONFIRM)(_payload);
+    }
 
-		bool isFind = false;
+    void execRespond() override
+    {
+        T_PP2PPROTOCOLONCHAINCONFIRM pP2pProtocolOnChainConfirmRecv = (T_PP2PPROTOCOLONCHAINCONFIRM)(_payload);
 
-		auto f = [&](T_BUDDYINFOSTATE &buddyinfostate) {
-			if (0 == strncmp(buddyinfostate.strBuddyHash,
-				pP2pProtocolOnChainConfirmRecv->GetHash(), DEF_STR_HASH256_LEN)) {
-				isFind = true;
-				return true;
-			}
-			return false;
-		};
+        bool isFind = false;
 
-		g_consensus_console_logger->info("Received confirm from {}", _sentnodeid.ToHexString());
-		string confirmbuddyhash = string(pP2pProtocolOnChainConfirmRecv->GetHash(), DEF_STR_HASH256_LEN);
+        auto f = [&](T_BUDDYINFOSTATE &buddyinfostate) {
+            if (0 == strncmp(buddyinfostate.strBuddyHash,
+                pP2pProtocolOnChainConfirmRecv->GetHash(), DEF_STR_HASH256_LEN)) {
+                isFind = true;
+                return true;
+            }
+            return false;
+        };
 
-		string currBuddyHash;
-		bool isconfirming = isConfirming(currBuddyHash);
+        g_consensus_console_logger->info("Received confirm from {}", _sentnodeid.ToHexString());
+        string confirmbuddyhash = string(pP2pProtocolOnChainConfirmRecv->GetHash(), DEF_STR_HASH256_LEN);
 
-		{
-			CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistCurBuddyReq);
-			std::find_if(g_tP2pManagerStatus.listCurBuddyReq.begin(), g_tP2pManagerStatus.listCurBuddyReq.end(), f);
-		}
-		if (isFind) {
-			if (!isconfirming || currBuddyHash == confirmbuddyhash) {
-				g_consensus_console_logger->info("confirm from {}: will makebuddy, isconfirming:{}", _sentnodeid.ToHexString(), isconfirming);
+        string currBuddyHash;
+        bool isconfirming = isConfirming(currBuddyHash);
 
-				if (makeBuddy(confirmbuddyhash)) {
-					SendConfirmRsp(confirmbuddyhash, pP2pProtocolOnChainConfirmRecv->uiHyperBlockNum);
-				}
-			}
-		}
-		else {
-			
-			SendWaitRsp(confirmbuddyhash);
-		}
+        {
+            CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistCurBuddyReq);
+            std::find_if(g_tP2pManagerStatus.listCurBuddyReq.begin(), g_tP2pManagerStatus.listCurBuddyReq.end(), f);
+        }
+        if (isFind) {
+            if (!isconfirming || currBuddyHash == confirmbuddyhash) {
+                //HC: 我没和任何节点在进行buddy确认，所以可以结成buddy
+                //HC: 或者我正和一个节点在进行buddy确认，但是正好就是同一个节点，所以可以结成buddy
+                g_consensus_console_logger->info("confirm from {}: will makebuddy, isconfirming:{}", _sentnodeid.ToHexString(), isconfirming);
 
-		if (!isFind) {
-			g_consensus_console_logger->info("Confirm refused: cannot find the buddy hash from {} ",
-				_sentnodeid.ToHexString().c_str());
-			SendRefuseReq(_sentnodeid, confirmbuddyhash, RECV_RSP);
-		}
-	}
+                if (makeBuddy(confirmbuddyhash)) {
+                    SendConfirmRsp(confirmbuddyhash, pP2pProtocolOnChainConfirmRecv->uiHyperBlockNum);
+                }
+            }
+        }
+        else {
+            //HC: Tell peer that I am waiting for confirm respond.
+            SendWaitRsp(confirmbuddyhash);
+        }
 
-	void SendConfirmRsp(string hash, uint64_t uiHyperBlockNum)
-	{
-		TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-		taskpool->put(make_shared<OnChainConfirmRspTask>(_sentnodeid, uiHyperBlockNum, hash));
-	}
-	void SendWaitRsp(string hash)
-	{
-		TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-		taskpool->put(make_shared<OnChainWaitTask>(_sentnodeid, hash));
-	}
+        if (!isFind) {
+            g_consensus_console_logger->info("Confirm refused: cannot find the buddy hash from {} ",
+                _sentnodeid.ToHexString().c_str());
+            SendRefuseReq(_sentnodeid, confirmbuddyhash, RECV_RSP);
+        }
+    }
+
+    void SendConfirmRsp(string hash, uint64_t uiHyperBlockNum)
+    {
+        TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
+        taskpool->put(make_shared<OnChainConfirmRspTask>(_sentnodeid, uiHyperBlockNum, hash));
+    }
+    void SendWaitRsp(string hash)
+    {
+        TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
+        taskpool->put(make_shared<OnChainWaitTask>(_sentnodeid, hash));
+    }
 
 private:
-	CUInt128 _peerid;
-	uint64_t _uiHyperBlockNum;
-	string _hash;
-	int _state;
+    CUInt128 _peerid;
+    uint64_t _uiHyperBlockNum;
+    string _hash;
+    int _state;
 };
 
-
+//HC: Copy local block to peer
 class CopyBlockTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::COPY_BLOCK> {
 public:
-	using ITask::ITask;
+    using ITask::ITask;
 
-	CopyBlockTask(const T_LOCALCONSENSUS &localBlock) : _localBlock(localBlock) {}
+    CopyBlockTask(const T_LOCALCONSENSUS &localBlock) : _localBlock(localBlock) {}
 
-	~CopyBlockTask() {};
+    ~CopyBlockTask() {};
 
-	void exec() override
-	{
-		g_consensus_console_logger->info("Send CopyBlockLocalTask: {}", 
-			_localBlock.GetLocalBlock().GetPayLoad().GetPayLoad());
+    void exec() override
+    {
+        g_consensus_console_logger->info("Send CopyBlockLocalTask: {}",
+            _localBlock.GetLocalBlock().GetPayLoadPreview());
 
-		CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
-		size_t nodeSize = g_tP2pManagerStatus.listLocalBuddyChainInfo.size();
-		if (nodeSize > NOT_START_BUDDY_NUM) {
-			T_PP2PPROTOCOLCOPYBLOCKREQ pP2pProtocolCopyBlockReq = nullptr;
-			int ipP2pProtocolCopyBlockReqLen = sizeof(T_P2PPROTOCOLCOPYBLOCKREQ)  + sizeof(T_LOCALCONSENSUS) + nodeSize * DEF_SHA256_LEN;
+        CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
+        size_t nodeSize = g_tP2pManagerStatus.listLocalBuddyChainInfo.size();
+        if (nodeSize > NOT_START_BUDDY_NUM) {
+            struct timeval timeTemp;
+            CCommonStruct::gettimeofday_update(&timeTemp);
 
-			DataBuffer<CopyBlockTask> msgbuf(ipP2pProtocolCopyBlockReqLen);
-			pP2pProtocolCopyBlockReq = reinterpret_cast<T_PP2PPROTOCOLCOPYBLOCKREQ>(msgbuf.payload());
+            uint16 num = 0;
+            for (auto &b : g_tP2pManagerStatus.listLocalBuddyChainInfo) {
+                if ((b.GetLocalBlock().GetUUID() == _localBlock.GetLocalBlock().GetUUID())) {
+                    continue;
+                }
+                num++;
+                if (num >= nodeSize) {
+                    break;
+                }
+            }
 
-			struct timeval timeTemp;
-			CCommonStruct::gettimeofday_update(&timeTemp);
-			pP2pProtocolCopyBlockReq->SetType(T_P2PPROTOCOLTYPE(P2P_PROTOCOL_COPY_BLOCK_REQ, timeTemp.tv_sec));
-			
+            stringstream ssBuf;
+            boost::archive::binary_oarchive oa(ssBuf, boost::archive::archive_flags::no_header);
 
-			T_PLOCALCONSENSUS pLocalBlockInfo = (T_PLOCALCONSENSUS)(pP2pProtocolCopyBlockReq + 1);
-			pLocalBlockInfo->SetLocalBlock(_localBlock.GetLocalBlock());
-			pLocalBlockInfo->SetPeer(_localBlock.GetPeer());
-			
-			char *p = msgbuf.payload() + ipP2pProtocolCopyBlockReqLen - nodeSize * DEF_SHA256_LEN;
-			uint16 num = 0;
-			for (auto &b : g_tP2pManagerStatus.listLocalBuddyChainInfo) {
-				if ((b.GetLocalBlock().GetBlockBaseInfo().GetHashSelf() == _localBlock.GetLocalBlock().GetBlockBaseInfo().GetHashSelf())) {
-					continue;
-				}
-				memcpy(p, b.GetLocalBlock().GetBlockBaseInfo().GetHashSelf().pID, DEF_SHA256_LEN);
-				num++;
-				if (num >= nodeSize) {
-					break;
-				}
-				p += DEF_SHA256_LEN;
-			}
-			pP2pProtocolCopyBlockReq->uiBuddyNum = num;
+            T_P2PPROTOCOLCOPYBLOCKREQ P2pProtocolCopyBlockReq;
+            P2pProtocolCopyBlockReq.SetType(T_P2PPROTOCOLTYPE(P2P_PROTOCOL_COPY_BLOCK_REQ, timeTemp.tv_sec));
+            P2pProtocolCopyBlockReq.uiBuddyNum = num;
+            oa << P2pProtocolCopyBlockReq;
 
-			NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-			HCNodeSH me = nodemgr->myself();
+            T_LOCALCONSENSUS LocalBlockInfo;
+            LocalBlockInfo.SetLocalBlock(_localBlock.GetLocalBlock());
+            LocalBlockInfo.SetPeer(_localBlock.GetPeer());
+            oa << LocalBlockInfo;
 
-			ITR_LIST_T_LOCALCONSENSUS itr = g_tP2pManagerStatus.listLocalBuddyChainInfo.begin();
-			for (; itr != g_tP2pManagerStatus.listLocalBuddyChainInfo.end(); itr++) {
-				if ((*itr).tLocalBlock.GetBlockBaseInfo().GetHashSelf() == _localBlock.GetLocalBlock().GetBlockBaseInfo().GetHashSelf()) {
-					continue;
-				}
-				if ((*itr).GetPeer().GetPeerAddr() == me->getNodeId<CUInt128>()) {
-					continue;
-				}
-				g_consensus_console_logger->info("Send {} blocks hash and CopyBlockLocalTask to {}",
-					pP2pProtocolCopyBlockReq->uiBuddyNum,
-					(*itr).GetPeer().GetPeerAddr()._nodeid.ToHexString());
-				nodemgr->sendTo((*itr).GetPeer().GetPeerAddr()._nodeid, msgbuf);
-			}
-		}
-	}
+            //HC: 必须重新遍历序列化，两段序列化的数据不能拼接
+            uint16 i = 0;
+            for (auto &b : g_tP2pManagerStatus.listLocalBuddyChainInfo) {
+                if ((b.GetLocalBlock().GetUUID() == _localBlock.GetLocalBlock().GetUUID())) {
+                    continue;
+                }
+				string uuid = b.GetLocalBlock().GetUUID();
+				uint32 uuidSize = static_cast<uint32>(uuid.size());
+				oa << uuidSize;
+				oa << boost::serialization::make_binary_object(uuid.data(), uuidSize);
+                i++;
+                if (i >= nodeSize) {
+                    break;
+                }
+            }
 
-	void execRespond() override
-	{
-		g_consensus_console_logger->trace("Received CopyBlockTask");
-		T_PP2PPROTOCOLCOPYBLOCKREQ pP2pProtocolCopyBlockReqRecv = (T_PP2PPROTOCOLCOPYBLOCKREQ)(_payload);
+            DataBuffer<CopyBlockTask> msgbuf(move(ssBuf.str()));
 
-		T_PLOCALCONSENSUS  pLocalBlockTemp;
-		pLocalBlockTemp = (T_PLOCALCONSENSUS)(pP2pProtocolCopyBlockReqRecv + 1);
+            NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+            HCNodeSH me = nodemgr->myself();
 
-		CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
-		ITR_LIST_T_LOCALCONSENSUS itrList = g_tP2pManagerStatus.listLocalBuddyChainInfo.begin();
-		for (; itrList != g_tP2pManagerStatus.listLocalBuddyChainInfo.end(); itrList++) {
-			if (((*itrList).GetLocalBlock().GetBlockBaseInfo().GetHashSelf() == pLocalBlockTemp->GetLocalBlock().GetBlockBaseInfo().GetHashSelf())) {
-				return;
-			}
-		}
+            ITR_LIST_T_LOCALCONSENSUS itr = g_tP2pManagerStatus.listLocalBuddyChainInfo.begin();
+            for (; itr != g_tP2pManagerStatus.listLocalBuddyChainInfo.end(); itr++) {
+                if ((*itr).tLocalBlock.GetUUID() == _localBlock.GetLocalBlock().GetUUID()) {
+                    continue;
+                }
+                if ((*itr).GetPeer().GetPeerAddr() == me->getNodeId<CUInt128>()) {
+                    continue;
+                }
+                g_consensus_console_logger->info("Send {} blocks hash and CopyBlockLocalTask to {}",
+                    P2pProtocolCopyBlockReq.uiBuddyNum,
+                    (*itr).GetPeer().GetPeerAddr()._nodeid.ToHexString());
+                nodemgr->sendTo((*itr).GetPeer().GetPeerAddr()._nodeid, msgbuf);
+            }
+        }
+    }
 
-		uint16 num = 0;
-		const char * pHashID = _payload + sizeof(T_P2PPROTOCOLCOPYBLOCKREQ) + sizeof(T_LOCALCONSENSUS);
-		for (uint16 i = 0; i< pP2pProtocolCopyBlockReqRecv->uiBuddyNum; i++ ) {
-			for (auto &b : g_tP2pManagerStatus.listLocalBuddyChainInfo) {
-				if (memcmp(pHashID, b.GetLocalBlock().GetBlockBaseInfo().GetHashSelf().pID, DEF_SHA256_LEN) == 0) {
-					num++;
-					break;
-				}
-			}
-			pHashID += DEF_SHA256_LEN;
-		}
-		g_consensus_console_logger->info("CopyBlockTask: recv {} copy block data,{} block is same.", 
-			pP2pProtocolCopyBlockReqRecv->uiBuddyNum, num);
-		
-		if (num < 2) {
-			g_consensus_console_logger->warn("CopyBlockTask: cannot accept the copy data,maybe I have entered next phase.");
-			return;
-		}
-		g_consensus_console_logger->trace("CopyBlockTask: push block into listLocalBuddyChainInfo,payload:{}",
-								pLocalBlockTemp->GetLocalBlock().GetPayLoad().GetPayLoad());
-		g_tP2pManagerStatus.listLocalBuddyChainInfo.push_back(*pLocalBlockTemp);
-		g_tP2pManagerStatus.listLocalBuddyChainInfo.sort(CmpareOnChain());
-		ChangeLocalBlockPreHash(g_tP2pManagerStatus.listLocalBuddyChainInfo);
-		g_tP2pManagerStatus.tBuddyInfo.usBlockNum = g_tP2pManagerStatus.listLocalBuddyChainInfo.size();
+    void execRespond() override
+    {
+        g_consensus_console_logger->trace("Received CopyBlockTask");
 
-		g_tP2pManagerStatus.SetRecvRegisReqNum(g_tP2pManagerStatus.GetRecvRegisReqNum() + 1);
-		g_tP2pManagerStatus.SetRecvConfirmingRegisReqNum(g_tP2pManagerStatus.GetRecvConfirmingRegisReqNum() + 1);
-	}
+        string sBuf(_payload, _payloadlen);
+        stringstream ssBuf(sBuf);
+        boost::archive::binary_iarchive ia(ssBuf, boost::archive::archive_flags::no_header);
+
+        T_P2PPROTOCOLCOPYBLOCKREQ P2pProtocolCopyBlockReqRecv;
+        T_LOCALCONSENSUS  LocalBlockTemp;
+        try {
+            ia >> P2pProtocolCopyBlockReqRecv;
+            ia >> LocalBlockTemp;
+        }
+        catch (runtime_error& e) {
+            g_consensus_console_logger->warn("{}", e.what());
+            return;
+        }
+
+        CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
+        ITR_LIST_T_LOCALCONSENSUS itrList = g_tP2pManagerStatus.listLocalBuddyChainInfo.begin();
+        for (; itrList != g_tP2pManagerStatus.listLocalBuddyChainInfo.end(); itrList++) {
+            if (((*itrList).GetLocalBlock().GetUUID() == LocalBlockTemp.GetLocalBlock().GetUUID())) {
+                return;
+            }
+        }
+
+        uint16 num = 0;
+        string uuidRecv;
+        for (uint16 i = 0; i < P2pProtocolCopyBlockReqRecv.uiBuddyNum; i++) {
+            try {
+				uint32 uuidSize = 0;
+				ia >> uuidSize;
+				uuidRecv.resize(uuidSize);
+				ia >> boost::serialization::make_binary_object(const_cast<char*>(uuidRecv.data()), uuidSize);
+            }
+            catch (runtime_error& e) {
+                g_consensus_console_logger->warn("{}", e.what());
+                return;
+            }
+
+            for (auto &b : g_tP2pManagerStatus.listLocalBuddyChainInfo) {
+                if (uuidRecv == b.GetLocalBlock().GetUUID()) {
+                    num++;
+                    break;
+                }
+            }
+        }
+        g_consensus_console_logger->info("CopyBlockTask: recv {} copy block data,{} block is same.",
+            P2pProtocolCopyBlockReqRecv.uiBuddyNum, num);
+        //HC: At lease the same block number is 2.
+        if (num < 2) {
+            g_consensus_console_logger->warn("CopyBlockTask: cannot accept the copy data,maybe I have entered next phase.");
+            return;
+        }
+        g_consensus_console_logger->trace("CopyBlockTask: push block into listLocalBuddyChainInfo,payload:{}",
+            LocalBlockTemp.GetLocalBlock().GetPayLoadPreview());
+        g_tP2pManagerStatus.listLocalBuddyChainInfo.push_back(LocalBlockTemp);
+        g_tP2pManagerStatus.listLocalBuddyChainInfo.sort(CmpareOnChain());
+        g_tP2pManagerStatus.tBuddyInfo.usBlockNum = static_cast<uint16>(g_tP2pManagerStatus.listLocalBuddyChainInfo.size());
+
+        g_tP2pManagerStatus.SetRecvRegisReqNum(g_tP2pManagerStatus.GetRecvRegisReqNum() + 1);
+        g_tP2pManagerStatus.SetRecvConfirmingRegisReqNum(g_tP2pManagerStatus.GetRecvConfirmingRegisReqNum() + 1);
+    }
 
 private:
-	T_LOCALCONSENSUS _localBlock;
+    T_LOCALCONSENSUS _localBlock;
 };

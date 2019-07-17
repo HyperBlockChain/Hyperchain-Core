@@ -32,82 +32,82 @@ using namespace std;
 template<typename T>
 class SyncQueue {
 public:
-	SyncQueue(size_t capacity) :_maxCapacity(capacity), _requeststop(false) {}
+    SyncQueue(size_t capacity) :_maxCapacity(capacity), _requeststop(false) {}
 
-	void stop() {
-		_requeststop = true;
-		_not_empty_cv.notify_all();
-		_not_full_cv.notify_all();
-	}
+    void stop() {
+        _requeststop = true;
+        _not_empty_cv.notify_all();
+        _not_full_cv.notify_all();
+    }
 
-	bool push(T && task) {
-		return addTask(std::forward<T>(task));
-	}
+    bool push(T && task) {
+        return addTask(std::forward<T>(task));
+    }
 
-	void pop(T& t) {
-		std::unique_lock<std::mutex> lck(_guard);
-		_not_empty_cv.wait(lck, [this] { return _requeststop || !isEmpty(); });
-		if (_requeststop) {
-			return;
-		}
-		//t = _tasklist.front(task);		
-		t = _tasklist.front();		
-		_tasklist.pop_front();
-		_not_full_cv.notify_one();
-	}
+    void pop(T& t) {
+        std::unique_lock<std::mutex> lck(_guard);
+        _not_empty_cv.wait(lck, [this] { return _requeststop || !isEmpty(); });
+        if (_requeststop) {
+            return;
+        }
+        //t = _tasklist.front(task);
+        t = _tasklist.front();
+        _tasklist.pop_front();
+        _not_full_cv.notify_one();
+    }
 
-	void pop(std::list<T>& resultlist, size_t num = 10) {
-		std::unique_lock<std::mutex> lck(_guard);
-		_not_empty_cv.wait(lck, [this] { return _requeststop || !isEmpty(); });
-		if (_requeststop) {
-			return;
-		}
-		if (_tasklist.size() <= num) {
-			resultlist = std::move(_tasklist);
-		}
-		else {
-			auto end = _tasklist.begin();
-			std::advance(end, num);
-			for (auto it = _tasklist.begin(); it != end;) {
-				resultlist.push_back(*it);
-				_tasklist.erase(it++);
-			}
-		}
-		_not_full_cv.notify_one();
-	}
+    void pop(std::list<T>& resultlist, size_t num = 10) {
+        std::unique_lock<std::mutex> lck(_guard);
+        _not_empty_cv.wait(lck, [this] { return _requeststop || !isEmpty(); });
+        if (_requeststop) {
+            return;
+        }
+        if (_tasklist.size() <= num) {
+            resultlist = std::move(_tasklist);
+        }
+        else {
+            auto end = _tasklist.begin();
+            std::advance(end, num);
+            for (auto it = _tasklist.begin(); it != end;) {
+                resultlist.push_back(*it);
+                _tasklist.erase(it++);
+            }
+        }
+        _not_full_cv.notify_one();
+    }
 
-	size_t size() { return _tasklist.size(); }
-	std::mutex& guard() { return _guard; }
-	std::list<T>& tasklist() { return _tasklist; }
+    size_t size() { return _tasklist.size(); }
+    std::mutex& guard() { return _guard; }
+    std::list<T>& tasklist() { return _tasklist; }
 private:
-	bool isFull() {
-		return _tasklist.size() < _maxCapacity ? false : true;
-	}
-	bool isEmpty() {
-		return _tasklist.size() > 0 ? false : true;
-	}
+    bool isFull() {
+        return _tasklist.size() < _maxCapacity ? false : true;
+    }
+    bool isEmpty() {
+        return _tasklist.size() > 0 ? false : true;
+    }
 
-	bool addTask(T && task) {
-		std::unique_lock<std::mutex> lck(_guard);
-		std::chrono::microseconds timeout(200);
-		bool isavailable = _not_full_cv.wait_for(lck, timeout, [this] { return _requeststop || !isFull(); });
-		if (!isavailable || _requeststop) {
-			return false;
-		}
-		_tasklist.push_back(task);
-		_not_empty_cv.notify_one();
-		return true;
-	}
+    bool addTask(T && task) {
+        std::unique_lock<std::mutex> lck(_guard);
+        std::chrono::microseconds timeout(200);
+        bool isavailable = _not_full_cv.wait_for(lck, timeout, [this] { return _requeststop || !isFull(); });
+        if (!isavailable || _requeststop) {
+            return false;
+        }
+        _tasklist.push_back(task);
+        _not_empty_cv.notify_one();
+        return true;
+    }
 
 private:
-	std::list<T> _tasklist;
-	std::mutex _guard; 
-	std::condition_variable _not_full_cv;
-	std::condition_variable _not_empty_cv;
+    std::list<T> _tasklist;
+    std::mutex _guard;
+    std::condition_variable _not_full_cv;
+    std::condition_variable _not_empty_cv;
 
-	// maximum capacity of _tasklist
-	uint32_t _maxCapacity; 
-	bool _requeststop; 
+    // maximum capacity of _tasklist
+    size_t _maxCapacity;
+    bool _requeststop;
 };
 
 #endif //_SYNCQUEUE_H
