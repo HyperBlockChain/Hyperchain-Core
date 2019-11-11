@@ -33,32 +33,53 @@ using namespace std;
 
 enum class TASKTYPE :char
 {
-	BASETYPE = 0,
-	HYPER_CHAIN_SEARCH,
-	HYPER_CHAIN_SEARCH_RSP,
+    BASETYPE = 0,
+    HYPER_CHAIN_SEARCH,
+    HYPER_CHAIN_SEARCH_RSP,
 
-	ON_CHAIN,
-	ON_CHAIN_RSP,
-	ON_CHAIN_CONFIRM,
-	ON_CHAIN_CONFIRM_RSP,
+    ON_CHAIN,
+    ON_CHAIN_RSP,
+    ON_CHAIN_CONFIRM,
+    ON_CHAIN_CONFIRM_RSP,
 
-	COPY_BLOCK,
+    COPY_BLOCK,
 
-	ON_CHAIN_REFUSE,
-	ON_CHAIN_WAIT,
+    ON_CHAIN_REFUSE,
+    ON_CHAIN_WAIT,
 
-	GLOBAL_BUDDY_START_REQ,
-	GLOBAL_BUDDY_SEND_REQ,
-	GLOBAL_BUDDY_RSP,
-	BOARDCAST_HYPER_BLOCK,
-	GET_HYPERBLOCK_BY_NO_REQ,
+    GLOBAL_BUDDY_START_REQ,
+    GLOBAL_BUDDY_SEND_REQ,
+    GLOBAL_BUDDY_RSP,
+    BOARDCAST_HYPER_BLOCK,
+    GET_HYPERBLOCK_BY_NO_REQ,
+    GET_HEADERHASH_BY_NO_REQ,
+    GET_HEADERHASH_BY_NO_RSP,
 
-	HYPER_CHAIN_SPACE_PULL,
-	HYPER_CHAIN_SPACE_PULL_RSP,
+    HYPER_CHAIN_SPACE_PULL,
+    HYPER_CHAIN_SPACE_PULL_RSP,
 	HYPER_CHAIN_HYPERDATA_PULL,
 	HYPER_CHAIN_HYPERDATA_PULL_RSP,
-	SEARCH_NEIGHBOUR,
-	SEARCH_NEIGHBOUR_RSP,
+    SEARCH_NEIGHBOUR,
+    SEARCH_NEIGHBOUR_RSP,
+
+	PING_PONG,
+	PING_PONG_RSP,
+	
+    //
+    LEDGE,
+    LEDGE_RSP,
+    LEDGE_PING_NODE,
+    LEDGE_PING_NODE_RSP,
+
+    //
+    PARACOIN,
+	PARACOIN_RSP,
+    PARA_PING_NODE,
+    PARA_PING_NODE_RSP,
+
+    APP_CHAIN,
+    APP_CHAIN_RSP,
+    APP_ACTION
 };
 
 using TASKBUF = std::shared_ptr<string>;
@@ -68,30 +89,30 @@ const size_t ProtocolHeaderLen = CUInt128::value + sizeof(ProtocolVer) + sizeof(
 class ITask
 {
 public:
-	ITask() {}
-	ITask(TASKBUF && recvbuf) : _isRespond(true), _recvbuf(std::move(recvbuf)) {
+    ITask() {}
+    ITask(TASKBUF && recvbuf) : _isRespond(true), _recvbuf(std::move(recvbuf)) {
 
-		uint8_t ut[CUInt128::value];
-		memcpy(ut, _recvbuf->c_str(), CUInt128::value);
-		_sentnodeid = CUInt128(ut);
-		_ver = *(ProtocolVer*)(_recvbuf->c_str() + CUInt128::value);
-		_payload = _recvbuf->c_str() + ProtocolHeaderLen;
-		_payloadlen = _recvbuf->size() - ProtocolHeaderLen;
-	}
+        uint8_t ut[CUInt128::value];
+        memcpy(ut, _recvbuf->c_str(), CUInt128::value);
+        _sentnodeid = CUInt128(ut);
+        _ver = *(ProtocolVer*)(_recvbuf->c_str() + CUInt128::value);
+        _payload = _recvbuf->c_str() + ProtocolHeaderLen;
+        _payloadlen = _recvbuf->size() - ProtocolHeaderLen;
+    }
 
-	virtual ~ITask() {}
-	virtual void exec() = 0;
-	virtual void execRespond() = 0;
+    virtual ~ITask() {}
+    virtual void exec() = 0;
+    virtual void execRespond() = 0;
 
-	bool isRespond() { return _isRespond; }
+    bool isRespond() { return _isRespond; }
 
 protected:
-	bool _isRespond = false;
-	const char * _payload = nullptr;
-	size_t _payloadlen = 0;
-	CUInt128 _sentnodeid;
-	ProtocolVer _ver = 0;
+    bool _isRespond = false;
+    const char * _payload = nullptr;
+    size_t _payloadlen = 0;
+    CUInt128 _sentnodeid;
+    ProtocolVer _ver = 0;
 
 private:
-	TASKBUF _recvbuf;
+    TASKBUF _recvbuf;
 };

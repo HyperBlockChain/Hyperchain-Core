@@ -37,42 +37,42 @@ using namespace std;
 
 class GlobalBuddyStartTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::GLOBAL_BUDDY_START_REQ> {
 public:
-	using ITask::ITask;
+    using ITask::ITask;
 
-	~GlobalBuddyStartTask() {};
+    ~GlobalBuddyStartTask() {};
 
-	void exec() override;
-	void execRespond() override;
+    void exec() override;
+    void execRespond() override;
 };
 
 
 class GlobalBuddySendTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::GLOBAL_BUDDY_SEND_REQ> {
 public:
-	using ITask::ITask;
+    using ITask::ITask;
 
-	~GlobalBuddySendTask() {};
+    ~GlobalBuddySendTask() {};
 
-	void exec() override;
-	void execRespond() override;
+    void exec() override;
+    void execRespond() override;
 };
 
 
 class GlobalBuddyRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::GLOBAL_BUDDY_RSP> {
 public:
-	using ITask::ITask;
-	GlobalBuddyRspTask() {};
-	GlobalBuddyRspTask(const char* buf, size_t len) : ITask(), _buf(buf,len) {};
-	~GlobalBuddyRspTask() {};
+    using ITask::ITask;
+    GlobalBuddyRspTask() {};
+    GlobalBuddyRspTask(const char* buf, size_t len) : ITask(), _buf(buf, len) {};
+    ~GlobalBuddyRspTask() {};
 
-	void exec() override;
+    void exec() override;
 
 
     void execRespond() override;
 
 private:
-    void replyChildChains(T_P2PPROTOCOLGLOBALBUDDYHEADER &globalBuddyReqRecv);
+    void replyChildChains(T_P2PPROTOCOLGLOBALBUDDYHEADER& globalBuddyReqRecv);
 
 private:
-	string _buf;
+    string _buf;
 
 };

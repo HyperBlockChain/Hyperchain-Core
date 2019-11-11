@@ -20,6 +20,7 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 DEALINGS IN THE SOFTWARE.
 */
 #include "HyperchainDB.h"
+#include "../node/Singleton.h"
 
 T_HYPERBLOCK& HyperBlockDB::GetHyperBlock()
 {
@@ -33,7 +34,7 @@ LocalChainDB& HyperBlockDB::GetMapLocalChain()
 
 int CHyperchainDB::saveHyperBlockToDB(const T_HYPERBLOCK& hyperblock)
 {
-    return DBmgr::instance()->insertHyperblock(hyperblock);
+    return Singleton<DBmgr>::instance()->insertHyperblock(hyperblock);
 }
 
 int CHyperchainDB::saveHyperBlocksToDB(const vector<T_HYPERBLOCK> &vHyperblock)
@@ -47,7 +48,7 @@ int CHyperchainDB::saveHyperBlocksToDB(const vector<T_HYPERBLOCK> &vHyperblock)
 
 int CHyperchainDB::cleanTmp(HyperchainDB &hyperchainDB)
 {
-    //HC: 清除掉临时数据
+    //
     if (hyperchainDB.size() > 0)
     {
         HyperchainDB::iterator it = hyperchainDB.begin();
@@ -71,7 +72,7 @@ int CHyperchainDB::cleanTmp(HyperchainDB &hyperchainDB)
 
 bool CHyperchainDB::getHyperBlock(T_HYPERBLOCK &h, const T_SHA256 &hhash)
 {
-    int ret = DBmgr::instance()->getHyperBlock(h,hhash);
+    int ret = Singleton<DBmgr>::instance()->getHyperBlock(h, hhash);
     if (ret != 0) {
         return false;
     }
@@ -86,7 +87,7 @@ bool CHyperchainDB::getHyperBlock(T_HYPERBLOCK &h, const T_SHA256 &hhash)
 bool CHyperchainDB::getHyperBlock(T_HYPERBLOCK &h, uint64 hid)
 {
     std::list<T_HYPERBLOCK> queue;
-    DBmgr::instance()->getHyperBlocks(queue, hid, hid);
+    Singleton<DBmgr>::instance()->getHyperBlocks(queue, hid, hid);
     if (queue.size() == 0) {
         return false;
     }
@@ -105,14 +106,14 @@ void CHyperchainDB::addLocalBlocks(T_HYPERBLOCK &h)
     LIST_T_LOCALBLOCK localblocklist;
     LIST_T_LOCALBLOCK childchain;
     int chainnum = -1;
-    DBmgr::instance()->getLocalBlocks(localblocklist, h.GetID());
+    Singleton<DBmgr>::instance()->getLocalBlocks(localblocklist, h.GetID());
     for (auto & l : localblocklist) {
 
         if (chainnum == -1) {
             chainnum = l.GetChainNum();
         }
         if (chainnum != l.GetChainNum()) {
-            //HC: push into a child chain
+            //
             h.AddChildChain(std::move(childchain));
             childchain.clear();
             chainnum = l.GetChainNum();
@@ -124,15 +125,10 @@ void CHyperchainDB::addLocalBlocks(T_HYPERBLOCK &h)
     }
 }
 
-//HC: 获取最新块号
+//
 uint64 CHyperchainDB::GetLatestHyperBlockNo()
 {
-    return DBmgr::instance()->getLatestHyperBlockNo();
-}
-
-int CHyperchainDB::GetHyperBlockNumInfo(std::list<uint64> &HyperBlockNum)
-{
-    return DBmgr::instance()->getAllHyperblockNumInfo(HyperBlockNum);
+    return Singleton<DBmgr>::instance()->getLatestHyperBlockNo();
 }
 
 

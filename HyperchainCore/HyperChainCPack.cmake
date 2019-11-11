@@ -23,7 +23,7 @@
 #Installation package setting
 #
 
-set(APPLICATION_SHORTNAME "Hyperchain")
+set(APPLICATION_SHORTNAME "hyperchain")
 set( APPLICATION_DOMAIN   "hyperchain.com" )
 
 include( VERSION.cmake )
@@ -46,8 +46,15 @@ set( CPACK_PACKAGE_VENDOR  ${APPLICATION_SHORTNAME} )   				# Package vendor nam
 
 set( CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}/logo.ico")
 
-set(CORECOMPONET "HyperChain")
+if(UNIX)
+set( CPACK_PACKAGING_INSTALL_PREFIX "/var/hc${CPACK_PACKAGE_VERSION}")
+set( CPACK_GENERATOR "RPM")
+endif()
 
+#already define in CMakeLists.txt
+set(CORECOMPONET "HyperChain")
+set(GUICOMPONET "GUI")
+set(CPACK_COMPONENTS_ALL ${CORECOMPONET} ${GUICOMPONET})
 
 install(CODE "set(CMAKE_INSTALL_CONFIG_NAME \"${CMAKE_BUILD_TYPE}\")
   message(STATUS \"Install configuration: \${CMAKE_INSTALL_CONFIG_NAME}\")" COMPONENT ${CORECOMPONET})
@@ -65,19 +72,60 @@ set(CPACK_IFW_PACKAGE_WATERMARK "${CMAKE_SOURCE_DIR}/watermark.png")
 include(CPack)
 include(CPackIFW)
 
+cpack_add_install_type(Full DISPLAY_NAME "Everything")
+
+set(Paralism_Core_Desc "1.Hyperchain core protocol stack.\n
+	2.Application Program Interface:\n
+		Command line tool, RESTful API and RPC interface
+	3.System Modules:\n
+		Content Data Proof of Existence, Crypto Currency, Token and Biz Chain for User Defined Data"
+		
+  zh_CN "1、超块链核心协议栈
+  2、应用层接口：
+     命令行工具，
+     RESTful接口，
+     RPC接口
+  3、系统模块：
+    数字内容存在性证明，
+    加密货币，
+    加密通证，
+    自定义业务区块链"
+  )
+ 
+set(Paralism_GUI_Desc "GUI for Paralism Core"
+				zh_CN "Paralism客户端图形界面")
+
 cpack_add_component(${CORECOMPONET}
-    DISPLAY_NAME "HyperChain"
-    DESCRIPTION "HyperChain"
+    DISPLAY_NAME "Paralism Core"
+    DESCRIPTION ${Paralism_Core_Desc}
+	INSTALL_TYPES Full
 	)
+	
+cpack_add_component(${GUICOMPONET}
+    DISPLAY_NAME "Paralism-qt"
+    DESCRIPTION ${Paralism_GUI_Desc}
+	INSTALL_TYPES Full
+	)
+
+cpack_ifw_configure_component(${CORECOMPONET}
+	DESCRIPTION zh_CN ${Paralism_Core_Desc}
+	)
+cpack_ifw_configure_component(${GUICOMPONET}
+	DESCRIPTION zh_CN ${Paralism_GUI_Desc}
+	)
+	
 cpack_ifw_configure_component(${CORECOMPONET}
     SCRIPT "${CMAKE_SOURCE_DIR}/installscript.qs"
 	)
 
-cpack_ifw_configure_component(${CORECOMPONET}
-	LICENSES "The Hyperchain Company GPL 1.0" "${CMAKE_SOURCE_DIR}/LICENSE"
-	)
+#cpack_ifw_configure_component(${CORECOMPONET}
+#	LICENSES "The Hyperchain Company MIT" "${CMAKE_SOURCE_DIR}/LICENSE"
+#	)
+
 
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin COMPONENT ${CORECOMPONET})
+
+
 install(DIRECTORY conf/ DESTINATION bin 
 		FILE_PERMISSIONS OWNER_READ GROUP_READ WORLD_READ OWNER_WRITE GROUP_WRITE WORLD_WRITE 
 		DIRECTORY_PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE OWNER_WRITE GROUP_WRITE WORLD_WRITE
@@ -86,7 +134,8 @@ install(DIRECTORY conf/ DESTINATION bin
 		)
 
 if(WIN32)
-	install(DIRECTORY dependencies/release/win32/ DESTINATION bin COMPONENT ${CORECOMPONET})
+	install(DIRECTORY dependencies/release/win32/core/ DESTINATION bin COMPONENT ${CORECOMPONET})
+	install(DIRECTORY dependencies/release/win32/gui/ DESTINATION gui COMPONENT ${GUICOMPONET})
 elseif(APPLE)
 	install(DIRECTORY dependencies/release/apple/ DESTINATION bin COMPONENT ${CORECOMPONET})
 elseif(UNIX)

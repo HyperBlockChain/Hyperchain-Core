@@ -50,8 +50,7 @@ public:
         if (_requeststop) {
             return;
         }
-        //t = _tasklist.front(task);
-        t = _tasklist.front();
+        t = std::move(_tasklist.front());
         _tasklist.pop_front();
         _not_full_cv.notify_one();
     }
@@ -68,10 +67,7 @@ public:
         else {
             auto end = _tasklist.begin();
             std::advance(end, num);
-            for (auto it = _tasklist.begin(); it != end;) {
-                resultlist.push_back(*it);
-                _tasklist.erase(it++);
-            }
+            resultlist.splice(resultlist.end(), _tasklist, _tasklist.begin(), end);
         }
         _not_full_cv.notify_one();
     }

@@ -38,10 +38,10 @@ void _tlocalblock::updatePreHyperBlockInfo(uint64_t preHID, const T_SHA256 &preH
     if (preHHash == header.tPreHHash) {
         return;
     }
-    //HC: update local block
+    //
     header.tPreHHash = preHHash;
 
-    //HC: recalculate local block hash
+    //
     CalculateHashSelf();
 }
 

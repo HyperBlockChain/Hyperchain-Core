@@ -32,6 +32,9 @@ DEALINGS IN THE SOFTWARE.
 #include <string.h>
 #include <iostream>
 #include <openssl/evp.h>
+#include <stdexcept>
+using namespace std;
+
 
 
 int EncodeBase58(const unsigned char *bytes, int len, unsigned char result[]);
@@ -119,13 +122,17 @@ private:
         //OpenSSL_add_all_digests();
         _md = EVP_get_digestbyname(algorithm[(int)arg]);
         if (_md == nullptr) {
-            std::cout << "Error occurs in EVP_get_digestbyname" << __FUNCTION__;
+            OpenSSL_add_all_digests();
+            _md = EVP_get_digestbyname(algorithm[(int)arg]);
+            if (_md == nullptr) {
+                throw runtime_error("Failed to call EVP_get_digestbyname");
+            }
         }
 
         EVP_MD_CTX_init(&_mdctx);
         int ret = EVP_DigestInit_ex(&_mdctx, _md, NULL);
         if (ret != 1) {
-            std::cout << "Error occurs in EVP_DigestInit_ex" << __FUNCTION__ << " " << ret;
+            throw runtime_error("Failed to call EVP_DigestInit_ex");
         }
     }
 private:

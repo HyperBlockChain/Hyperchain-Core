@@ -131,6 +131,7 @@ private:
         ar & iResult;
     }
 }T_P2PPROTOCOLRSP, *T_PP2PPROTOCOLRSP;
+
 BOOST_CLASS_VERSION(T_P2PPROTOCOLRSP, 0)
 
 typedef struct _tp2pprotocolpingreq
@@ -312,7 +313,7 @@ typedef struct _tp2pprotocolonchainrsp
     uint64 uiHyperBlockNum;
     uint64  uiBlockCount;
     T_SHA256 tHyperBlockHash;
-    int8 strHash[DEF_STR_HASH256_LEN]; //HC: 备选链hash
+    int8 strHash[DEF_STR_HASH256_LEN]; //
 
     _tp2pprotocolonchainrsp& operator = (const _tp2pprotocolonchainrsp& arRes);
     void SetP2pprotocolonchainrsp(T_P2PPROTOCOLRSP Result, uint64 HyperBlockNum, uint64  BlockCount, int8 *Hash);
@@ -337,7 +338,7 @@ private:
         ar & uiHyperBlockNum;
         ar & uiBlockCount;
         ar & tHyperBlockHash;
-		ar & boost::serialization::make_array(strHash, DEF_STR_HASH256_LEN);
+        ar & boost::serialization::make_array(strHash, DEF_STR_HASH256_LEN);
     }
 }T_P2PPROTOCOLONCHAINRSP, *T_PP2PPROTOCOLONCHAINRSP;
 BOOST_CLASS_VERSION(T_P2PPROTOCOLONCHAINRSP, 0)
@@ -536,6 +537,7 @@ private:
         ar & uiSendTimes;
         ar & uiBuddyNum;
     }
+
 }T_P2PPROTOCOLCOPYBLOCKREQ, *T_PP2PPROTOCOLCOPYBLOCKREQ;
 BOOST_CLASS_VERSION(T_P2PPROTOCOLCOPYBLOCKREQ, 0)
 

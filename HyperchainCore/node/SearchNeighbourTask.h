@@ -29,30 +29,36 @@ using namespace std;
 
 class SearchNeighbourRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::SEARCH_NEIGHBOUR_RSP> {
 public:
-	using ITask::ITask;
+    using ITask::ITask;
 
-	SearchNeighbourRspTask() {}
-	SearchNeighbourRspTask(CUInt128 &&fromNodeId,const char *requestNode) : _fromNodeId(std::move(fromNodeId)), _msg(requestNode) {}
-	~SearchNeighbourRspTask() {}
+    SearchNeighbourRspTask() {}
+    SearchNeighbourRspTask(CUInt128&& fromNodeId, const char* requestNode) : _fromNodeId(std::move(fromNodeId)), _msg(requestNode) {}
+    ~SearchNeighbourRspTask() {}
 
-	void exec() override;
-	void execRespond() override;
-
-private:
-
+    void exec() override;
+    void execRespond() override;
 
 private:
-	CUInt128 _fromNodeId;
-	string _msg;
+
+    int getPeerList(CUInt128 nodeid, const string& targetid, string& peerlist);
+
+private:
+    CUInt128 _fromNodeId;
+    string _msg;
 };
 
 class SearchNeighbourTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::SEARCH_NEIGHBOUR> {
 public:
-	using ITask::ITask;
+    using ITask::ITask;
 
-	~SearchNeighbourTask() {}
-	void exec() override;
-	void execRespond() override;
+    SearchNeighbourTask() {}
+    SearchNeighbourTask(CUInt128& toNodeId) : _toNodeId(toNodeId) {}
+
+    ~SearchNeighbourTask() {}
+    void exec() override;
+    void execRespond() override;
+private:
+    CUInt128 _toNodeId; // ∑¢ÀÕ∂‘œÛ
 };
 
 

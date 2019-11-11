@@ -53,7 +53,7 @@ public:
 	void execRespond() override
 	{
 		TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-		taskpool->put(make_shared<SearchRspTask>(_sentnodeid));
+		taskpool->put(std::make_shared<SearchRspTask>(_sentnodeid));
 	}
 };
 

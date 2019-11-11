@@ -49,6 +49,8 @@ DEALINGS IN THE SOFTWARE.
 #include <iostream>
 #include <sstream>
 
+#include "wnd/common.h"
+
 #include "db/RestApi.h"
 #include "db/dbmgr.h"
 
@@ -60,13 +62,16 @@ DEALINGS IN THE SOFTWARE.
 #include "node/seedcommu.hpp"
 
 #include "HyperChain/HyperChainSpace.h"
-#include "HyperChain/HyperData.h"
 #include "HyperChain/PullChainSpaceTask.hpp"
+
+#include "AppPlugins.h"
 
 #include "consolecommandhandler.h"
 #include "consensus/consensus_engine.h"
 
 #include <boost/program_options.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/filesystem/fstream.hpp>
 using namespace boost::program_options;
 
 #ifdef WIN32
@@ -75,79 +80,51 @@ using namespace boost::program_options;
 #include <client/linux/handler/exception_handler.h>
 #endif
 
+string GetHyperChainDataDir()
+{
+	string datapath;
+	boost::filesystem::path pathDataDir;
+	if (mapHCArgs.count("-datadir") && boost::filesystem::is_directory(boost::filesystem::system_complete(mapHCArgs["-datadir"])))
+		pathDataDir = boost::filesystem::system_complete(mapHCArgs["-datadir"]);
+	else
+		pathDataDir = boost::filesystem::system_complete(".");
+
+	if (mapHCArgs.count("-model") && mapHCArgs["-model"] == "informal")
+		pathDataDir /= "informal";
+	else
+		pathDataDir /= "sandbox";
+
+	if (!boost::filesystem::exists(pathDataDir))
+		boost::filesystem::create_directories(pathDataDir);
+
+	return pathDataDir.string();
+}
+
+string CreateChildDir(const string& childdir)
+{
+    string log_path = GetHyperChainDataDir();
+    boost::filesystem::path logpath(log_path);
+    logpath /= childdir;
+    if (!boost::filesystem::exists(logpath)) {
+        boost::filesystem::create_directories(logpath);
+    }
+    return logpath.string();
+}
+
 static std::string make_log_path()
 {
-    std::string log_path;
-#ifdef WIN32
-    CHAR my_documents[MAX_PATH];
-    HRESULT result = SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, my_documents);
-    if (result != S_OK) {
-        std::cout << "Error: " << result << endl;
-        return NULL;
-    }
-
-    log_path = my_documents;
-    log_path += "\\hyperchain";
-    if ((_access(log_path.c_str(), F_OK)) == -1)
-        _mkdir(log_path.c_str());
-    log_path += "\\hyperchain_logs";
-    if ((_access(log_path.c_str(), F_OK)) == -1)
-        _mkdir(log_path.c_str());
-#else
-    char *path = getenv("HOME");
-    log_path = path;
-    log_path += "/Documents";
-    if ((access(log_path.c_str(), F_OK)) == -1)
-        mkdir(log_path.c_str(), 0755);
-    log_path += "/hyperchain";
-    if ((access(log_path.c_str(), F_OK)) == -1)
-        mkdir(log_path.c_str(), 0755);
-    log_path += "/hyperchain_logs";
-    if ((access(log_path.c_str(), F_OK)) == -1)
-        mkdir(log_path.c_str(), 0755);
-#endif
-    return log_path.c_str();
+    return CreateChildDir("hyperchain_logs");
 }
 
 static std::string make_db_path()
 {
-    std::string db_path;
-#ifdef WIN32
-    CHAR my_documents[MAX_PATH];
-    HRESULT result = SHGetFolderPathA(NULL, CSIDL_PERSONAL, NULL, SHGFP_TYPE_CURRENT, my_documents);
-    if (result != S_OK)
-    {
-        std::cout << "Error: " << result << endl;
-        return NULL;
-    }
-
-    db_path = my_documents;
-    db_path += "\\hyperchain";
-    if ((_access(db_path.c_str(), F_OK)) == -1)
-        _mkdir(db_path.c_str());
-    db_path += "\\hp";
-    if ((_access(db_path.c_str(), F_OK)) == -1)
-        _mkdir(db_path.c_str());
-#else
-    char *path = getenv("HOME");
-    db_path = path;
-    db_path += "/Documents";
-    if ((access(db_path.c_str(), F_OK)) == -1)
-        mkdir(db_path.c_str(), 0755);
-    db_path += "/hyperchain";
-    if ((access(db_path.c_str(), F_OK)) == -1)
-        mkdir(db_path.c_str(), 0755);
-    db_path += "/hp";
-    if ((access(db_path.c_str(), F_OK)) == -1)
-        mkdir(db_path.c_str(), 0755);
-#endif
-    return db_path.c_str();
+    return CreateChildDir("hp");
 }
 
 void makeSeedServer(const string & seedserver)
 {
     string nodeid("123456789012345678901234567890ab", CUInt128::value * 2);
-    HCNodeSH seed = make_shared<HCNode>(std::move(CUInt128(nodeid)));
+    HCNodeSH seed = std::make_shared<HCNode>(std::move(CUInt128(nodeid)));
 
     string server;
     int port = 8116;
@@ -160,13 +137,13 @@ void makeSeedServer(const string & seedserver)
         port = std::stoi(seedserver.substr(found + 1));
     }
 
-    seed->addAP(make_shared<UdpAccessPoint>(server, port));
+    seed->addAP(std::make_shared<UdpAccessPoint>(server, port));
 
     NodeManager *nodemgr = Singleton<NodeManager>::instance();
     nodemgr->seedServer(seed);
 }
 
-void initNode(const variables_map &vm, string &udpip, int *udpport)
+void initNode(const map<string, string>& vm, string& udpip, int& udpport)
 {
     NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
     nodemgr->loadMyself();
@@ -179,7 +156,7 @@ void initNode(const variables_map &vm, string &udpip, int *udpport)
             cout << "The machine is a new node, generating nodeid..." << endl;
             string str = HCNode::generateNodeId();
             mynodeid = str;
-            HCNodeSH tmp = make_shared<HCNode>(CUInt128(str));
+            HCNodeSH tmp = std::make_shared<HCNode>(CUInt128(str));
             nodemgr->myself(tmp);
             me = nodemgr->myself();
 
@@ -194,8 +171,8 @@ void initNode(const variables_map &vm, string &udpip, int *udpport)
         exit(-1);
     }
 
-    if (vm.count("me")) {
-        string strMe = vm["me"].as<string>();
+    if (vm.count("-me")) {
+        string strMe = vm.at(string("-me"));
         cout << "My IP and port is " << strMe << endl;
 
         size_t found = strMe.find_first_of(':');
@@ -204,11 +181,11 @@ void initNode(const variables_map &vm, string &udpip, int *udpport)
         }
         else {
             udpip = strMe.substr(0, found);
-            *udpport = std::stoi(strMe.substr(found + 1));
+            udpport = std::stoi(strMe.substr(found + 1));
         }
 
         me->removeAPs();
-        me->addAP(std::make_shared<UdpAccessPoint>(udpip, *udpport));
+        me->addAP(std::make_shared<UdpAccessPoint>(udpip, udpport));
     }
 
     nodemgr->myself(me);
@@ -224,18 +201,18 @@ public:
         std::string dlog = logpath + "/hyperchain.log";
         std::string flog = logpath + "/hyperchain_basic.log";
         std::string rlog = logpath + "/hyperchain_rotating.log";
-        spdlog::set_level(spdlog::level::err); // Set specific logger's log level
+        spdlog::set_level(spdlog::level::err); //
         spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] [thread %t] %v");
         g_daily_logger = spdlog::daily_logger_mt("daily_logger", dlog.c_str(), 0, 30);
         g_basic_logger = spdlog::basic_logger_mt("file_logger", flog.c_str());
-        // Create a file rotating logger with 100M size max and 3 rotated files.
+        //
         g_rotating_logger = spdlog::rotating_logger_mt("rotating_logger", rlog.c_str(), 1048576 * 100, 3);
         g_console_logger = spdlog::stdout_color_mt("console");
         g_console_logger->set_level(spdlog::level::err);
         g_console_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] [%t] %v");
 
         g_consensus_console_logger = spdlog::stdout_color_mt("consensus");
-        g_consensus_console_logger->set_level(spdlog::level::info);
+        g_consensus_console_logger->set_level(spdlog::level::err);
         g_consensus_console_logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] [%t] %v");
 
         spdlog::flush_every(std::chrono::seconds(3));
@@ -248,13 +225,20 @@ public:
     }
 };
 
-bool g_isSeedServer = true;
+
+extern NodeType g_nodetype;
+//NodeType g_nodetype = NodeType::Bootstrap;
 int g_argc = 0;
 char **g_argv;
 bool g_isChild = false;
 
 void stopAll()
 {
+    if (g_appPlugin) {
+        cout << "Stopping Applications..." << endl;
+        g_appPlugin->StopAllApp();
+    }
+
     ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::getInstance();
     if (consensuseng) {
         cout << "Stopping Consensuseng..." << endl;
@@ -262,14 +246,14 @@ void stopAll()
     }
     CHyperChainSpace *hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
     if (hyperchainspace) {
-        cout << "Stopping Hyperchain space..." << endl;
-        if (!g_isSeedServer)
-            hyperchainspace->stop();
+        cout << "Stopping Hyperchain Space..." << endl;
+        hyperchainspace->stop();
     }
-    SeedCommunication *seedcomm = Singleton<SeedCommunication>::getInstance();
-    if (seedcomm) {
-        cout << "Stopping Seedcomm..." << endl;
-        seedcomm->stop();
+
+    NodeUPKeepThreadPool* nodeUpkeepThreadpool = Singleton<NodeUPKeepThreadPool>::getInstance();
+    if (nodeUpkeepThreadpool) {
+        cout << "Stopping NodeUPKeepThreadPool..." << endl;
+        nodeUpkeepThreadpool->stop();
     }
 
     UdpThreadPool *udpthreadpool = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance();
@@ -277,19 +261,19 @@ void stopAll()
         cout << "Stopping UDP..." << endl;
         udpthreadpool->stop();
     }
-	
+
     auto pool = Singleton<TaskThreadPool>::getInstance();
     if (pool) {
         cout << "Stopping TaskThreadPool..." << endl;
         pool->stop();
     }
-    if (!g_isSeedServer) {
+    if (g_nodetype != NodeType::LedgeRPCClient) {
         cout << "Stopping Rest Server..." << endl;
         RestApi::stopRest();
     }
-    if (DBmgr::instance()->isOpen()) {
+    if (Singleton<DBmgr>::instance()->isOpen()) {
         cout << "Closing Database..." << endl;
-        DBmgr::instance()->close();
+        Singleton<DBmgr>::instance()->close();
     }
 }
 
@@ -306,7 +290,7 @@ bool dumpCallback(const wchar_t* dump_path,
     cout << "Rebooting..." << endl;
 
     std::system((char*)context);
-    this_thread::sleep_for(chrono::milliseconds(1000));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     return succeeded;
 }
 #else
@@ -319,15 +303,16 @@ bool dumpCallback(const google_breakpad::MinidumpDescriptor& descriptor, void* c
     stopAll();
     cout << "Rebooting..." << endl;
 
-    //HC: add child options
-    shared_ptr<char*> hc_argv(new char*[g_argc + 2]);
+    //
+    std::shared_ptr<char*> hc_argv(new char*[g_argc + 2]);
 
     int i = 0;
-    char **p = hc_argv.get();
+    char ** p = hc_argv.get();
     for (; i < g_argc; i++) {
         p[i] = g_argv[i];
     }
-    p[g_argc] = "--child";
+    char option[16] = { "--child" };
+    p[g_argc] = option;
     p[g_argc + 1] = nullptr;
 
     while (!g_isChild) {
@@ -382,44 +367,127 @@ string getMyCommandLine(int argc, char *argv[])
     return commandline;
 }
 
+void ParseParameters(int argc, char* argv[])
+{
+    mapHCArgs.clear();
+    mapHCMultiArgs.clear();
+    for (int i = 1; i < argc; i++)
+    {
+        char psz[10000] = {0};
+        strlcpy(psz, argv[i], sizeof(psz));
+        char* pszValue = (char*)"";
+        if (strchr(psz, '='))
+        {
+            pszValue = strchr(psz, '=');
+            *pszValue++ = '\0';
+        }
+
+        if (psz[0] != '-')
+            break;
+        mapHCArgs[psz] = pszValue;
+        mapHCMultiArgs[psz].push_back(pszValue);
+    }
+}
+
+inline const char* _(const char* psz)
+{
+    return psz;
+}
+
 static bool foreground = true;
 static google_breakpad::ExceptionHandler* exceptionhandler = nullptr;
 
-
 int main(int argc, char *argv[])
 {
-    std::string command = "command line options";
-    options_description desc(command);
-    desc.add_options()
-        ("help,h", "print help message")
-        ("version,v", "print version message")
-        ("runasss", value<int>(), "run as a seed server")
-        ("bg", "run as a background server,only for *nux")
-        ("child", "run as a child process,only for *nux")
-        ("me", value <std::string>(), "specify myself,for example:10.0.0.1:8116,cannot use with runasss")
-        ("seedserver", value<std::string>(), "specify a seed server,for example:127.0.0.1:8116");
+    cout << "Copyright 2016-2019 hyperchain.net (Hyperchain)." << endl << endl;
+    ParseParameters(argc, argv);
 
-    variables_map vm;
+    string strUsage = string() +
+        _("Hyperchain version") + " " + VERSION_STRING + "\n\n" +
+        _("Usage:") + "\t\t\t\t\t\t\t\t\t\t\n" +
+        "  Hyperchain [options]                   \t  " + "\n" +
+        "  Hyperchain [options] <command> [params]\t  " + _("Execute command\n") +
+        "  Hyperchain [options] help              \t\t  " + _("List commands\n") +
+        "  Hyperchain [options] help <command>    \t\t  " + _("Get help for a command\n") +
+        _("Options:\n") +
+        "  -? or --help     \t\t  " + _("Print help message\n") +
+        "  -v               \t\t  " + _("Print version message\n") +
+        "  -runasss         \t\t  " + _("Run as a seed server\n") +
+        //"  -bg              \t\t  " + _("Run as a background server,only for *nux\n") +
+        "  -child           \t\t  " + _("Run as a child process,only inner use for *nux\n") +
+        "  -me=<ip:port>    \t\t  " + _("Specify my address,for example:10.0.0.1:8116,cannot use with runasss\n") +
+        "  -seedserver=<ip:port> \t\t  " + _("Specify a seed server,for example:127.0.0.1:8116\n") +
+        "  -datadir=<dir>   \t\t  " + _("Specify data directory\n") +
+        //
+        "  -with=<app>      \t\t  " + _("Start with application, for example:-with=ledger, -with=paracoin\n") +
+        //"  -conf=<file>     \t\t  " + _("Specify configuration file (default: ledger.conf)\n") +
+        //"  -pid=<file>      \t\t  " + _("Specify pid file (default: bitcoind.pid)\n") +
+        //"  -gen             \t\t  " + _("Generate coins\n") +
+        //"  -gen=0           \t\t  " + _("Don't generate coins\n") +
+        //"  -min             \t\t  " + _("Start minimized\n") +
+        //"  -timeout=<n>     \t  " + _("Specify connection timeout (in milliseconds)\n") +
+        //"  -proxy=<ip:port> \t  " + _("Connect through socks4 proxy\n") +
+        //"  -dns             \t  " + _("Allow DNS lookups for addnode and connect\n") +
+        //"  -addnode=<ip>    \t  " + _("Add a node to connect to\n") +
+        //"  -connect=<ip>    \t\t  " + _("Connect only to the specified node\n") +
+        //"  -nolisten        \t  " + _("Don't accept connections from outside\n") +
+#ifdef USE_UPNP
+#if USE_UPNP
+        "  -noupnp          \t  " + _("Don't attempt to use UPnP to map the listening port\n") +
+#else
+        "  -upnp            \t  " + _("Attempt to use UPnP to map the listening port\n") +
+#endif
+#endif
+        //"  -paytxfee=<amt>  \t  " + _("Fee per KB to add to transactions you send\n") +
+#ifdef GUI
+        "  -server          \t\t  " + _("Accept command line and JSON-RPC commands\n") +
+#endif
+#ifndef __WXMSW__
+        //"  -daemon          \t\t  " + _("Run in the background as a daemon and accept commands\n") +
+#endif
+        //"  -testnet         \t\t  " + _("Use the test network\n") +
+        "  -rpcuser=<user>  \t  " + _("Username for JSON-RPC connections\n") +
+        "  -rpcpassword=<pw>\t  " + _("Password for JSON-RPC connections\n") +
+        "  -rpcallowip=<ip> \t\t  " + _("Allow JSON-RPC connections from specified IP address\n") +
+        //"  -rpcconnect=<ip> \t  " + _("Send commands to node running on <ip> (default: 127.0.0.1)\n");
+        "  -rpcparaport=<port>  \t\t  " + _("Listen for ParaCoin JSON-RPC connections on <port> (default: 8118)\n") +
+        "  -rpcledgerrport=<port>  \t\t  " + _("Listen for Ledger JSON-RPC connections on <port> (default: 8119)\n");
+    //"  -keypool=<n>     \t  " + _("Set key pool size to <n> (default: 100)\n") +
+    //"  -rescan          \t  " + _("Rescan the block chain for missing wallet transactions\n");
 
-    store(parse_command_line(argc, argv, desc), vm);
-    notify(vm);
 
-    if (vm.count("help")) {
-        cout << desc << endl;
+#ifdef USE_SSL
+    strUsage += string() +
+        _("\nSSL options: (see the Hyperchain Wiki for SSL setup instructions)\n") +
+        "  -rpcssl                                \t  " + _("Use OpenSSL (https) for JSON-RPC connections\n") +
+        "  -rpcsslcertificatechainfile=<file.cert>\t  " + _("Server certificate file (default: server.cert)\n") +
+        "  -rpcsslprivatekeyfile=<file.pem>       \t  " + _("Server private key (default: server.pem)\n") +
+        "  -rpcsslciphers=<ciphers>               \t  " + _("Acceptable ciphers (default: TLSv1+HIGH:!SSLv2:!aNULL:!eNULL:!AH:!3DES:@STRENGTH)\n");
+#endif
+
+    // Remove tabs
+    strUsage.erase(std::remove(strUsage.begin(), strUsage.end(), '\t'), strUsage.end());
+
+    if (mapHCArgs.size() == 0 || mapHCArgs.count("-?") || mapHCArgs.count("--help")) {
+        cout << strUsage << endl;
         return 0;
     }
 
-    if (vm.count("version")) {
+    if (mapHCArgs.count("-v")) {
         cout << VERSION_STRING << endl;
         return 0;
     }
-
-    if (vm.count("bg")) {
+    if (mapHCArgs.count("-bg")) {
         foreground = false;
     }
 
-    if (vm.count("child")) {
+    if (mapHCArgs.count("-child")) {
         g_isChild = true;
+    }
+
+    bool isExceptionAutoReboot = false;
+    if (mapHCArgs.count("-autoreboot")) {
+        isExceptionAutoReboot = true;
     }
 
     g_argc = argc;
@@ -427,14 +495,16 @@ int main(int argc, char *argv[])
 
 #ifdef WIN32
     string commandline = getMyCommandLine(argc, argv);
-    exceptionhandler = new google_breakpad::ExceptionHandler(L"./",
-        nullptr,
-        dumpCallback,
-        (char*)commandline.c_str(),
-        google_breakpad::ExceptionHandler::HANDLER_ALL);
+    if (isExceptionAutoReboot) {
+        exceptionhandler = new google_breakpad::ExceptionHandler(L"./",
+            nullptr,
+            dumpCallback,
+            (char*)commandline.c_str(),
+            google_breakpad::ExceptionHandler::HANDLER_ALL);
+    }
 #else
 
-    //HC: fork myself, become a daemon
+    //
     umask(0);
     while (!foreground) {
         pid_t pid = fork();
@@ -454,72 +524,87 @@ int main(int argc, char *argv[])
         break;
     }
 
-    google_breakpad::MinidumpDescriptor descriptor("./");
-    exceptionhandler = new google_breakpad::ExceptionHandler(descriptor,
-        nullptr, dumpCallback, nullptr, true, -1);
-#endif
-
-    string udpip;
-    int udpport = 8115;
-    if (vm.count("runasss")) {
-        if (vm.count("me")) {
-            cout << desc << endl;
-            return -1;
-        }
-        udpport = vm["runasss"].as<int>();
-        cout << "Run as a seed server,listen UDP port is " << udpport << endl;
+    if (isExceptionAutoReboot) {
+        google_breakpad::MinidumpDescriptor descriptor("./");
+        exceptionhandler = new google_breakpad::ExceptionHandler(descriptor,
+            nullptr, dumpCallback, nullptr, true, -1);
     }
 
+#endif
     string seedserver = "127.0.0.1:8116";
-    if (vm.count("seedserver")) {
-        g_isSeedServer = false;
-        seedserver = vm["seedserver"].as<string>();
-        cout << "Run as a seed client,seed server is " << seedserver << endl;
+    if (mapHCArgs.count("-seedserver")) {
+        seedserver = mapHCArgs["-seedserver"];
+        cout << "Run as a normal node, bootstrap server is " << seedserver << endl;
+        g_nodetype = NodeType::Normal;
         makeSeedServer(seedserver);
+    }
+    else if (!mapHCArgs.count("-me")) {
+        g_nodetype = NodeType::LedgeRPCClient;
+    }
+    else {
+        g_nodetype = NodeType::Bootstrap;
+        cout << "Run as a normal node with bootstrap" << endl;
     }
 
     hclogger log;
 
+    g_tP2pManagerStatus = Singleton<T_P2PMANAGERSTATUS>::instance();
+
     std::string dbpath = make_db_path();
     dbpath += "/hyperchain.db";
-    DBmgr::instance()->open(dbpath.c_str());
+    Singleton<DBmgr>::instance()->open(dbpath.c_str());
 
-    Singleton<CHyperData>::instance();
+	pro_ver = SAND_BOX;
+	if (mapHCArgs.count("-model") && mapHCArgs["-model"] == "informal")
+		pro_ver = INFORMAL_NET;
+
     Singleton<TaskThreadPool>::instance();
     NodeManager *nodemgr = Singleton<NodeManager>::instance();
-  
-    initNode(vm, udpip, &udpport);
-    nodemgr->loadNeighbourNodes();
+
+    string udpip;
+    int udpport = 8115;
+    initNode(mapHCArgs, udpip, udpport);
+    nodemgr->loadNeighbourNodes_New();
 
     HCNodeSH me = nodemgr->myself();
     string mynodeid = me->getNodeId<string>();
-    if (g_isSeedServer)
-        nodemgr->seedServer(me);
+    nodemgr->InitKBuckets();
 
     CHyperChainSpace *hyperchainspace = Singleton<CHyperChainSpace, string>::instance(mynodeid);
+
+    if (g_nodetype == NodeType::Bootstrap)
+        nodemgr->seedServer(me);
 
     Singleton<UdpRecvDataHandler>::instance();
     UdpThreadPool *udpthreadpool = Singleton<UdpThreadPool, const char*, uint32_t>::instance("", udpport);
     udpthreadpool->start();
     cout << "UdpThreadPool::Start ... udpport: " << udpport << endl;
 
-    if (!g_isSeedServer) {
-        SeedCommunication *seedcomm = Singleton<SeedCommunication>::instance();
-        seedcomm->start();
+    NodeUPKeepThreadPool* nodeUpkeepThreadpool = Singleton<NodeUPKeepThreadPool>::instance();
 
-        hyperchainspace->start();
+    g_appPlugin = Singleton<AppPlugins,int, char**>::instance(argc, argv);
+
+    if (g_nodetype != NodeType::LedgeRPCClient) {
+
+        nodeUpkeepThreadpool->start();
+        cout << "NodeUPKeepThreadPool::Start ... " << endl;
+
+        hyperchainspace->start(Singleton<DBmgr>::instance());
         cout << "HyperChainSpace::Start ... " << endl;
 
         RestApi::startRest();
 
         ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::instance();
         consensuseng->start();
-    }
 
+        g_appPlugin->StartAllApp();
+    }
+    else {
+        //
+        g_appPlugin->StartAllApp();
+    }
     ConsoleCommandHandler console;
     console.run();
-
-    stopAll();
 
     return 0;
 }

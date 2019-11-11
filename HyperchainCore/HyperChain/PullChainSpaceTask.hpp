@@ -24,7 +24,7 @@ DEALINGS IN THE SOFTWARE.
 using namespace std;
 
 #include "node/ITask.hpp"
-#include "HyperChain/HyperChainSpace.h"
+#include "HyperChainSpace.h"
 #include "node/NodeManager.h"
 
 class PullChainSpaceRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_SPACE_PULL_RSP> {
@@ -33,27 +33,25 @@ public:
     PullChainSpaceRspTask() {};
     PullChainSpaceRspTask(CUInt128 nodeid) : ITask() { _sentnodeid = nodeid; }
     ~PullChainSpaceRspTask() {};
+
     void exec() override
     {
         CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
         NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
 
-        string msgbuf = "";
-
-        if (sp && sp->PullChainSpaceRspTaskEXC(msgbuf))
-        {
+        string msgbuf;
+        if (sp && sp->GetLocalHIDsection(msgbuf)) {
             DataBuffer<PullChainSpaceRspTask> datamsg(std::move(msgbuf));
-
             nodemgr->sendTo(_sentnodeid, datamsg);
         }
-
     }
 
     void execRespond() override
     {
+        string msgbuf(_payload, _payloadlen);
         CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
-        string msgbuf = _payload;
-        sp->PullChainSpaceRspTaskRSP(msgbuf, _sentnodeid.ToHexString());
+        sp->AnalyzeChainSpaceData(msgbuf, _sentnodeid.ToHexString());
+        sp->SyncLatestHyperBlock();
     }
 };
 
@@ -74,7 +72,7 @@ public:
     void execRespond() override
     {
         TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-        taskpool->put(make_shared<PullChainSpaceRspTask>(_sentnodeid));
+        taskpool->put(std::make_shared<PullChainSpaceRspTask>(_sentnodeid));
     }
 
 };

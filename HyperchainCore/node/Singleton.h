@@ -26,39 +26,43 @@ DEALINGS IN THE SOFTWARE.
 
 template<typename T, typename... Args>
 class Singleton {
-public: 
-	static T* instance(Args... args) 
-	{
-		if (_instance == nullptr) {
-			_instance = new T(args...);
-			return _instance;
-		}
-		return _instance;
-	}
+public:
+    static T* instance(Args... args)
+    {
+        if (_instance == nullptr) {
+            _instance = new T(args...);
+            return _instance;
+        }
+        return _instance;
+    }
 
-	static T* getInstance() {
-		return _instance;
-	}
+    static T* getInstance() {
+        return _instance;
+    }
 
-	static void releaseInstance() {
-		if (_instance == nullptr) {
-			return;
-		}
-		delete _instance;
-		_instance = nullptr;
-	}
+    static void setInstance(T* t) {
+        _instance = t;
+    }
+
+    static void releaseInstance() {
+        if (_instance == nullptr) {
+            return;
+        }
+        delete _instance;
+        _instance = nullptr;
+    }
 private:
-	Singleton(void) {};
-	~Singleton(void) {};
-	Singleton(const Singleton&) = delete;
-	void operator=(const Singleton&) = delete;
+    Singleton(void) {};
+    ~Singleton(void) {};
+    Singleton(const Singleton&) = delete;
+    void operator=(const Singleton&) = delete;
 
 private:
-	static T* _instance;
-	
+    static T* _instance;
+
 };
 
 
 template<typename T, typename... Args>
-T* Singleton<T,Args...>::_instance = nullptr;
+T* Singleton<T, Args...>::_instance = nullptr;
 #endif //_SINGLETON_H

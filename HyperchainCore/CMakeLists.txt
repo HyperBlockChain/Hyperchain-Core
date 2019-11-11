@@ -25,20 +25,20 @@ CMAKE_MINIMUM_REQUIRED(VERSION 3.7)
 set(CMAKE_CXX_STANDARD 11)
 
 if(UNIX)
-#SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g2 -ggdb")
-#SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall")
 
-##########################################################################
-#############DEBUG
 add_definitions(-D_DEBUG)
 add_definitions(-DDEBUG)
-add_definitions("$ENV{CXXFLAGS} -O0 -Wall -g -rdynamic -ggdb -fstack-protector -fstack-protector-all")
-SET(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -rdynamic -ggdb -fstack-protector -fstack-protector-all")
-##########################################################################
+
+SET(HC_FLAG "$ENV{CXXFLAGS} -Wall -rdynamic -ggdb -fstack-protector -fstack-protector-all")
+SET(CMAKE_CXX_FLAGS_DEBUG "${HC_FLAG} -O0 -g")
+SET(CMAKE_CXX_FLAGS_RELEASE "${HC_FLAG} -O3")
+
 elseif(WIN32)
 
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /MD")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od /MDd")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Zi /Od /MDd")
+
+ADD_DEFINITIONS(/D__WXMSW__ /DNOMINMAX)
 
 endif()
 
@@ -46,7 +46,11 @@ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules")
 
 PROJECT(hc)
 
-set(BIN_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+if(NOT WIN32)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+endif()
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 IF( NOT CMAKE_BUILD_TYPE )
    SET( CMAKE_BUILD_TYPE Release)
@@ -82,14 +86,15 @@ elseif(WIN32)
     find_package(unofficial-breakpad CONFIG REQUIRED)
 endif()
 
+include_directories(${breakpad_INCLUDE_DIRS})
 
 cmake_policy(SET CMP0071 NEW)
 
-set(CMAKE_AUTOMOC TRUE)
-set(CMAKE_AUTORCC TRUE)
+#set(CMAKE_AUTOMOC TRUE)
+#set(CMAKE_AUTORCC TRUE)
 
-set(main_SRC Log.cpp newLog.cpp NodeInfo.cpp main.cpp consolecommandhandler.cpp)
-set(main_HEAD Log.h newLog.h NodeInfo.h Types.h consolecommandhandler.h)
+set(main_SRC Log.cpp newLog.cpp NodeInfo.cpp main.cpp consolecommandhandler.cpp AppPlugins.cpp)
+set(main_HEAD Log.h newLog.h NodeInfo.h Types.h consolecommandhandler.h AppPlugins.h plugins/PluginContext.h)
 
 FILE(GLOB crypto_SRC "crypto/*.cpp")
 FILE(GLOB crypto_HEAD "crypto/*.h")
@@ -126,6 +131,9 @@ FILE(GLOB utility_HEAD "utility/*.h")
 FILE(GLOB wnd_SRC "wnd/*.cpp")
 FILE(GLOB wnd_HEAD "wnd/*.h")
 
+#FILE(GLOB ledger_SRC "ledger/*.cpp" "ledger/cryptopp/*.cpp")
+#FILE(GLOB ledger_HEAD "ledger/*.h" "ledger/cryptopp/*.h")
+
 FILE(GLOB consensus_SRC "consensus/*.cpp" "consensus/*.hpp")
 FILE(GLOB consensus_HEAD "consensus/*.h")
 
@@ -137,7 +145,6 @@ set(final_HEAD
 	${HttpUnit_HEAD}
 	${HyperChain_HEAD}
 	${HyperChain_HPP}
-	#${interface_HEAD}
 	${node_HEAD}
 	${node_HPP}
 	${utility_HEAD}
@@ -145,6 +152,7 @@ set(final_HEAD
 	${db_HEAD}
 	${util_HEAD}
 	${sqlite3_HEAD}
+	#${ledger_HEAD}
 	${spdlog_HEAD}
 	${consensus_HEAD}
 	)
@@ -156,12 +164,12 @@ set(final_SRC
 	${headers_SRC}
 	${HttpUnit_SRC}
 	${HyperChain_SRC}
-	#${interface_SRC}
 	${node_SRC}
 	${utility_SRC}
 	${wnd_SRC}
 	${db_SRC}
 	${util_SRC}
+	#${ledger_SRC}
 	${consensus_SRC}
 	)
 
@@ -171,19 +179,28 @@ if(WIN32)
 set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /level='requireAdministrator' /uiAccess='false' /SUBSYSTEM:CONSOLE" )
 endif()
 
-#add_executable(${PROJECT_NAME} ${final_SRC} ${final_HEAD} ${WRAP_FILES} ${resource_SRC})
+#install componet definition
+set(CORECOMPONET "HyperChain")
+
+add_subdirectory(HyperChain)
+add_subdirectory(plugins/paracoin)
+add_subdirectory(plugins/ledger)
+
 add_executable(${PROJECT_NAME} ${final_SRC} ${final_HEAD} ${WRAP_FILES})
 
 if(WIN32)
 target_link_libraries(${PROJECT_NAME} bcrypt.lib)
+else()
+target_link_libraries(${PROJECT_NAME} dl)
 endif()
 
+
 target_link_libraries(${PROJECT_NAME} cpprestsdk::cpprest OpenSSL::Crypto ${SQLITE3_LIBRARIES})
-target_link_libraries(${PROJECT_NAME} Boost::system Boost::program_options Boost::serialization)
-#target_link_libraries(${PROJECT_NAME} PRIVATE unofficial::breakpad::libbreakpad_client)
+target_link_libraries(${PROJECT_NAME} Boost::system Boost::program_options Boost::serialization Boost::filesystem Boost::thread)
 target_link_libraries(${PROJECT_NAME} unofficial::breakpad::libbreakpad_client)
 
 include(HyperChainCPack.cmake)
+
 configure_file (
 "${PROJECT_SOURCE_DIR}/logo.rc.in"
 "${PROJECT_BINARY_DIR}/logo.rc")
@@ -191,7 +208,6 @@ configure_file (
 configure_file (
 "${PROJECT_SOURCE_DIR}/config.h.in"
 "${PROJECT_BINARY_DIR}/config.h")
-
 
 
 

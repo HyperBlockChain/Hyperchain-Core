@@ -33,57 +33,71 @@ using namespace std;
 
 #include "newLog.h"
 
+
+
+string GetHyperChainDataDir();
+string CreateChildDir(const string& childdir);
+
+
 class ConsoleCommandHandler
 {
 
 public:
-	explicit ConsoleCommandHandler();
-	~ConsoleCommandHandler();
+    explicit ConsoleCommandHandler();
+    ~ConsoleCommandHandler();
 
-	void run();
-
-private:
-
-	struct cmdstruct {
-	public:
-		cmdstruct(const char *keystring, std::function<void(const list<string> &)> f) {
-			key = keystring;
-			func = f;
-		}
-		bool operator==(const cmdstruct &other) const {
-			return (strcmp(key, other.key) == 0);
-		}
-
-		const char *key;
-		std::function<void(const list<string> &)> func;
-	};
-	
-	std::vector<cmdstruct> _commands;
-	bool _isRunning;
+    void run();
 
 private:
 
-	void handleCommand(const string &command);
+    struct cmdstruct {
+    public:
+        cmdstruct(const char *keystring, std::function<void(const list<string> &)> f) {
+            key = keystring;
+            func = f;
+        }
+        bool operator==(const cmdstruct &other) const {
+            return (strcmp(key, other.key) == 0);
+        }
 
-	void exit();
-	void showUsages();
-	void showNeighborNode();
-	void showHyperChainSpace();
-	void showHyperChainSpaceMore(const list<string> &commlist);
-	void showLocalData();
-	void downloadHyperBlock(const list<string> &commlist);
-	void searchLocalHyperBlock(const list<string> &commlist);
-	void showInnerDataStruct();
+        const char *key;
+        std::function<void(const list<string> &)> func;
+    };
 
-	void setLoggerLevel(const list<string> &level);
-	void setLoggerLevelHelp(std::shared_ptr<spdlog::logger> & logger, const list<string> &level);
-	void setConsensusLoggerLevel(const list<string> &level);
-	void enableTest(const list<string> &onoff);
+    std::vector<cmdstruct> _commands;
+    bool _isRunning;
 
-	inline void showPrompt() {
-		cout << "hc $ ";
-		cout.flush();
-	}
+private:
+
+    void handleCommand(const string &command);
+
+    void exit();
+    void showUsages();
+    void showNeighborNode();
+    void showHyperChainSpace();
+    void showUnconfirmedBlock();
+    void showHyperChainSpaceMore(const list<string> &commlist);
+    void showLocalData();
+    void downloadHyperBlock(const list<string> &commlist);
+    void searchLocalHyperBlock(const list<string> &commlist);
+    void showInnerDataStruct();
+    void resolveAppData(const list<string> &paralist);
+    void debug(const list<string> &paralist);
+
+    void setLoggerLevel(const list<string> &level);
+    void setLoggerLevelHelp(std::shared_ptr<spdlog::logger> & logger, const list<string> &level);
+    void setConsensusLoggerLevel(const list<string> &level);
+    void startApplication(const list<string> &appli);
+    void stopApplication(const list<string> &appli);
+    void statusApplication(const list<string> &appli);
+
+    void enableTest(const list<string> &onoff);
+
+    inline void showPrompt() {
+        cout << "hc $ ";
+        cout.flush();
+    }
 
 };
+
 

@@ -53,10 +53,10 @@ using std::chrono::system_clock;
 #define SLICE_HEADER  '2'
 
 #define UDP_SLICE_MAX_SIZE	1024
-#define MAX_BUFFER_SIZE		1088			//HC: UDP_SLICE_MAX_SIZE + 64
-#define MAX_SEND_TIMES		3				//HC: Maximum number of retries
-#define MAX_INTERVAL_TIME	10				//HC: Maximum interval(ms)
-#define MAX_RECV_LIST_COUNT	5000			//HC: Maximum list length
+#define MAX_BUFFER_SIZE		1088			//
+#define MAX_SEND_TIMES		3				//
+#define MAX_INTERVAL_TIME	10				//
+#define MAX_RECV_LIST_COUNT	5000			//
 
 enum _erecvflag
 {
@@ -66,12 +66,12 @@ enum _erecvflag
 
 typedef struct _tudpheader
 {
-    uint8_t HeaderType;			//HC: PACKET_HEADER = '1'; SLICE_HEADER = '2'
+    uint8_t HeaderType;			//
     uint32_t uPacketNum;
     uint32_t uDataBufCrc;
     uint32_t uBufLen;
-    uint8_t PacketType;			//HC: SYN_TYPE = '1'; ACK_TYPE = '2'
-    uint8_t Version;			//HC: current version = '1'
+    uint8_t PacketType;			//
+    uint8_t Version;			//
     uint16_t uSliceTotalNum;
 }T_UDPHEADER, *T_PUDPHEADER;
 
@@ -90,14 +90,14 @@ typedef struct _tudpnode
 //Slice Header
 typedef struct _tudpsliceheader
 {
-    uint8_t HeaderType;			 //HC: PACKET_HEADER = '1'; SLICE_HEADER = '2'
-    uint8_t SliceType;			 //HC: SYN_TYPE = '1'; ACK_TYPE = '2'
-    uint32_t uPacketNum;		 //HC: Packet number
-    uint16_t uSliceTotalNum;	 //HC: The total number of slices
-    uint16_t uSliceCurrIndex;	 //HC: current slice index
+    uint8_t HeaderType;			 //
+    uint8_t SliceType;			 //
+    uint32_t uPacketNum;		 //
+    uint16_t uSliceTotalNum;	 //
+    uint16_t uSliceCurrIndex;	 //
     uint32_t uSliceBufCrc;
-    uint32_t uSliceBufLen;		 //HC: slice data length
-    uint32_t uSliceDataOffset;   //HC: Offset in the entire packet
+    uint32_t uSliceBufLen;		 //
+    uint32_t uSliceDataOffset;   //
 }T_UDPSLICEHEADER, *T_PUDPSLICEHEADER;
 
 typedef struct _tudpslicenode
@@ -138,12 +138,12 @@ typedef struct _tpacketnode
 public:
     _tpacketnode() : _tp(system_clock::now()) {}
     bool isTimeOut() {
-        using minutes = std::chrono::duration<double, ratio<60>>;
+        using minutes = std::chrono::duration<double, std::ratio<60>>;
         system_clock::time_point curr = system_clock::now();
 
         minutes timespan = std::chrono::duration_cast<minutes>(curr - _tp);
         if (timespan.count() > 20) {
-            //HC: 20 minutes
+            //
             return true;
         }
         return false;
@@ -167,17 +167,20 @@ typedef MULTI_MAP_PACKETDATA::iterator    ITR_MULTI_MAP_PACKETDATA;
 class UdpThreadPool
 {
 public:
-    UdpThreadPool(const char* localIp, uint32_t localPort = 8115, uint32_t numthreads = thread::hardware_concurrency(), uint32_t maxnumtasks = MAX_RECV_LIST_COUNT);
+    UdpThreadPool(const char* localIp, uint32_t localPort = 8115, uint32_t numthreads = std::thread::hardware_concurrency(), uint32_t maxnumtasks = MAX_RECV_LIST_COUNT);
     ~UdpThreadPool();
     int send(const string &peerIP, uint32_t peerPort, const char * buf, size_t len);
     void start();
     void stop();
     size_t getUdpSendQueueSize() { return m_sendList.size(); }
+    size_t getUdpRetryQueueSize() { return m_retryList.size(); }
     size_t getUdpRecvQueueSize() { return m_recvList.size(); }
 
 private:
     void Recv();
     void RecvData();
+    void Send();
+    void SendData(T_PUDPNODE t);
     void SendAgain();
     void CheckExpired();
     int  OpenUdpSocket();
@@ -199,12 +202,15 @@ private:
 #endif
 
     SyncQueue<T_PUDPNODE>	m_sendList;
+    SyncQueue<T_PUDPNODE>	m_retryList;
     SyncQueue<T_RECVNODE>	m_recvList;
     std::thread				m_listenthread;
     std::thread				m_checkthread;
     std::list<std::thread>	m_sendthreads;
+    std::list<std::thread>	m_retrythreads;
     std::list<std::thread>	m_recvthreads;
     uint32_t				m_sendthreads_num;
+    uint32_t				m_retrythreads_num;
     uint32_t				m_recvthreads_num;
 
     MAP_T_PUDPNODE			m_sendMap;

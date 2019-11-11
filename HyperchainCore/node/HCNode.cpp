@@ -45,6 +45,10 @@ using namespace web;
  * CNode implementation
  */
 
+utility::string_t UdpAccessPoint::CLASSNAME_U = _XPLATSTR("UdpAP");
+std::string UdpAccessPoint::CLASSNAME = "UdpAP";;
+utility::string_t TcpAccessPoint::CLASSNAME_U = _XPLATSTR("TcpAP");
+std::string TcpAccessPoint::CLASSNAME = "TcpAP";
 
 HCNode::HCNode(const CUInt128 & nodeid) : _nodeid(nodeid)
 {
@@ -93,7 +97,7 @@ HCNode & HCNode::operator=(const HCNode & node)
 
 int HCNode::send(string &msgbuf) const
 {
-    //HC: Choose the first access point to send.
+    //
     //for (const shared_ptr<IAccessPoint> ap : _aplist) {
     for (auto &ap : _aplist) {
         return ap->write(msgbuf.c_str(), msgbuf.size());

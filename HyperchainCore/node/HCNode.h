@@ -35,95 +35,95 @@ class CUInt128;
 
 class HCNode {
 public:
-	using APList = list<shared_ptr<IAccessPoint>>;
+    using APList = list <std::shared_ptr<IAccessPoint>>;
 
-	HCNode() : _nodeid() {};
+    HCNode() : _nodeid() {};
 
-	HCNode(const HCNode & node);
-	HCNode(HCNode && node);
+    HCNode(const HCNode& node);
+    HCNode(HCNode&& node);
 
-	HCNode(const CUInt128 & nodeid);
-	HCNode(CUInt128 && nodeid);
+    HCNode(const CUInt128& nodeid);
+    HCNode(CUInt128&& nodeid);
 
-	HCNode& operator=(const HCNode & node);
+    HCNode& operator=(const HCNode& node);
 
-	static string generateNodeId();
+    static string generateNodeId();
 
-	template<typename T, typename = typename std::enable_if<std::is_same<T, std::string>::value>::type>
-	const string getNodeId() const
-	{
-		return string(_nodeid.ToHexString());
-	}
+    template<typename T, typename = typename std::enable_if<std::is_same<T, std::string>::value>::type>
+    const string getNodeId() const
+    {
+        return string(_nodeid.ToHexString());
+    }
 
-	template<typename T, typename = typename std::enable_if<std::is_same<T, CUInt128>::value>::type>
-	const CUInt128& getNodeId() const {
-		return _nodeid;
-	}
+    template<typename T, typename = typename std::enable_if<std::is_same<T, CUInt128>::value>::type>
+    const CUInt128& getNodeId() const {
+        return _nodeid;
+    }
 
-	template<typename T, typename = typename std::enable_if<std::is_same<T, CUInt128*>::value>::type>
-	const CUInt128* getNodeId() const {
-		return &_nodeid;
-	}
+    template<typename T, typename = typename std::enable_if<std::is_same<T, CUInt128*>::value>::type>
+    const CUInt128* getNodeId() const {
+        return &_nodeid;
+    }
 
-	void getNodeId(uint8_t b[CUInt128::value]) const {
-		_nodeid.ToByteArray(b);
-	}
+    void getNodeId(uint8_t b[CUInt128::value]) const {
+        _nodeid.ToByteArray(b);
+    }
 
-	bool isValid() {
-		return !_nodeid.IsZero();
-	}
+    bool isValid() {
+        return !_nodeid.IsZero();
+    }
 
-	APList& getAPList() {
-		return _aplist;
-	}
+    APList& getAPList() {
+        return _aplist;
+    }
 
-	void setNodeId(const string &id) {
-		_nodeid.SetHexString(id);
-	}
+    void setNodeId(const string& id) {
+        _nodeid.SetHexString(id);
+    }
 
 
-	int send(string &msgbuf) const;
+    int send(string& msgbuf) const;
 
-	string serialize();
-	static void parse(const string &nodeinfo, HCNode &node);
+    string serialize();
+    static void parse(const string& nodeinfo, HCNode& node);
 
-	string serializeAP();
-	void parseAP(const string &aps);
+    string serializeAP();
+    void parseAP(const string& aps);
 
-	void addAP(shared_ptr<IAccessPoint> ap) {
-		_aplist.push_back(ap);
-	}
+    void addAP(std::shared_ptr<IAccessPoint> ap) {
+        _aplist.push_back(ap);
+    }
 
-	void removeAPs() {
-		_aplist.clear();
-	}
+    void removeAPs() {
+        _aplist.clear();
+    }
 
-	void updateAP(shared_ptr<IAccessPoint> ap) {
+    void updateAP(std::shared_ptr<IAccessPoint> ap) {
 
-		auto result = std::find_if(_aplist.begin(), _aplist.end(), [&](shared_ptr<IAccessPoint> &apCurr) {
-			if (typeid(*(apCurr.get())) == typeid(*(ap.get()))) {
-				apCurr = std::move(ap);
-				return true;
-			}
-			return false;
-		});
+        auto result = std::find_if(_aplist.begin(), _aplist.end(), [&](std::shared_ptr<IAccessPoint>& apCurr) {
+            if (typeid(*(apCurr.get())) == typeid(*(ap.get()))) {
+                apCurr = std::move(ap);
+                return true;
+            }
+            return false;
+        });
 
-		if (result == _aplist.end()) {
-			_aplist.push_front(ap);
-		}
-	}
-
-private:
-	void registerType();
+        if (result == _aplist.end()) {
+            _aplist.push_front(ap);
+        }
+    }
 
 private:
+    void registerType();
 
-	CUInt128 _nodeid;
-	APList _aplist;
+private:
 
-	//Access point object factory 
-	objectFactory _apFactory;
-	bool _isReg = false;
+    CUInt128 _nodeid;
+    APList _aplist;
+
+    //Access point object factory 
+    objectFactory _apFactory;
+    bool _isReg = false;
 };
 
 using HCNodeSH = std::shared_ptr<HCNode>;

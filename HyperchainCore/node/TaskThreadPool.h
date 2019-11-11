@@ -32,12 +32,15 @@ using namespace std;
 
 #include "ITask.hpp"
 #include "SyncQueue.h"
+
 class TaskThreadPool {
 
 public:
     using QueueTask = shared_ptr<ITask>;
 
-    TaskThreadPool(uint32_t numthreads = thread::hardware_concurrency(), uint32_t maxnumtasks = 5000);
+    //
+    TaskThreadPool(uint32_t numthreads = thread::hardware_concurrency() < 2 ? 2 : thread::hardware_concurrency(),
+                    uint32_t maxnumtasks = 5000);
     TaskThreadPool(const TaskThreadPool &) = delete;
     TaskThreadPool & operator=(const TaskThreadPool &) = delete;
     ~TaskThreadPool() { stop(); }
@@ -50,12 +53,17 @@ public:
     size_t getQueueSize() {
         return _taskqueue.size();
     }
+
+    size_t getTaskThreads() {
+        return _numthreads;
+    }
+
     string getQueueDetails() {
 
         std::unordered_map<string, uint16> tt;
         {
             std::unique_lock<std::mutex> lck(_taskqueue.guard());
-            std::list<QueueTask> tsklist = _taskqueue.tasklist();
+            std::list<QueueTask>& tsklist = _taskqueue.tasklist();
 
             for (auto it = tsklist.begin(); it != tsklist.end(); it++) {
                 string t = typeid(*it->get()).name();

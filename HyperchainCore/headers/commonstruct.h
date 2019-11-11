@@ -31,8 +31,9 @@ DEALINGS IN THE SOFTWARE.
 #include "shastruct.h"
 #include "node/UInt128.h"
 
+#include <boost/any.hpp>
 #include <boost/serialization/binary_object.hpp>
-
+#include <functional>
 #include <numeric>
 #include <cctype>
 using namespace std;
@@ -51,10 +52,10 @@ using namespace std;
 #define MAX_VER_LEN		(8)
 #define MAX_USER_DEFINED_DATA (1024* 16)
 
-//HC: 块版本号历史：
-//HC: 0.7.1 超块加入版本号
-//HC: 0.7.2 子块_tlocalblock加入：difficulty，version，requestid
-//HC: 1.0.0 链核心数据结构重新进行设计，不兼容1.0.0 以下版本
+//
+//
+//
+//
 
 #define MAJOR_VER 1
 #define MINOR_VER 0
@@ -89,13 +90,25 @@ enum _eerrorno
 
 typedef struct _tpeeraddress
 {
+    CUInt128 _nodeid;
+
     _tpeeraddress() : _nodeid(CUInt128()) {};
     _tpeeraddress(const CUInt128 &peerid) : _nodeid(peerid) {};
-    CUInt128 _nodeid;
+    _tpeeraddress(const _tpeeraddress&) = default;
+    _tpeeraddress(_tpeeraddress&&) = default;
+    _tpeeraddress& operator=(const _tpeeraddress&) = default;
+    _tpeeraddress& operator=(_tpeeraddress&&) = default;
+
     bool operator==(const struct _tpeeraddress &other)
     {
         return _nodeid == other._nodeid;
     }
+
+    CUInt128 GetNodeid()
+    {
+        return _nodeid;
+    }
+
 private:
     friend class boost::serialization::access;
     template<class Archive>
@@ -104,6 +117,7 @@ private:
         VERSION_CHECK(*this, 0)
         ar & _nodeid;
     }
+
 }T_PEERADDRESS, *T_PPEERADDRESS;
 BOOST_CLASS_VERSION(T_PEERADDRESS, 0)
 
@@ -116,8 +130,8 @@ typedef struct _tprivateblock
     //T_SHA256 tHHash;
     //T_FILEINFO tPayLoad;
 
-    T_LOCALBLOCKADDRESS preBlockAddr;       //HC:前一逻辑块所在子块地址
-    T_SHA256 tpreBlockHash;                 //HC:前一逻辑子块hash
+    T_LOCALBLOCKADDRESS preBlockAddr;       //
+    T_SHA256 tpreBlockHash;                 //
     string sData;
 
     /*
@@ -147,18 +161,18 @@ typedef struct _tversion
 {
     union {
         struct {
-            char _major;         //HC: 主版本号，进行不向下兼容的修改时，递增主版本号
-            char _minor;         //HC: 次版本号，保持向下兼容,新增特性时，递增次版本号
-            int16 _patch;        //HC: 修订号，保持向下兼容,修复问题但不影响特性时，递增修订号
+            char _major;         //
+            char _minor;         //
+            int16 _patch;        //
         };
-        uint32 ver;             //HC: used for serialize
+        uint32 ver;             //
     };
     _tversion() : _major(MAJOR_VER), _minor(MINOR_VER), _patch(PATCH_VER) {}
     _tversion(char mj, char mi, int16 ptch) : _major(mj), _minor(mi), _patch(ptch) {}
 
     string tostring() const {
         char verinfo[64] = { 0 };
-        std::snprintf(verinfo,64,"%d.%d.%d",_major,_minor,_patch);
+        std::snprintf(verinfo, 64, "%d.%d.%d", _major, _minor, _patch);
         return string(verinfo);
     }
 
@@ -171,20 +185,21 @@ private:
     }
 } T_VERSION;
 
-enum class APPTYPE: uint16{
+enum class APPTYPE : uint16 {
     appdefault = 0,
-    ledge,
+    ledger = 0x11,       //
+    paracoin = 0x21,    //
 };
 
 typedef struct _tapptype
 {
     typedef union {
         struct {
-            char mt : 1;         //HC: =0 应用不带payload merkle tree hash，=1 带Merkle hash
-            char reserve : 3;    //HC: 系统保留待扩展
-            char val : 4;        //HC: _apptype的val与后续字节整体按低高位拼接起来组成应用类型
+            unsigned char mt : 1;         //
+            unsigned char reserve : 3;    //
+            unsigned char val : 4;        //
         };
-        char app = 0;            //HC: used for serialize
+        unsigned char app = 0;            //
     } _INNER_AT;
 
     explicit _tapptype(APPTYPE a = APPTYPE::appdefault) {
@@ -193,38 +208,152 @@ typedef struct _tapptype
         //if application has merkle tree hash, let mt = 1
     }
 
+    explicit _tapptype(APPTYPE a, uint32_t hid, uint16 chainnum, uint16 localid) {
+        vecAT[0].app = static_cast<char>(a);
+        set(hid, chainnum, localid);
+    }
+
     typedef vector<_INNER_AT>::iterator iterator;
     typedef vector<_INNER_AT>::const_iterator const_iterator;
     iterator begin() { return vecAT.begin(); }
     iterator end() { return vecAT.end(); }
     const_iterator begin() const { return vecAT.begin(); }
     const_iterator end() const { return vecAT.end(); }
+
+    void set(uint32_t hid, uint16 chainnum, uint16 localid)
+    {
+        vecAT.resize(9);
+
+        vecAT[1].app = static_cast<char>(hid);
+        vecAT[2].app = static_cast<char>(hid >> 8);
+        vecAT[3].app = static_cast<char>(hid >> 16);
+        vecAT[4].app = static_cast<char>(hid >> 24);
+
+        vecAT[5].app = static_cast<char>(chainnum);
+        vecAT[6].app = static_cast<char>(chainnum >> 8);
+
+        vecAT[7].app = static_cast<char>(localid);
+        vecAT[8].app = static_cast<char>(localid >> 8);
+    }
+
+    void get(uint32_t& hid, uint16& chainnum, uint16& localid) const
+    {
+        if (vecAT.size() < 9) {
+            return;
+        }
+        hid = vecAT[1].app | vecAT[2].app << 8 | vecAT[3].app << 16 | vecAT[4].app << 24;
+        chainnum = vecAT[5].app | vecAT[6].app << 8;
+        localid = vecAT[7].app | vecAT[8].app << 8;
+
+    }
+
+    bool isMT() const { return vecAT[0].mt == 1; }
+
+    bool containAddr() const {
+        uint32_t hid = 0;
+        uint16 chainnum = 0;
+        uint16 localid = 0;
+        get(hid,chainnum,localid);
+
+        if (hid == 0 && chainnum == 0 && localid == 0) {
+            return false;
+        }
+        return true;
+    }
+    
+    bool isParaCoin() const { return (vecAT[0].app == static_cast<char>(APPTYPE::paracoin)) && containAddr(); }
+    bool isLedge() const { return (vecAT[0].app == static_cast<char>(APPTYPE::ledger)) && containAddr(); }
+
+    size_t size() const { return vecAT.size(); }
     bool operator==(const _tapptype& v) const throw() {
         size_t s = size();
         if (v.size() != size()) return false;
 
-        for (size_t i=0; i < s; i++) {
+        for (size_t i = 0; i < s; i++) {
             if (vecAT[i].app != v.vecAT[i].app) {
                 return false;
             }
         }
         return true;
     }
-    bool isMT() const { return vecAT[0].mt == 1; }
-    size_t size() const { return vecAT.size(); }
 
-    bool operator <(const _tapptype& v) const
-    {
+    bool operator!=(const _tapptype& v) const throw() {
+        return !(*this == v);
+    }
+
+    bool operator <(const _tapptype& v) const {
         size_t s = size();
         if (s < v.size()) return true;
         if (s > v.size()) return false;
 
         for (size_t i = 0; i < s; i++) {
+            if (vecAT[i].app == v.vecAT[i].app) {
+                continue;
+            }
             if (vecAT[i].app < v.vecAT[i].app) {
                 return true;
             }
+            return false;
         }
         return false;
+    }
+
+    size_t unserialize(const string& s)
+    {
+        size_t len = s[0];
+
+        vecAT.resize(len);
+
+        int i = 1;
+        for (auto& elm : vecAT) {
+            elm.app = s[i++];
+        }
+        return len;
+    }
+
+    string serialize()
+    {
+        string appValue;
+        
+        size_t len = vecAT.size();
+        assert(len < 128);
+
+        appValue.resize(len + 1);
+        appValue[0] = static_cast<char>(len);
+
+        int i = 1;
+        for (auto elm : vecAT) {
+            appValue[i++] = elm.app;
+        }
+        return appValue;
+    }
+
+    string tohexstring()
+    {
+        string appValue;
+        char hex[5] {0};
+        for (auto elm: vecAT) {
+            std::snprintf(hex, 5, "%02x", elm.app);
+            appValue += hex;
+        }
+
+        const char* strAppType = nullptr;
+        switch (vecAT[0].app)
+        {
+            case static_cast<char>(APPTYPE::appdefault) : strAppType = "appdefault"; break;
+            case static_cast<char>(APPTYPE::ledger) : strAppType = "ledger"; break;
+            case static_cast<char>(APPTYPE::paracoin) : strAppType = "paracoin"; break;
+        default:
+            strAppType = "unknown"; break;
+        }
+
+        const char *fmt = "%s (0x%s)";
+
+        int sz = std::snprintf(nullptr, 0, fmt, strAppType, appValue.c_str());
+        std::string buf(sz, 0);
+        std::snprintf(&buf[0], buf.size() + 1, fmt, strAppType, appValue.c_str());
+
+        return buf;
     }
 
 private:
@@ -275,18 +404,18 @@ struct _tlocalblock;
 typedef struct _tlocalblockheader
 {
     T_VERSION uiVersion;
-	uint16	uiID = 1;                                    //HC: 本块ID,local block id 序号从1开始
-    T_SHA256 tPreHash = T_SHA256(1);                    //HC: 前一个块hash
-    T_SHA256 tPreHHash = T_SHA256(1);                   //HC: 前一个超块hash
-    uint64 uiTime;                                      //HC: 块生成时间
-    uint32 uiNonce = 0;                                 //HC: 随机数
+    uint16 uiID = 1;                                    //
+    T_SHA256 tPreHash = T_SHA256(1);                    //
+    T_SHA256 tPreHHash = T_SHA256(1);                   //
+    uint64 uiTime;                                      //
+    uint32 uiNonce = 0;                                 //
 
-    T_APPTYPE appType;                                  //HC: 应用类型
+    T_APPTYPE appType;                                  //
 
-    //HC: appType.mt=1,子块body中payload域的记录hash的Merkle Tree Root
-    //HC: appType.mt=0,子块body中payload域的整体hash
+    //
+    //
     T_SHA256 tMTRootorBlockBodyHash = T_SHA256(0);
-    T_SHA256 tScriptHash = T_SHA256(0);                 //HC: 共识脚本hash
+    T_SHA256 tScriptHash = T_SHA256(0);                 //
 
 
     _tlocalblockheader() : uiTime(time(nullptr)) {}
@@ -318,31 +447,31 @@ private:
         ar & tScriptHash;
     }
 
-    //HC: notice: only use to calculate digest
+    //
     friend struct _tlocalblock;
     template <typename D>
     void AddData(D &d) const
     {
         d.AddData(uiVersion.ver);
         d.AddData(uiID);
-        d.AddData(tPreHash.data(),tPreHash.size());
-        d.AddData(tPreHHash.data(),tPreHHash.size());
+        d.AddData(tPreHash.data(), tPreHash.size());
+        d.AddData(tPreHHash.data(), tPreHHash.size());
         d.AddData(uiTime);
         d.AddData(uiNonce);
 
-        for (auto a: appType) {
+        for (auto a : appType) {
             d.AddData(&a.app, sizeof(a.app));
         }
         d.AddData(tMTRootorBlockBodyHash.data(), tMTRootorBlockBodyHash.size());
-        d.AddData(tScriptHash.data(),tScriptHash.size());
+        d.AddData(tScriptHash.data(), tScriptHash.size());
     }
 } T_LOCALBLOCKHEADER;
 BOOST_CLASS_VERSION(T_LOCALBLOCKHEADER, 0)
 
 
 typedef struct _tlocalblockbody {
-    string sScript;                         //HC: 共识脚本
-    string sAuth;                           //HC: 签注
+    string sScript;                         //
+    string sAuth;                           //
     string payload;
 
     _tlocalblockbody() {}
@@ -361,37 +490,37 @@ private:
     {
         uint32 len = static_cast<uint32>(sScript.size());
         ar << len;
-		ar << boost::serialization::make_binary_object(sScript.c_str(), len);
+        ar << boost::serialization::make_binary_object(sScript.c_str(), len);
 
         uint16 authlen = static_cast<uint16>(sAuth.size());
         ar << authlen;
-		ar << boost::serialization::make_binary_object(sAuth.c_str(), authlen);
+        ar << boost::serialization::make_binary_object(sAuth.c_str(), authlen);
 
         uint32 payloadlen = static_cast<uint32>(payload.size());
         ar << payloadlen;
-		ar << boost::serialization::make_binary_object(payload.c_str(), payloadlen);
+        ar << boost::serialization::make_binary_object(payload.c_str(), payloadlen);
     }
 
     template<class Archive>
-	void load(Archive& ar, const unsigned int version)
-	{
+    void load(Archive& ar, const unsigned int version)
+    {
         uint32 len;
         ar >> len;
-		sScript.resize(len);
-		ar >> boost::serialization::make_binary_object(const_cast<char*>(sScript.data()), len);
+        sScript.resize(len);
+        ar >> boost::serialization::make_binary_object(const_cast<char*>(sScript.data()), len);
 
         uint16 lenAuth;
         ar >> lenAuth;
-		sAuth.resize(lenAuth);
-		ar >> boost::serialization::make_binary_object(const_cast<char*>(sAuth.data()), lenAuth);
+        sAuth.resize(lenAuth);
+        ar >> boost::serialization::make_binary_object(const_cast<char*>(sAuth.data()), lenAuth);
 
         uint32 payloadlen;
         ar >> payloadlen;
-		payload.resize(payloadlen);
-		ar >> boost::serialization::make_binary_object(const_cast<char*>(payload.data()), payloadlen);
+        payload.resize(payloadlen);
+        ar >> boost::serialization::make_binary_object(const_cast<char*>(payload.data()), payloadlen);
     }
     BOOST_SERIALIZATION_SPLIT_MEMBER()
-    //HC: notice: only use to calculate digest
+    //
     friend struct _tlocalblock;
     template <typename D>
     void AddData(D &d) const
@@ -415,19 +544,21 @@ typedef struct _tlocalblock
     _tlocalblock(_tlocalblock&&) = default;
     _tlocalblock& operator=(_tlocalblock&&) = default;
 
-    //HC: 子块Payload merkle tree hash（可选, header.appType.mt == 1 ? 有 : 无）
+    //
     vector<T_SHA256> payloadMTree;
-    void Rebuild()
+
+    void BuildBlockBodyHash()
     {
-        if (header.ContainMTData()) {
-            //TODO:
-        }
-        else {
-            Digest<DT::sha256> digest;
-            digest.AddData(body.payload);
-            header.tMTRootorBlockBodyHash = digest.getDigest();
-        }
+        Digest<DT::sha256> digest;
+        digest.AddData(body.payload);
+        header.tMTRootorBlockBodyHash = digest.getDigest();
     }
+
+    void SetBlockBodyHash(T_SHA256& tBlockBodyHash)
+    {
+        header.tMTRootorBlockBodyHash = tBlockBodyHash;
+    }
+
     string CalculateHashHeader() const {
         Digest<DT::sha256> digest;
         header.AddData(digest);
@@ -439,7 +570,7 @@ typedef struct _tlocalblock
         header.AddData(digest);
         body.AddData(digest);
         if (header.ContainMTData()) {
-            for (auto h: payloadMTree) {
+            for (auto h : payloadMTree) {
                 digest.AddData(h.data(), h.size());
             }
         }
@@ -452,11 +583,13 @@ typedef struct _tlocalblock
     inline uint64 GetCTime() const { return header.uiTime; }
     inline uint16 GetChainNum() const { return _chain_num; }
     inline T_APPTYPE GetAppType() const { return header.appType; }
+    //inline bool isAppTxType() const { return header.appType.isLedge() || header.appType.isParaCoin(); }
+    inline bool isAppTxType() const { return header.appType.isParaCoin(); }
     inline uint32 GetNonce() const { return header.uiNonce; }
-	inline const string& GetPayload() const { return body.payload; }
+    inline const string& GetPayload() const { return body.payload; }
 	inline const string& GetAuth() const { return body.sAuth; }
 	inline const string& GetScript() const { return body.sScript; }
-	size_t GetSize() const {
+    size_t GetSize() const {
         return header.GetSize() + body.GetSize() + payloadMTree.size() * sizeof(T_SHA256);
     }
 	inline const T_SHA256& GetRootHash()const { return header.tMTRootorBlockBodyHash; }
@@ -480,14 +613,13 @@ typedef struct _tlocalblock
         size_t nTotalLen = 0;
         for (int r = 0; r < row && nTotalLen < payloadlen; r++) {
             str += "\n\t";
-
             p = p + r * nRowLen;
 
-            //HC: sPrint size >= nPreviewLen + 1
+            //
             char sPrint[33] = { 0 };
             char buff[64 + 1] = { 0 };
 
-            for (size_t i = 0; i < nRowLen ; i++) {
+            for (size_t i = 0; i < nRowLen; i++) {
                 std::snprintf(buff + 2 * i, 4, "%02x", (int)*(p + i));
 
                 sPrint[i] = std::isprint(*(p + i)) ? *(p + i) : '.';
@@ -518,47 +650,40 @@ typedef struct _tlocalblock
     string GetPayLoad()const { return body.payload; }
     string& GetPayLoad() { return body.payload; }
 
-    string GetUUID() const {
-        Digest<DT::sha1> digest;
-        digest.AddData(&header.uiTime, sizeof(header.uiTime));
-        digest.AddData(body.payload.c_str(), body.payload.size());
-        std::string d = digest.getDigestBase58();
-        return string(d.data(), d.size());
-    }
-
+    string GetUUID() const;
     void updatePreHyperBlockInfo(uint64_t preHID, const T_SHA256 &preHHash);
 
 private:
-	friend class boost::serialization::access;
-	template <typename Archive>
-	void save(Archive& ar, const unsigned int version) const
-	{
-		VERSION_CHECK(*this, 0)
-		ar << header;
-		ar << body;
+    friend class boost::serialization::access;
+    template <typename Archive>
+    void save(Archive& ar, const unsigned int version) const
+    {
+        VERSION_CHECK(*this, 0)
+            ar << header;
+        ar << body;
         assert(header.appType.size() > 0);
         if (header.appType.isMT()) {
-			uint32 payloadnum = static_cast<uint32>(payloadMTree.size());
-			ar << payloadnum;
-			ar << boost::serialization::make_array(payloadMTree.data(), payloadnum);
-		}
-	}
+            uint32 payloadnum = static_cast<uint32>(payloadMTree.size());
+            ar << payloadnum;
+            ar << boost::serialization::make_array(payloadMTree.data(), payloadnum);
+        }
+    }
 
-	template<class Archive>
-	void load(Archive& ar, const unsigned int version)
-	{
-		VERSION_CHECK(*this, 0)
-		ar >> header;
-		ar >> body;
+    template<class Archive>
+    void load(Archive& ar, const unsigned int version)
+    {
+        VERSION_CHECK(*this, 0)
+            ar >> header;
+        ar >> body;
         assert(header.appType.size() > 0);
         if (header.appType.isMT()) {
-			uint32 payloadnum;
-			ar >> payloadnum;
-			payloadMTree.resize(payloadnum);
-			ar >> boost::serialization::make_array(payloadMTree.data(), payloadnum);
-		}
-	}
-	BOOST_SERIALIZATION_SPLIT_MEMBER()
+            uint32 payloadnum;
+            ar >> payloadnum;
+            payloadMTree.resize(payloadnum);
+            ar >> boost::serialization::make_array(payloadMTree.data(), payloadnum);
+        }
+    }
+    BOOST_SERIALIZATION_SPLIT_MEMBER()
 
 private:
     //The following member is in-memory
@@ -576,20 +701,20 @@ struct _thyperblock;
 typedef struct _thyperblockheader
 {
     T_VERSION  uiVersion;
-    uint32  uiWeight = 2;                   //HC: 负载评分 = 难度 + 块数 + 网络连接数等
+    uint32  uiWeight = 2;                   //
 
-    uint64 uiID;                            //HC: 本块ID,创世区块id为0
-    T_SHA256 tPreHash = T_SHA256(1);        //HC: 前一个块hash
-    T_SHA256 tPreHeaderHash = T_SHA256(1);  //HC: 前一个块头hash
-    uint64 uiTime;                          //HC: 块生成时间
+    uint64 uiID = -1;                       //
+    T_SHA256 tPreHash = T_SHA256(1);        //
+    T_SHA256 tPreHeaderHash = T_SHA256(1);  //
+    uint64 uiTime;                          //
 
-    T_SHA256 tMerkleHashAll;                //HC: 子块头hash默克尔树根
-    T_SHA256 tBRRoot = T_SHA256(1);         //HC: 基础奖励对的MT根
-    T_SHA256 tXWHash = T_SHA256(1);         //HC: 跨链存证记录摘要
-    T_SHA256 tScriptHash = T_SHA256(1);     //HC: 共识脚本hash
-    uint16 uiBRRule = 0;                    //HC: 奖励规则类型
-    list<T_SHA256> listTailLocalBlockHash;  //HC: 每条子链的最后子块hash
-    vector<uint16> vecChildChainBlockCount;      //HC: 每条子链子块数
+    T_SHA256 tMerkleHashAll;                //
+    T_SHA256 tBRRoot = T_SHA256(1);         //
+    T_SHA256 tXWHash = T_SHA256(1);         //
+    T_SHA256 tScriptHash = T_SHA256(1);     //
+    uint16 uiBRRule = 0;                    //
+    list<T_SHA256> listTailLocalBlockHash;  //
+    vector<uint16> vecChildChainBlockCount;      //
 
     _thyperblockheader() {}
 
@@ -622,64 +747,64 @@ private:
         d.AddData(tScriptHash.data(), tScriptHash.size());
         d.AddData(uiBRRule);
 
-        for (auto &h: listTailLocalBlockHash) {
-            d.AddData(h.data(),h.size());
+        for (auto &h : listTailLocalBlockHash) {
+            d.AddData(h.data(), h.size());
         }
-        for (auto &c: vecChildChainBlockCount) {
+        for (auto &c : vecChildChainBlockCount) {
             d.AddData(c);
         }
     }
-	friend class boost::serialization::access;
-	template <typename Archive>
-	void save(Archive& ar, const unsigned int version) const
-	{
-		VERSION_CHECK(*this, 0)
-		ar << uiVersion.ver;
-		ar << uiWeight;
-		ar << uiID;
-		ar << tPreHash;
-		ar << tPreHeaderHash;
-		ar << uiTime;
-		ar << tMerkleHashAll;
-		ar << tBRRoot;
-		ar << tXWHash;
-		ar << tScriptHash;
-		ar << uiBRRule;
+    friend class boost::serialization::access;
+    template <typename Archive>
+    void save(Archive& ar, const unsigned int version) const
+    {
+        VERSION_CHECK(*this, 0)
+        ar << uiVersion.ver;
+        ar << uiWeight;
+        ar << uiID;
+        ar << tPreHash;
+        ar << tPreHeaderHash;
+        ar << uiTime;
+        ar << tMerkleHashAll;
+        ar << tBRRoot;
+        ar << tXWHash;
+        ar << tScriptHash;
+        ar << uiBRRule;
 
-		uint32 len = static_cast<uint32>(listTailLocalBlockHash.size());
-		ar << len;
-		for (T_SHA256 hash : listTailLocalBlockHash) {
-			ar << hash;
-		}
+        uint32 len = static_cast<uint32>(listTailLocalBlockHash.size());
+        ar << len;
+        for (T_SHA256 hash : listTailLocalBlockHash) {
+            ar << hash;
+        }
 
-		uint32 blockcount = static_cast<uint32>(vecChildChainBlockCount.size());
-		ar << blockcount;
-		ar << boost::serialization::make_array(vecChildChainBlockCount.data(), blockcount);
-	}
+        uint32 blockcount = static_cast<uint32>(vecChildChainBlockCount.size());
+        ar << blockcount;
+        ar << boost::serialization::make_array(vecChildChainBlockCount.data(), blockcount);
+    }
 
-	template<class Archive>
-	void load(Archive& ar, const unsigned int version)
-	{
-		VERSION_CHECK(*this, 0)
-			ar >> uiVersion.ver;
-			ar >> uiWeight;
-			ar >> uiID;
-			ar >> tPreHash;
-			ar >> tPreHeaderHash;
-			ar >> uiTime;
-			ar >> tMerkleHashAll;
-			ar >> tBRRoot;
-			ar >> tXWHash;
-			ar >> tScriptHash;
-			ar >> uiBRRule;
+    template<class Archive>
+    void load(Archive& ar, const unsigned int version)
+    {
+        VERSION_CHECK(*this, 0)
+        ar >> uiVersion.ver;
+        ar >> uiWeight;
+        ar >> uiID;
+        ar >> tPreHash;
+        ar >> tPreHeaderHash;
+        ar >> uiTime;
+        ar >> tMerkleHashAll;
+        ar >> tBRRoot;
+        ar >> tXWHash;
+        ar >> tScriptHash;
+        ar >> uiBRRule;
 
-			uint32 len;
-			ar >> len;
-			for (uint32 i = 0; i < len; i++) {
-				T_SHA256 hash;
-				ar >> hash;
-				listTailLocalBlockHash.push_back(hash);
-			}
+        uint32 len;
+        ar >> len;
+        for (uint32 i = 0; i < len; i++) {
+            T_SHA256 hash;
+            ar >> hash;
+            listTailLocalBlockHash.push_back(hash);
+        }
 
 			uint32 blockcount;
 			ar >> blockcount;
@@ -693,34 +818,34 @@ BOOST_CLASS_VERSION(T_HYPERBLOCKHEADER, 0)
 typedef struct _tuint160 {
     std::array<uint8, 20> v;
 
-	string toHexString() const
-	{
-		char ucBuf[41] = { 0 };
-		char *p = ucBuf;
-		for (uint8 c : v)
-		{
-			sprintf(p, "%02x", c);
-			p += 2;
-		}
+    string toHexString() const
+    {
+        char ucBuf[41] = { 0 };
+        char* p = ucBuf;
+        for (uint8 c : v)
+        {
+            sprintf(p, "%02x", c);
+            p += 2;
+        }
 
-		return string(ucBuf);
-	}
+        return string(ucBuf);
+    }
 
 private:
     friend class boost::serialization::access;
     template <typename Archive>
     void serialize(Archive &ar, unsigned int version) {
-        ar & boost::serialization::make_array(v.data(),20);
+        ar & boost::serialization::make_array(v.data(), 20);
     }
 }T_UINT160;
 
 typedef struct _thyperblockbody
 {
-    vector<list<T_SHA256>> localBlocksHeaderHash;     //HC: 子块头hash
+    vector<list<T_SHA256>> localBlocksHeaderHash;     //
 
-    vector<T_UINT160> listBRAddr;                   //HC: 基础奖励
-    string sScript;                                 //HC: 共识脚本
-    string sAuth;                                   //HC: 签注
+    vector<T_UINT160> listBRAddr;                   //
+    string sScript;                                 //
+    string sAuth;                                   //
 
     _thyperblockbody() {}
 
@@ -744,7 +869,7 @@ typedef struct _thyperblockbody
     {
         vector<const T_SHA256*> v;
         for (auto &l : localBlocksHeaderHash) {
-            for (auto &h: l) {
+            for (auto &h : l) {
                 v.push_back(&h);
             }
         }
@@ -771,46 +896,46 @@ private:
     template <typename Archive>
     void save(Archive& ar, const unsigned int version) const
     {
-		VERSION_CHECK(*this, 0)
-		uint32 listnum = static_cast<uint32>(localBlocksHeaderHash.size());
-		ar << listnum;
-		for (auto list : localBlocksHeaderHash) {
-			uint32 hashnum = static_cast<uint32>(list.size());
-			ar << hashnum;
-			for (T_SHA256 hash : list) {
-				ar << hash;
-			}
-		}
+        VERSION_CHECK(*this, 0)
+        uint32 listnum = static_cast<uint32>(localBlocksHeaderHash.size());
+        ar << listnum;
+        for (auto list : localBlocksHeaderHash) {
+            uint32 hashnum = static_cast<uint32>(list.size());
+            ar << hashnum;
+            for (T_SHA256 hash : list) {
+                ar << hash;
+            }
+        }
 
-		uint32 addrnum = static_cast<uint32>(listBRAddr.size());
-		ar << addrnum;
-		ar << boost::serialization::make_array(listBRAddr.data(), addrnum);
+        uint32 addrnum = static_cast<uint32>(listBRAddr.size());
+        ar << addrnum;
+        ar << boost::serialization::make_array(listBRAddr.data(), addrnum);
 
         uint32 len = static_cast<uint32>(sScript.size());
         ar << len;
-		ar << boost::serialization::make_binary_object(sScript.c_str(), len);
+        ar << boost::serialization::make_binary_object(sScript.c_str(), len);
 
-		uint16 authlen = static_cast<uint16>(sAuth.size());
+        uint16 authlen = static_cast<uint16>(sAuth.size());
         ar << authlen;
-		ar << boost::serialization::make_binary_object(sAuth.c_str(), authlen);
+        ar << boost::serialization::make_binary_object(sAuth.c_str(), authlen);
     }
 
     template<class Archive>
     void load(Archive& ar, const unsigned int version)
     {
-		VERSION_CHECK(*this, 0)
-		uint32 listnum = 0;
-		ar >> listnum;
-		localBlocksHeaderHash.resize(listnum);
-		for (uint32 i = 0; i < listnum; i++) {
-			uint32 hashnum;
-			ar >> hashnum;
-			for (uint32 j = 0; j < hashnum; j++) {
-				T_SHA256 hash;
-				ar >> hash;
-				localBlocksHeaderHash[i].push_back(hash);
-			}
-		}
+        VERSION_CHECK(*this, 0)
+        uint32 listnum = 0;
+        ar >> listnum;
+        localBlocksHeaderHash.resize(listnum);
+        for (uint32 i = 0; i < listnum; i++) {
+            uint32 hashnum;
+            ar >> hashnum;
+            for (uint32 j = 0; j < hashnum; j++) {
+                T_SHA256 hash;
+                ar >> hash;
+                localBlocksHeaderHash[i].push_back(hash);
+            }
+        }
 
 		uint32 addrnum;
 		ar >> addrnum;
@@ -819,13 +944,13 @@ private:
 
         uint32 len;
         ar >> len;
-		sScript.resize(len);
-		ar >> boost::serialization::make_binary_object(const_cast<char*>(sScript.data()), len);
+        sScript.resize(len);
+        ar >> boost::serialization::make_binary_object(const_cast<char*>(sScript.data()), len);
 
         uint16 lenAuth;
         ar >> lenAuth;
-		sAuth.resize(lenAuth);
-		ar >> boost::serialization::make_binary_object(const_cast<char*>(sAuth.data()), lenAuth);
+        sAuth.resize(lenAuth);
+        ar >> boost::serialization::make_binary_object(const_cast<char*>(sAuth.data()), lenAuth);
     }
     BOOST_SERIALIZATION_SPLIT_MEMBER()
 }T_HYPERBLOCKBODY;
@@ -863,9 +988,9 @@ typedef struct _thyperblock
     inline const T_SHA256& GetPreHash() const { return header.tPreHash; }
     inline const T_SHA256& GetPreHeaderHash() const { return header.tPreHeaderHash; }
 
-	inline const string& GetAuth() const { return body.sAuth; }
-	inline const string& GetScript() const { return body.sScript; }
-	inline const vector<T_UINT160>& GetBRAddr() const { return body.listBRAddr; }
+    inline const string& GetAuth() const { return body.sAuth; }
+    inline const string& GetScript() const { return body.sScript; }
+    inline const vector<T_UINT160>& GetBRAddr() const { return body.listBRAddr; }
 
     const T_SHA256& GetHashSelf() const {
         if (_myselfHash.isNull()) {
@@ -879,10 +1004,13 @@ typedef struct _thyperblock
 
     uint32 GetChildBlockCount() const {
         return accumulate(header.vecChildChainBlockCount.begin(),
-            header.vecChildChainBlockCount.end(),0);
+            header.vecChildChainBlockCount.end(), 0);
     }
 
     void AddChildChain(LIST_T_LOCALBLOCK && childchain) {
+        if (childchain.size() == 0) {
+            return;
+        }
         uint16 chainnum = static_cast<uint16>(vecChildChain.size()) + 1;
         for (auto &l : childchain) {
             l.SetPreHID(GetID() - 1);
@@ -902,7 +1030,7 @@ typedef struct _thyperblock
         header.vecChildChainBlockCount.clear();
 
         uint32_t chainnum = 0;
-        for (auto &chain : vecChildChain ) {
+        for (auto &chain : vecChildChain) {
 
             chainnum++;
             header.vecChildChainBlockCount.push_back(static_cast<uint16>(chain.size()));
@@ -936,7 +1064,7 @@ typedef struct _thyperblock
         header.tMerkleHashAll = body.MTRoot();
         calcuateWeight();
 
-        //HC:TO DO
+        //
         //tBRroot
         //tXWHash
         //tScriptHash
@@ -953,7 +1081,7 @@ typedef struct _thyperblock
         }
 
         auto itrblockhash = header.listTailLocalBlockHash.begin();
-        for (size_t i=0; i < chaincount; ++i) {
+        for (size_t i = 0; i < chaincount; ++i) {
             if (vecChildChain[i].size() != header.vecChildChainBlockCount[i]) {
                 return false;
             }
@@ -966,7 +1094,7 @@ typedef struct _thyperblock
         if (header.tMerkleHashAll != body.MTRoot()) {
             return false;
         }
-        //HC:TO DO
+        //
         //....
         return true;
     }
@@ -1006,9 +1134,9 @@ BOOST_CLASS_VERSION(T_HYPERBLOCK, 0)
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////
-typedef struct _tchainStateinfo //HC: 健康状态结构
+typedef struct _tchainStateinfo //
 {
-    uint64 uiBlockNum;			//HC: 超块号
+    uint64 uiBlockNum;			//
 
     _tchainStateinfo& operator = (const _tchainStateinfo& arRes);
     void SetBlockNum(uint64 BlockNum);
@@ -1019,13 +1147,13 @@ typedef struct _tchainStateinfo //HC: 健康状态结构
 
 typedef struct _tpeerinfo
 {
-    T_PEERADDRESS tPeerInfoByMyself;	//HC: 内网信息
-    T_PEERADDRESS tPeerInfoByOther;		//HC: 外网信息
-    uint16 uiState;						//HC: OUT为外网，INT为内网
+    T_PEERADDRESS tPeerInfoByMyself;	//
+    T_PEERADDRESS tPeerInfoByOther;		//
+    uint16 uiState;						//
     uint16 uiNatTraversalState;
-    uint64 uiTime;						//HC: 最近联系时间
-    int8 strName[MAX_NODE_NAME_LEN];	//HC: 节点名称
-    uint16 uiNodeState;					//HC: 节点状态
+    uint64 uiTime;						//
+    int8 strName[MAX_NODE_NAME_LEN];	//
+    uint16 uiNodeState;					//
 
     _tpeerinfo() : tPeerInfoByMyself(CUInt128()), tPeerInfoByOther(CUInt128())
     {
@@ -1065,6 +1193,11 @@ typedef struct _tblockstateaddr
     _tblockstateaddr() :tPeerAddr(CUInt128()), tPeerAddrOut(CUInt128()) {};
     _tblockstateaddr(T_PEERADDRESS PeerAddr, T_PEERADDRESS PeerAddrOut);
     _tblockstateaddr& operator = (const _tblockstateaddr& arRes);
+
+    _tblockstateaddr(const _tblockstateaddr&) = default;
+    _tblockstateaddr(_tblockstateaddr&&) = default;
+    _tblockstateaddr& operator=(_tblockstateaddr&&) = default;
+
     void SetBlockStateAddr(T_PEERADDRESS PeerAddr, T_PEERADDRESS PeerAddrOut);
     void SetPeerAddr(T_PEERADDRESS PeerAddr);
     void SetPeerAddrOut(T_PEERADDRESS PeerAddrOut);
@@ -1084,22 +1217,23 @@ private:
 }T_BLOCKSTATEADDR, *T_PBLOCKSTATEADDR;
 BOOST_CLASS_VERSION(T_BLOCKSTATEADDR, 0)
 
-typedef struct _tlocalconsensus             //HC: 每一个小链里边的一个小块信息
+typedef struct _tlocalconsensus             //
 {
-    T_BLOCKSTATEADDR tPeer;                 //HC: local块对应节点IP信息
-    T_LOCALBLOCK  tLocalBlock;              //HC: local块信息
-    uint64 uiRetryTime;                     //HC: 重试次数
-    char strFileHash[DEF_SHA512_LEN + 1];   //HC: 上链hash
+    T_BLOCKSTATEADDR tPeer;                 //
+    T_LOCALBLOCK  tLocalBlock;              //
+    uint64 uiRetryTime = 0;                       //
+    char strFileHash[DEF_SHA512_LEN + 1] = { 0 };   //
 
-    _tlocalconsensus()
-    {
-        memset(strFileHash, 0, DEF_SHA512_LEN + 1);
-        uiRetryTime = 0;
-    }
+    _tlocalconsensus() {}
 
     _tlocalconsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, uint64 RetryTime, const char *FileHash);
     _tlocalconsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, uint64 RetryTime);
     _tlocalconsensus& operator = (const _tlocalconsensus& arRes);
+
+    _tlocalconsensus(const _tlocalconsensus&) = default;
+    _tlocalconsensus(_tlocalconsensus&&) = default;
+    _tlocalconsensus& operator=(_tlocalconsensus&&) = default;
+
     void SetLoaclConsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, uint64 RetryTime, const char *FileHash);
     void SetLoaclConsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, uint64 RetryTime);
     void SetLoaclConsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock);
@@ -1126,17 +1260,17 @@ private:
         ar & tPeer;
         ar & tLocalBlock;
         ar & uiRetryTime;
-		ar & boost::serialization::make_array(strFileHash, DEF_SHA512_LEN + 1);
+        ar & boost::serialization::make_array(strFileHash, DEF_SHA512_LEN + 1);
     }
 
 }T_LOCALCONSENSUS, *T_PLOCALCONSENSUS;
 BOOST_CLASS_VERSION(T_LOCALCONSENSUS, 0)
 
-typedef struct _tglobalconsenus		//HC: 全局共识过程中一个块信息
+typedef struct _tglobalconsenus //
 {
-    T_BLOCKSTATEADDR tPeer;		//HC: 每一个小块的节点信息
-    T_LOCALBLOCK  tLocalBlock;	//HC: 每一个小块信息
-    uint64 uiAtChainNum;		//HC: 每一个小块在哪一条链上
+    T_BLOCKSTATEADDR tPeer;     //
+    T_LOCALBLOCK  tLocalBlock;  //
+    uint64 uiAtChainNum;        //
 
     T_BLOCKSTATEADDR GetPeer()const;
     uint64 GetChainNo()const;
@@ -1165,10 +1299,10 @@ BOOST_CLASS_VERSION(T_GLOBALCONSENSUS, 0)
 
 typedef struct _tbuddyinfo
 {
-    uint8 tType;				//HC: 1表示上链请求包 2.表示上链请求回应包
+    uint8 tType;                //
     size_t bufLen;
-    string recvBuf;				//HC: 包具体内容
-    T_PEERADDRESS tPeerAddrOut;	//HC: 请求的地址来源
+    string recvBuf;             //
+    T_PEERADDRESS tPeerAddrOut; //
 
     uint8 GetType()const;
     size_t GetBufferLength()const;
@@ -1187,7 +1321,7 @@ typedef LIST_T_PLOCALCONSENSUS::iterator ITR_LIST_T_PLOCALCONSENSUS;
 typedef struct _tbuddyinfostate
 {
     int8 strBuddyHash[DEF_STR_HASH256_LEN];
-    uint8 uibuddyState;		//HC: 四次握手的状态
+    uint8 uibuddyState;     //
     T_PEERADDRESS tPeerAddrOut;
 
     LIST_T_LOCALCONSENSUS localList;
@@ -1220,8 +1354,8 @@ typedef struct _tbuddyinfostate
 
 typedef struct _tsearchinfo
 {
-    T_LOCALBLOCKADDRESS addr;   //HC: 块地址
-    uint64 uiTime;              //HC: 超块生成时间
+    T_LOCALBLOCKADDRESS addr;   //
+    uint64 uiTime;              //
     _tsearchinfo() : uiTime(time(nullptr)) {
     }
     uint64 GetHyperID()const {
@@ -1246,7 +1380,78 @@ typedef LIST_T_PBUDDYINFOSTATE::iterator ITR_LIST_T_PBUDDYINFOSTATE;
 typedef list<T_BUDDYINFOSTATE> LIST_T_BUDDYINFOSTATE;
 typedef LIST_T_BUDDYINFOSTATE::iterator ITR_LIST_T_BUDDYINFOSTATE;
 
-using LB_UUID = string; //HC: local block uuid
+using LB_UUID = string; //
+
+typedef struct _tpalyloadaddr
+{
+    _tpalyloadaddr(const T_LOCALBLOCKADDRESS& a, const string& p) :addr(a), payload(p) {}
+    T_LOCALBLOCKADDRESS addr;
+    string payload;
+}T_PAYLOADADDR;
+
+//
+using HANDLEGENESISCBFN = std::function<bool(vector<T_PAYLOADADDR>&)>;
+
+//
+using CONSENSUSCBFN = std::function<bool(T_PAYLOADADDR&, map<boost::any, T_LOCALBLOCKADDRESS>&, boost::any&)>;
+using VALIDATEFN = CONSENSUSCBFN;
+
+//
+using VALIDATECHAINFN = std::function<bool(vector<T_PAYLOADADDR>& vecPA)>;
+
+//
+using ACCEPTCHAINFN = std::function<bool(T_APPTYPE&, vector<T_PAYLOADADDR>& vecPA, uint32_t& hid, T_SHA256& thhash)>;
+
+//
+using CHECKCHAINFN = std::function<bool(vector<T_PAYLOADADDR>& vecPA, uint32_t& prevhid, T_SHA256& tprevhhash)>;
+
+//
+using REONCHAINFN = std::function<bool(string& payload, std::string& newpayload)>;
+
+//
+using UUIDFN = std::function<bool(string& payload, string& uuid)>;
+
+//
+using PUTONCHAINFN = std::function<bool()>;
+
+//
+using GETVPATHFN = std::function<bool(T_LOCALBLOCKADDRESS& sAddr, T_LOCALBLOCKADDRESS& eAddr, vector<string>& vecVPath)>;
+
+//
+using PUTGLOBALCHAINFN = std::function<bool()>;
+
+using GETNEIGHBORNODES = std::function<bool(list<string>&)>;
+
+//
+using CONSENSUSNOTIFY = std::tuple<HANDLEGENESISCBFN, 
+                                    PUTONCHAINFN, 
+                                    PUTGLOBALCHAINFN, 
+                                    REONCHAINFN, 
+                                    VALIDATEFN, 
+                                    VALIDATECHAINFN, 
+                                    ACCEPTCHAINFN,
+                                    CHECKCHAINFN,
+                                    UUIDFN, 
+                                    GETVPATHFN,
+                                    GETNEIGHBORNODES>;
+
+enum class cbindex : char {
+    HANDLEGENESISIDX = 0, 
+    PUTONCHAINIDX, 
+    PUTGLOBALCHAINIDX, 
+    REONCHAINIDX, 
+    VALIDATEFNIDX, 
+    VALIDATECHAINIDX, 
+    ACCEPTCHAINIDX,
+    CHECKCHAINIDX,
+    GETUUIDIDX, 
+    GETVPATHIDX, 
+    GETNEIGHBORNODESIDX 
+};
+
+enum class CBRET : char { UNREGISTERED = 0, REGISTERED_TRUE, REGISTERED_FALSE };
+
+
 typedef map<LB_UUID, T_SEARCHINFO> MAP_T_SEARCHONCHAIN;
 typedef MAP_T_SEARCHONCHAIN::iterator ITR_MAP_T_SEARCHONCHAIN;
 
@@ -1265,12 +1470,12 @@ typedef map<uint64, LIST_T_BLOCKSTATEADDR> MAP_BLOCK_STATE;
 typedef MAP_BLOCK_STATE::iterator ITR_MAP_BLOCK_STATE;
 
 
-typedef struct _tpeerconf		//HC: 存放从配置文件读取的文件信息
+typedef struct _tpeerconf       //
 {
-    T_PEERADDRESS tPeerAddr;	//HC: 内网信息
-    T_PEERADDRESS tPeerAddrOut;	//HC: 外网信息
-    uint16 uiPeerState;			//HC: 内网还是外网
-    int8 strName[MAX_NODE_NAME_LEN];	//HC: 节点名称
+    T_PEERADDRESS tPeerAddr;    //
+    T_PEERADDRESS tPeerAddrOut; //
+    uint16 uiPeerState;         //
+    int8 strName[MAX_NODE_NAME_LEN];    //
 
     T_PEERADDRESS GetIntranetAddress()const;
     T_PEERADDRESS GetInternetAddress()const;
@@ -1281,16 +1486,16 @@ typedef struct _tpeerconf		//HC: 存放从配置文件读取的文件信息
 
 }T_PEERCONF, *T_PPEERCONF;
 
-typedef std::vector<T_PPEERCONF>	VEC_T_PPEERCONF;
+typedef std::vector<T_PPEERCONF>    VEC_T_PPEERCONF;
 typedef VEC_T_PPEERCONF::iterator   ITR_VEC_T_PPEERCONF;
 
-typedef struct _tconffile			//HC: 这一部分已经修改 只用到了第一个变量
+typedef struct _tconffile           //
 {
-    uint16			uiSaveNodeNum;	//HC: 请求连续转发次数
-    uint32			uiLocalIP;
-    uint32			uiLocalPort;
+    uint16          uiSaveNodeNum;  //
+    uint32          uiLocalIP;
+    uint32          uiLocalPort;
     string          strLocalNodeName;
-    string			strLogDir;
+    string          strLogDir;
     VEC_T_PPEERCONF vecPeerConf;
 
     uint16 GetSaveNodeNum()const;
@@ -1314,10 +1519,10 @@ private:
     virtual ~CCommonStruct();
 
 public:
-    //static void GetGUID(char* acpBuf, unsigned int auiBufLen, T_PGUID pguid);
-    void static gettimeofday_update(struct timeval *ptr);
+    static time_t gettimeofday_update();
     static int CompareHash(const T_SHA256& arhashLocal, const T_SHA256& arhashGlobal);
     static void Hash256ToStr(char* getStr, const T_SHA256& hash);
+    static T_SHA256 StrToHash256(string hashStr);
 
     static void Hash512ToStr(char* getStr, const T_PSHA512 phash);
     static void StrToHash512(unsigned char *des, char* getStr);
@@ -1326,16 +1531,11 @@ public:
     static void ReplaceAll(string& str, const string& old_value, const string& new_value);
     static void ReparePath(string& astrPath);
 
-    //static bool ReadConfig();
     static string GetLocalIp();
     static char* Time2String(time_t time1);
 
     static string generateNodeId(bool isbase62 = false);
 
-private:
-#ifdef WIN32
-    void static win_gettimeofday(struct timeval *tp);
-#endif
 };
 
 extern T_CONFFILE	g_confFile;

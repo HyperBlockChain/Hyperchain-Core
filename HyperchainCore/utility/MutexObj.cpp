@@ -66,12 +66,28 @@ void CMutexObj::UnLock()
 
 CAutoMutexLock::CAutoMutexLock(CMutexObj& aCriticalSection) :m_oCriticalSection(aCriticalSection)
 {
-	m_oCriticalSection.Lock();
+    lock();
 }
 
 CAutoMutexLock::~CAutoMutexLock()
 {
-	m_oCriticalSection.UnLock();
+    unlock();
+}
+
+void CAutoMutexLock::lock()
+{
+    if (!m_islocked) {
+        m_oCriticalSection.Lock();
+        m_islocked = true;
+    }
+}
+
+void CAutoMutexLock::unlock()
+{
+    if (m_islocked) {
+        m_oCriticalSection.UnLock();
+        m_islocked = false;
+    }
 }
 
 //semaphore_t

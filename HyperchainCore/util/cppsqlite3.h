@@ -36,6 +36,8 @@
 #include "../thirdparty/sqlite3/sqlite3.h"
 #include <cstdio>
 #include <cstring>
+#include <string>
+using namespace std;
 
 #define CPPSQLITE_ERROR 1000
 
@@ -154,6 +156,9 @@ public:
     const char* getStringField(int nField, const char* szNullValue="");
     const char* getStringField(const char* szField, const char* szNullValue="");
 
+
+	string getTextField(const char* szField, const char* szNullValue="");
+
     const unsigned char* getBlobField(int nField, int& nLen);
     const unsigned char* getBlobField(const char* szField, int& nLen);
 
@@ -246,6 +251,7 @@ public:
 
     CppSQLite3Query execQuery();
 
+	void bind(int nParam, const string &strValue);
 	void bind(int nParam, const char* szValue, size_t len);
     void bind(int nParam, const char* szValue);
     void bind(int nParam, const int nValue);

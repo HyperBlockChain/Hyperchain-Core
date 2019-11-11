@@ -22,19 +22,19 @@ DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#ifdef WIN32
-#include <winsock2.h>
-#endif
-
 #include "headers/inter_public.h"
 #include "headers/commonstruct.h"
 #include "utility/MutexObj.h"
 #include "p2pprotocol.h"
+#include "node/ITask.hpp"
+#include <boost/signals2.hpp>
 
 #include <thread>
 #include <memory>
 #include <functional>
 #include <atomic>
+#include <mutex>
+#include <unordered_map>
 using namespace std;
 
 enum _enodestate
@@ -58,7 +58,7 @@ typedef struct _tBuddyInfo
 
     void SetBlockNum(uint16 num);
 
-}T_STRUCTBUDDYINFO, *T_PSTRUCTBUDDYINFO;
+}T_STRUCTBUDDYINFO, * T_PSTRUCTBUDDYINFO;
 
 typedef struct _tOnChainHashInfo
 {
@@ -70,7 +70,7 @@ typedef struct _tOnChainHashInfo
 
     void Set(uint64 t, string h);
 
-}T_ONCHAINHASHINFO, *T_PONCHAINHASHINFO;
+}T_ONCHAINHASHINFO, * T_PONCHAINHASHINFO;
 
 enum class CONSENSUS_PHASE :char {
     LOCALBUDDY_PHASE = 0,
@@ -79,12 +79,63 @@ enum class CONSENSUS_PHASE :char {
     PREPARE_LOCALBUDDY_PHASE
 };
 
+class CycleQueue
+{
+public:
+    CycleQueue()
+    {
+        head = queue.begin();
+        tail = queue.begin();
+    }
+
+    bool push(TASKTYPE data)
+    {
+        *head = data;
+
+        head++;
+
+        if (head == queue.end())
+        {
+            head = queue.begin();
+        }
+
+        if (head == tail)
+        {
+            tail++;
+            if (tail == queue.end())
+                tail = queue.begin();
+        }
+
+        return true;
+    }
+
+    bool pop(TASKTYPE* data)
+    {
+        if (head == tail)
+        {
+            return false;
+        }
+
+        *data = *tail;
+
+        tail++;
+        if (tail == queue.end())
+            tail = queue.begin();
+
+        return true;
+    }
+
+private:
+    array<TASKTYPE, 100> queue;
+    array<TASKTYPE, 100>::iterator head;
+    array<TASKTYPE, 100>::iterator tail;
+};
+
 typedef struct _tp2pmanagerstatus
 {
     bool bStartGlobalFlag;
 
     std::atomic<bool> bHaveOnChainReq;
-    std::atomic<uint64> uiMaxBlockNum;
     std::atomic<uint64> uiConsensusBlockNum;
     uint16 usBuddyPeerCount;
     uint16 uiNodeState;
@@ -92,10 +143,11 @@ typedef struct _tp2pmanagerstatus
     uint64 uiRecvRegisReqNum;
     uint64 uiSendConfirmingRegisReqNum;
     uint64 uiRecvConfirmingRegisReqNum;
-    T_HYPERBLOCK tPreHyperBlock;
     T_LOCALBLOCK tPreLocalBlock;
     T_PEERADDRESS tLocalBuddyAddr;
-    T_LOCALCONSENSUS curBuddyBlock;
+
+    CMutexObj		MuxCycleQueueTask;
+    CycleQueue		CycleQueueTask;
 
     CMutexObj		 MuxlistOnChainReq;
     LIST_T_LOCALCONSENSUS listOnChainReq;
@@ -126,9 +178,8 @@ typedef struct _tp2pmanagerstatus
 
     T_STRUCTBUDDYINFO tBuddyInfo;
 
-
-    LIST_T_HYPERBLOCK   m_HchainBlockList;
-    CMutexObj   m_MuxHchainBlockList;
+    CMutexObj		 MuxMulticastNodes;
+    vector<CUInt128> MulticastNodes;
 
     void clearStatus();
 
@@ -141,7 +192,7 @@ typedef struct _tp2pmanagerstatus
 
     bool HaveOnChainReq()const;
 
-    //HC: 返回当前共识子块头里存放的前一个超块Hash,这不完全等同于本节点最新超块的hash
+    //
     T_SHA256 GetConsensusPreHyperBlockHash()const;
 
     uint16 GetBuddyPeerCount()const;
@@ -159,27 +210,7 @@ typedef struct _tp2pmanagerstatus
     uint64 GettTimeOfConsensus();
     CONSENSUS_PHASE GetCurrentConsensusPhase() const;
 
-    bool LocalBuddyChainState()const;
-
     T_PEERADDRESS GetLocalBuddyAddr()const;
-
-    //HC: notice to add mutex protect(m_MuxHchainBlockList) calling this function
-    T_HYPERBLOCK& GetPreHyperBlock();
-
-    uint64 GetMaxBlockID() const {
-        return uiMaxBlockNum;
-    }
-
-    T_SHA256 GetPreHyperBlockHash() {
-        CAutoMutexLock muxAuto(m_MuxHchainBlockList);
-        return tPreHyperBlock.GetHashSelf();
-    }
-
-    void GetPreHyperBlockIDAndHash(uint64 &id, T_SHA256 &hash) {
-        CAutoMutexLock muxAuto(m_MuxHchainBlockList);
-        hash = tPreHyperBlock.GetHashSelf();
-        id = tPreHyperBlock.GetID();
-    }
 
     uint64 GetSendPoeNum()const;
 
@@ -201,8 +232,6 @@ typedef struct _tp2pmanagerstatus
 
     void SetRecvConfirmingRegisReqNum(uint64 num);
 
-    void SetNextStartTimeNewest(uint64 t);
-
     void SetGlobalBuddyAddr(T_PEERADDRESS addr);
 
     uint64 GetRecvPoeNum()const;
@@ -213,34 +242,78 @@ typedef struct _tp2pmanagerstatus
 
     void SetBuddyInfo(T_STRUCTBUDDYINFO info);
 
-    //HC: hyper block cache function
-    void loadHyperBlockCache();
-    bool updateHyperBlockCache(T_HYPERBLOCK &hyperBlock);
-    bool getHyperBlock(uint64 blockNum, T_HYPERBLOCK &hyperBlock);
-    bool getHyperBlock(const T_SHA256 &hhash, T_HYPERBLOCK &hyperblock);
+    void SetMaxBlockNum(uint64 num);
+    void SetPreHyperBlock(T_HYPERBLOCK&& h);
+
+    void SetMulticastNodes();
+    void ClearMulticastNodes();
+    vector<CUInt128> GetMulticastNodes();
+
+    void updateOnChainingState(const T_HYPERBLOCK& hyperblock);
+
+    bool ApplicationCheck(T_HYPERBLOCK& hyperblock);
+    bool ApplicationAccept(T_HYPERBLOCK& hyperblock);
 
     void updateLocalBuddyBlockToLatest();
 
     void cleanConsensusEnv();
 
-    //HC:跟踪本地块上链状态
-    void trackLocalBlock(const T_LOCALBLOCK & localblock);
+    //
+    void trackLocalBlock(const T_LOCALBLOCK& localblock);
     void initOnChainingState(uint64 hid);
 
+    void setAppCallback(const T_APPTYPE& app, const CONSENSUSNOTIFY& notify);
+    void removeAppCallback(const T_APPTYPE& app);
+
+    template<cbindex I, typename... Args>
+    bool allAppCallback(Args&... args)
+    {
+        std::lock_guard<std::recursive_mutex> lck(_muxmapcbfn);
+        for (auto appnoti : _mapcbfn) {
+            auto fn = std::get<static_cast<size_t>(I)>(appnoti.second);
+            if (fn) {
+                fn(args...);
+            }
+        }
+        return true;
+    }
+
+    template<cbindex I, typename... Args>
+    CBRET appCallback(const T_APPTYPE& app, Args&... args)
+    {
+        //
+        //
+        std::lock_guard<std::recursive_mutex> lck(_muxmapcbfn);
+        if (_mapcbfn.count(app)) {
+            auto& noti = _mapcbfn.at(app);
+            auto fn = std::get<static_cast<size_t>(I)>(noti);
+            if (fn) {
+                return fn(args...) ? (CBRET::REGISTERED_TRUE) : (CBRET::REGISTERED_FALSE);
+            }
+        }
+        return CBRET::UNREGISTERED;
+    }
+
+    using FnHyperBlockUpdated = boost::function<void(const T_HYPERBLOCK&)>;
+    void RegisterHyperBlockSignal(FnHyperBlockUpdated f) {
+        SignalHyperBlockUpdated.connect(f);
+    }
+    void RemoveHyperBlockSignal(FnHyperBlockUpdated f) {
+        SignalHyperBlockUpdated.disconnect(&f);
+    }
+
+    boost::signals2::signal<void(const T_HYPERBLOCK & h)> SignalHyperBlockUpdated;
 private:
-    void SetMaxBlockNum(uint64 num);
-    void SetPreHyperBlock(T_HYPERBLOCK&& h);
-    void SaveToLocalStorage(const T_HYPERBLOCK &tHyperBlock);
 
-    bool loadHyperBlock(uint64 blockNum, T_HYPERBLOCK &hyperBlock);
-    bool loadHyperBlock(const T_SHA256 &hhash, T_HYPERBLOCK &hyperBlock);
-    bool isAcceptHyperBlock(uint64 blockNum, uint64 blockCount, T_SHA256 tHashSelf, bool isAlreadyExisted);
-    bool isMoreWellThanLocal(const T_HYPERBLOCK &localHyperBlock, uint64 blockid, uint64 blockcount, const T_SHA256& hhashself);
+    void ToAppPayloads(const T_HYPERBLOCK& hyperblock, map<T_APPTYPE, vector<T_PAYLOADADDR>>& mapPayload);
 
 private:
 
-}T_P2PMANAGERSTATUS, *T_PP2PMANAGERSTATUS;
+    std::recursive_mutex _muxmapcbfn;
+    unordered_map<T_APPTYPE, CONSENSUSNOTIFY> _mapcbfn;
+
+}T_P2PMANAGERSTATUS, * T_PP2PMANAGERSTATUS;
 
 
 //////////////////////////////////////////////////////////////////////////
-extern T_P2PMANAGERSTATUS g_tP2pManagerStatus;
+extern T_P2PMANAGERSTATUS* g_tP2pManagerStatus;

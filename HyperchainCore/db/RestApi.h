@@ -45,6 +45,10 @@ class CommandHandler
 {
 public:
     CommandHandler() {}
+    ~CommandHandler() {
+		close();
+	}
+
     CommandHandler(utility::string_t url, http_listener_config server_config);
     pplx::task<void> open() { return m_listener.open(); }
     pplx::task<void> close() { return m_listener.close(); }
@@ -83,8 +87,8 @@ public:
 	json::value getLocalblockHead(uint64_t hid, uint16 id, uint16 chain_num);
 	json::value getLocalblockBody(uint64_t hid, uint16 id, uint16 chain_num);
 
-	json::value getHyperblocks(uint64_t nStartId, uint64_t nNum);		//HC: include localblocks
-	json::value getHyperblockInfo(uint64_t hid);								//HC: not include localblocks
+	json::value getHyperblocks(uint64_t nStartId, uint64_t nNum);		//
+	json::value getHyperblockInfo(uint64_t hid);								//
 	json::value getHyperblockHead(uint64_t hid);
 	json::value getHyperblockBody(uint64_t hid);
 

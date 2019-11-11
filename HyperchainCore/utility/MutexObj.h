@@ -58,10 +58,13 @@ private:
 class CAutoMutexLock
 {
 public:
-	CAutoMutexLock(CMutexObj& aCriticalSection);
-	~CAutoMutexLock();
+    CAutoMutexLock(CMutexObj& aCriticalSection);
+    ~CAutoMutexLock();
+    void lock();
+    void unlock();
 private:
-	CMutexObj& m_oCriticalSection;
+    CMutexObj& m_oCriticalSection;
+    bool m_islocked = false;
 };
 
 class semaphore_t{

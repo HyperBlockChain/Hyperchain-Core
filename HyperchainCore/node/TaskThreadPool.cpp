@@ -22,7 +22,6 @@ DEALINGS IN THE SOFTWARE.
 
 #include "TaskThreadPool.h"
 #include "newLog.h"
-//#include "../headers/UUFile.h"
 
 TaskThreadPool::TaskThreadPool(uint32_t numthreads, uint32_t maxnumtasks) :
     _numthreads(numthreads), _taskqueue(maxnumtasks), _isstop(false)

@@ -23,15 +23,18 @@ DEALINGS IN THE SOFTWARE.
 #include "headers/UUFile.h"
 #include "util/sole.hpp"
 #include "Log.h"
+#include "consensus/buddyinfo.h"
 
 #ifdef WIN32
 #include <winsock2.h>
 #endif
 
+#include <chrono>
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <boost/uuid/uuid_generators.hpp>
-
+using std::chrono::system_clock;
+#include <unordered_map>
 
 T_CONFFILE	g_confFile;
 UUFile			m_uufile;
@@ -44,30 +47,15 @@ CCommonStruct::~CCommonStruct()
 {
 }
 
-#ifdef WIN32
-void CCommonStruct::win_gettimeofday(struct timeval *tp)
+time_t CCommonStruct::gettimeofday_update()
 {
-    uint64_t  intervals;
-    FILETIME  ft;
+    std::chrono::time_point<system_clock, std::chrono::seconds> tp;
+    tp = std::chrono::time_point_cast<std::chrono::seconds>(system_clock::now());
+    std::time_t timestamp = tp.time_since_epoch().count();
 
-    GetSystemTimeAsFileTime(&ft);
-
-    intervals = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
-    intervals -= 116444736000000000;
-
-    tp->tv_sec = (long)(intervals / 10000000);
-    tp->tv_usec = (long)((intervals % 10000000) / 10);
+    return timestamp;
 }
-#endif
 
-void CCommonStruct::gettimeofday_update(struct timeval *ptr)
-{
-#ifdef WIN32
-    win_gettimeofday(ptr);
-#else
-    gettimeofday(ptr, 0);
-#endif
-}
 int CCommonStruct::CompareHash(const T_SHA256& arhashFirst, const T_SHA256& arhashSecond)
 {
     const unsigned char* pFirst = NULL;
@@ -95,6 +83,38 @@ void CCommonStruct::Hash256ToStr(char* getStr, const T_SHA256& hash)
         sprintf(ucBuf, "%02x", hash.pID[uiNum]);
         strcat(getStr, ucBuf);
     }
+}
+
+std::vector<unsigned char> hexToBin(const std::string &hex)
+{
+    std::vector<unsigned char> dest;
+    auto len = hex.size();
+    dest.reserve(len / 2);
+    for (decltype(len) i = 0; i < len; i += 2)
+    {
+        unsigned int element;
+        std::istringstream strHex(hex.substr(i, 2));
+        strHex >> std::hex >> element;
+        dest.push_back(static_cast<unsigned char>(element));
+    }
+    return dest;
+}
+
+T_SHA256 CCommonStruct::StrToHash256(string hashStr)
+{
+    T_SHA256 hash(0);
+
+    if (hashStr.size() == 0)
+        return hash;
+
+    int i = 0;
+    auto charVec = hexToBin(hashStr);
+    for (auto element : charVec) {
+        hash.pID[i] = element;
+        i++;
+    }
+
+    return hash;
 }
 
 void CCommonStruct::Hash512ToStr(char* getStr, T_PSHA512 phash)
@@ -268,7 +288,7 @@ string CCommonStruct::generateNodeId(bool isbase62)
     string struuid = boost::uuids::to_string(r_uuid);
     struuid.erase(std::remove(struuid.begin(), struuid.end(), '-'), struuid.end());*/
 
-    //HC: boost1.68.0在Centos 7 下执行random_generator有时会异常，所以改用下面方式
+    //
     sole::uuid u4 = sole::uuid4();
     string struuid;
     if (isbase62) {
@@ -289,9 +309,9 @@ T_SHA256 calculateMerkleTreeRoot(vector<const T_SHA256*> &mttree)
     }
 
     vector<T_SHA256> vMerkleTree;
-    for (size_t i = 0; i < s; i+=2) {
+    for (size_t i = 0; i < s; i += 2) {
         Digest<DT::sha256> digest;
-        int i2 = (i + 1 < s - 1) ? i+1 : s-1;
+        int i2 = (i + 1 < s - 1) ? i + 1 : s - 1;
         digest.AddData(mttree[i]->data(), sizeof(mttree[i]->pID));
         digest.AddData(mttree[i2]->data(), sizeof(mttree[i2]->pID));
         vMerkleTree.emplace_back(digest.getDigest());
@@ -311,5 +331,26 @@ T_SHA256 calculateMerkleTreeRoot(vector<const T_SHA256*> &mttree)
     }
     return (vMerkleTree.empty() ? T_SHA256(0) : vMerkleTree.back());
 }
+
+string T_LOCALBLOCK::GetUUID() const {
+
+    string uuidpayload;
+    //
+    string payload = GetPayLoad();
+    CBRET ret =
+        g_tP2pManagerStatus->appCallback<cbindex::GETUUIDIDX>(GetAppType(), payload, uuidpayload);
+
+    Digest<DT::sha1> digest;
+    digest.AddData(&header.uiTime, sizeof(header.uiTime));
+    if (ret == CBRET::REGISTERED_TRUE) {
+        digest.AddData(uuidpayload.c_str(), uuidpayload.size());
+    }
+    else {
+        digest.AddData(body.payload.c_str(), body.payload.size());
+    }
+    std::string d = digest.getDigestBase58();
+    return string(d.data(), d.size());
+}
+
 
 

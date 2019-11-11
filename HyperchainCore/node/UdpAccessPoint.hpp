@@ -28,94 +28,95 @@ DEALINGS IN THE SOFTWARE.
 #include <cpprest/json.h>
 using namespace web;
 
-class UdpAccessPoint: public IAccessPoint {
+class UdpAccessPoint : public IAccessPoint {
 
 public:
-	UdpAccessPoint(const string & ip, uint32_t port) : _IP(ip), _port(port) {}
+    UdpAccessPoint(const string & ip, uint32_t port) : _IP(ip), _port(port) {}
 
-	UdpAccessPoint(const string & objjsonstring)
-	{
-		string s = objjsonstring;
-		init(std::move(s));
-	}
+    UdpAccessPoint(const string & objjsonstring)
+    {
+        string s = objjsonstring;
+        init(std::move(s));
+    }
 
-	UdpAccessPoint(string && objjsonstring)
-	{
-		init(std::forward<string>(objjsonstring));
-	}
+    UdpAccessPoint(string && objjsonstring)
+    {
+        init(std::forward<string>(objjsonstring));
+    }
 
-	bool isSame(IAccessPoint *other) const override
-	{
-		if (other->id() != id()) {
-			return false;
-		}
-		UdpAccessPoint *p = dynamic_cast<UdpAccessPoint*>(other);
-		if (p->_port == _port && p->_IP == _IP) {
-			return true;
-		}
-		return false;
-	}
+    bool isSame(IAccessPoint *other) const override
+    {
+        if (other->id() != id()) {
+            return false;
+        }
+        UdpAccessPoint *p = dynamic_cast<UdpAccessPoint*>(other);
+        if (p->_port == _port && p->_IP == _IP) {
+            return true;
+        }
+        return false;
+    }
 
-	int id() const override { return 1; }
+    int id() const override { return 1; }
 
-	bool open() override
-	{
-		return true;
-	}
+    bool open() override
+    {
+        return true;
+    }
 
-	int write(const char *buf, size_t len) override
-	{
-		UdpThreadPool *pUdpThreadPool = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance();
-		if (pUdpThreadPool == nullptr){
-			return -1;
-		}
-		return pUdpThreadPool->send(_IP,_port,buf, len);
-	}
+    int write(const char *buf, size_t len) override
+    {
+        UdpThreadPool *pUdpThreadPool = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance();
+        if (pUdpThreadPool == nullptr) {
+            return -1;
+        }
+        return pUdpThreadPool->send(_IP, _port, buf, len);
+    }
 
-	void close() override
-	{
+    void close() override
+    {
 
-	}
+    }
 
-	string serialize() override
-	{ 
-		json::value obj;
-		obj[_XPLATSTR("typename")] = json::value::string(s2t(CLASSNAME));
-		obj[_XPLATSTR("IP")] = json::value::string(s2t(_IP));
-		obj[_XPLATSTR("port")] = json::value::number(_port);
-		std::stringstream oss;
-		obj.serialize(oss);
-		return oss.str();
-	}
+    string serialize() override
+    {
+        json::value obj;
+        obj[_XPLATSTR("typename")] = json::value::string(CLASSNAME_U);
+        obj[_XPLATSTR("IP")] = json::value::string(s2t(_IP));
+        obj[_XPLATSTR("port")] = json::value::number(_port);
+        std::stringstream oss;
+        obj.serialize(oss);
+        return oss.str();
+    }
 
-	void ip(const string &ip) { _IP=ip; }
-	uint32_t port(uint32_t port) { return _port = port; }
+    void ip(const string &ip) { _IP = ip; }
+    uint32_t port(uint32_t port) { return _port = port; }
 
-	const string ip() { return _IP; }
-	uint32_t port() { return _port; }
+    const string ip() { return _IP; }
+    uint32_t port() { return _port; }
 
 private:
-	void init(string && objjsonstring)
-	{
-		std::error_code err;
-		std::istringstream oss(std::forward<string>(objjsonstring));
-		json::value obj = json::value::parse(oss, err);
+    void init(string && objjsonstring)
+    {
+        std::error_code err;
+        std::istringstream oss(std::forward<string>(objjsonstring));
+        json::value obj = json::value::parse(oss, err);
 
-		string tn = t2s(obj[_XPLATSTR("typename")].as_string());
-		if (tn != CLASSNAME) {
-			throw std::invalid_argument("Invalid type when constructs UdpAccessPoint");
-		}
+        utility::string_t tn = obj[_XPLATSTR("typename")].as_string();
+        if (tn != CLASSNAME_U) {
+            throw std::invalid_argument("Invalid type when constructs UdpAccessPoint");
+        }
 
-		_IP = t2s(obj[_XPLATSTR("IP")].as_string());
-		_port = obj[_XPLATSTR("port")].as_integer();
-	}
+        _IP = t2s(obj[_XPLATSTR("IP")].as_string());
+        _port = obj[_XPLATSTR("port")].as_integer();
+    }
 
 
 public:
-	static constexpr const char* CLASSNAME = "UdpAP";
+    static utility::string_t CLASSNAME_U;
+    static std::string CLASSNAME;
 
 private:
-	string _IP;
-	uint32_t _port;
+    string _IP;
+    uint32_t _port;
 };
 

@@ -46,22 +46,22 @@ using namespace std;
 
 
 
-//HC: 单条局部块链定义
-//HC: uint64:	local block id 局部块id
+//
+//
 typedef map<uint64, T_LOCALBLOCK> LocalBlockDB;
 
 
-//HC: 并行局部链定义
-//HC: uint64: local chain num 局部链号
+//
+//
 
 typedef map<uint64, LocalBlockDB> LocalChainDB;
 
 
-//HC: 超块结构
+//
 struct HyperBlockDB
 {
-    T_HYPERBLOCK hyperBlock;        //HC: 超块链
-    LocalChainDB mapLocalChain;     //HC: 局部链（并行)
+    T_HYPERBLOCK hyperBlock;        //
+    LocalChainDB mapLocalChain;     //
 
     T_HYPERBLOCK& GetHyperBlock();
     LocalChainDB& GetMapLocalChain();
@@ -69,35 +69,33 @@ struct HyperBlockDB
 };
 
 
-//HC: 超块链定义
+//
 
 typedef map<uint64, HyperBlockDB> HyperchainDB;
 
 class CHyperchainDB
 {
 public:
-    //HC: 功能函数
+    //
     static int cleanTmp(HyperchainDB &hyperchainDB);
 
 public:
     CHyperchainDB();
     ~CHyperchainDB();
 public:
-    //HC: 保存一条块信息到数据库
+    //
     static int saveHyperBlockToDB(const T_HYPERBLOCK& hyperblock);
 
-    //HC: 保存多条块信息到数据库
+    //
     static int saveHyperBlocksToDB(const vector<T_HYPERBLOCK> &vHyperblock);
 
-    //HC: 从本地数据库读取块信息
+    //
     static bool getHyperBlock(T_HYPERBLOCK &h, uint64 hid);
     static bool getHyperBlock(T_HYPERBLOCK &h, const T_SHA256 &hhash);
 
 
-    //HC: 获取最新块号
+    //
     static uint64 GetLatestHyperBlockNo();
-
-    static int GetHyperBlockNumInfo(std::list<uint64> &HyperBlockNum);
 
 private:
     static void addLocalBlocks(T_HYPERBLOCK &h);

@@ -26,82 +26,84 @@ DEALINGS IN THE SOFTWARE.
 #include "IAccessPoint.h"
 
 
-class TcpAccessPoint: public IAccessPoint {
+class TcpAccessPoint : public IAccessPoint {
 
 public:
-	TcpAccessPoint(const string & ip, uint32_t port) : _IP(ip), _port(port) {}
-	bool open() override
-	{
-		return true;
-	}
-	TcpAccessPoint(const string & objjsonstring)
-	{
-		string s = objjsonstring;
-		init(std::move(s));
-	}
+    TcpAccessPoint(const string& ip, uint32_t port) : _IP(ip), _port(port) {}
+    bool open() override
+    {
+        return true;
+    }
+    TcpAccessPoint(const string& objjsonstring)
+    {
+        string s = objjsonstring;
+        init(std::move(s));
+    }
 
-	TcpAccessPoint(string && objjsonstring)
-	{
-		init(std::move(objjsonstring));
-	}
+    TcpAccessPoint(string&& objjsonstring)
+    {
+        init(std::move(objjsonstring));
+    }
 
-	bool isSame(IAccessPoint *other) const override
-	{
-		if (other->id() != id()) {
-			return false;
-		}
-		TcpAccessPoint *p = dynamic_cast<TcpAccessPoint*>(other);
-		if (p->_port == _port && p->_IP == _IP) {
-			return true;
-		}
-		return false;
-	}
+    bool isSame(IAccessPoint* other) const override
+    {
+        if (other->id() != id()) {
+            return false;
+        }
+        TcpAccessPoint* p = dynamic_cast<TcpAccessPoint*>(other);
+        if (p->_port == _port && p->_IP == _IP) {
+            return true;
+        }
+        return false;
+    }
 
-	int id() const override { return 2; }
+    int id() const override { return 2; }
 
-	int write(const char *buf, size_t len) override
-	{
-		return 0;
-	}
+    int write(const char* buf, size_t len) override
+    {
+        return 0;
+    }
 
-	void close() override
-	{
+    void close() override
+    {
 
-	}
+    }
 
-	string serialize()
-	{
-		json::value obj;
-		obj[_XPLATSTR("typename")] = json::value::string(s2t(CLASSNAME));
-		obj[_XPLATSTR("IP")] = json::value::string(s2t(_IP));
-		obj[_XPLATSTR("port")] = json::value::number(_port);
-		std::stringstream oss;
-		obj.serialize(oss);
-		return oss.str();
-	}
+    string serialize()
+    {
+        json::value obj;
+        obj[_XPLATSTR("typename")] = json::value::string(CLASSNAME_U);
+        obj[_XPLATSTR("IP")] = json::value::string(s2t(_IP));
+        obj[_XPLATSTR("port")] = json::value::number(_port);
+        std::stringstream oss;
+        obj.serialize(oss);
+        return oss.str();
+    }
 
 private:
-	void init(string && objjsonstring)
-	{
-		std::error_code err;
-		std::istringstream oss(objjsonstring);
-		json::value obj = json::value::parse(oss, err);
+    void init(string&& objjsonstring)
+    {
+        std::error_code err;
+        std::istringstream oss(objjsonstring);
+        json::value obj = json::value::parse(oss, err);
 
-		string tn = t2s(obj[_XPLATSTR("typename")].as_string());
-		if (tn != CLASSNAME) {
-			throw std::invalid_argument("Invalid type when constructs TcpAccessPoint");
-		}
+        utility::string_t tn = obj[_XPLATSTR("typename")].as_string();
+        if (tn != CLASSNAME_U) {
+            throw std::invalid_argument("Invalid type when constructs TcpAccessPoint");
+        }
 
-		_IP = t2s(obj[_XPLATSTR("IP")].as_string());
-		_port = obj[_XPLATSTR("port")].as_integer();
-	}
+        _IP = t2s(obj[_XPLATSTR("IP")].as_string());
+        _port = obj[_XPLATSTR("port")].as_integer();
+    }
 
 public:
-	static constexpr const char* CLASSNAME = "TcpAP";
+    static utility::string_t CLASSNAME_U;
+    static std::string CLASSNAME;
+
 
 private:
-	string _IP;
-	uint32_t _port;
+    string _IP;
+    uint32_t _port;
 };
 
 #endif //_TCPACCESSPOINT_H

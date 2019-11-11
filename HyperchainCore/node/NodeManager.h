@@ -22,18 +22,30 @@ DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include "../newLog.h"
 #include "UInt128.h"
 #include "HCNode.h"
 #include "ITask.hpp"
+#include "KBuckets.h"
+#include "NodeUpkeepThreadPool.h"
 
 #include <map>
 #include <mutex>
 using namespace std;
 
-using HCNodeMap = std::map<CUInt128, std::shared_ptr<HCNode> >;
+enum class NodeType :char {
+    Normal = 0,     //
+    Bootstrap,      //
+    LedgeRPCClient  //
+};
 
-template<typename T, ProtocolVer pro_ver = 0>
+const uint16_t SAND_BOX = 0x0000;
+const uint16_t INFORMAL_NET = 0x0001;
+const uint16_t FORMAL_NET = 0x0002;
+
+using HCNodeMap = std::map<CUInt128, std::shared_ptr<HCNode> >;
+extern ProtocolVer pro_ver;
+
+template<typename T>
 class DataBuffer {
 
 public:
@@ -101,7 +113,10 @@ public:
     void myself(HCNodeSH &me) { _me = std::move(me); }
     HCNodeSH & myself() { return _me; }
 
-    void seedServer(HCNodeSH &seed) { _seed = std::move(seed); }
+    void seedServer(HCNodeSH &seed) {
+        _seed = std::move(seed);
+        _nodemap[_seed->getNodeId<CUInt128>()] = _seed;
+    }
     HCNodeSH & seedServer() { return _seed; }
 
     HCNodeSH& getNode(const CUInt128 &nodeid);
@@ -118,9 +133,21 @@ public:
         _me->getNodeId(b);
         msgbuf.setHeader(b);
 
-        std::for_each(_nodemap.begin(), _nodemap.end(), [&, this](HCNodeMap::reference node) {
-            node.second->send(msgbuf.tostring());
-        });
+        vector<CUInt128> vecResult;
+        int nNum = m_actKBuchets.GetAllNodes(vecResult);
+        for (int i = 0; i < nNum; i++)
+        {
+            if (_nodemap.count(vecResult[i])) {
+                _nodemap[vecResult[i]]->send(msgbuf.tostring());
+            }
+            //std::find_if(_nodemap.begin(), _nodemap.end(), [&, this](const HCNodeMap::reference n) {
+            //    if (n.second->getNodeId<CUInt128>() == vecResult[i]) {
+            //        n.second->send(msgbuf.tostring());
+            //        return true;
+            //    }
+            //    return false;
+            //});
+        }
     }
 
     template<typename T>
@@ -147,7 +174,7 @@ public:
         });
 
         if (r == _nodemap.end()) {
-            g_console_logger->error("cannot find the target node:{}", targetNodeid.ToHexString().c_str());
+            //cannot find the target node
             return 0;
         }
 
@@ -161,17 +188,46 @@ public:
     void loadNeighbourNodes();
     void saveNeighbourNodes();
 
-    void parse(const string &nodes);
+    void parseList(const string &nodes);
+    HCNodeSH parseNode(const string &node);
 
     const CUInt128 * FindNodeId(IAccessPoint *ap);
 
     bool IsSeedServer(HCNodeSH & node);
     string toString();
+    string toFormatString();
+    CKBuckets* GetKBuckets() {
+        return &m_actKBuchets;
+    }
+    void InitKBuckets();
+    void EnableNodeActive(const CUInt128 &nodeid, bool bEnable);
 
+
+    //
+    void ParseNodeList(const string &nodes, vector<CUInt128> &vecNewNode);
+
+    //
+    void loadNeighbourNodes_New();
+    void saveNeighbourNodes_New();
+
+    void  GetNodeMapNodes(vector<CUInt128>& vecNodes);
+    void SaveLastActiveNodesToDB();
+    int getPeerList(CUInt128 excludeID, vector<CUInt128>& vecNodes, string & peerlist);
+	bool IsNodeInDeactiveList(CUInt128 nID);
 private:
 
     HCNodeSH _me;
     HCNodeSH _seed;
     HCNodeMap _nodemap;
     mutex _guard;
+    CKBuckets m_actKBuchets;
+    std::list<PingPullNode> m_lstDeactiveNode;
+    mutex _guardDeactive;  //
+    system_clock::time_point  m_lasttimeForDBSave;
+    //
+    bool SaveNodeToDB(const CUInt128 &nodeid, system_clock::time_point  lastActTime);
+
+    void PushToKBuckets(const CUInt128 &nodeid);
+    void AddToDeactiveNodeList(PingPullNode& node);
+    void RemoveNodeFromDeactiveList(const CUInt128 &nodeid);
 };

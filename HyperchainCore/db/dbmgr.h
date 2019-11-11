@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.
 #include <mutex>
 
 //#include <QList>
+#include <set>
 #include <map>
 #include <functional>
 
@@ -39,9 +40,8 @@ class CppSQLite3DB;
 class DBmgr
 {
 public:
-    static DBmgr* instance();
-
-    virtual ~DBmgr();
+	DBmgr();
+	virtual ~DBmgr();
 
     int open(const char * dbpath);
     bool isOpen();
@@ -57,8 +57,13 @@ public:
         }
         ~Transaction() {
             if (_db) {
-                _is_succ ? _db->execDML("commit transaction") :
-                    _db->execDML("rollback transaction");
+                try {
+                    _is_succ ? _db->execDML("commit transaction") :
+                        _db->execDML("rollback transaction");
+                }
+                catch (CppSQLite3Exception& e) {
+                    std::fprintf(stderr, "error code: %d %s", e.errorCode(), e.errorMessage());
+                }
             }
         }
         void set_trans_succ() {
@@ -79,7 +84,7 @@ public:
     int getNoConfiringList(std::list<TEVIDENCEINFO>& evidences);
     int delEvidence(std::string hash);
     int delEvidence(const TEVIDENCEINFO &evidence);
-	int deleteHyperblockAndLocalblock(uint64 hid);
+    int deleteHyperblockAndLocalblock(uint64 hid);
     int insertHyperblock(const T_HYPERBLOCK& hyperblock);
     int insertLocalblock(const T_LOCALBLOCK& localblock, uint64 hid, uint16 chainnum);
     int updateHyperblock(const T_HYPERBLOCK& hyperblock);
@@ -89,7 +94,8 @@ public:
 
     int getHyperblockshead(T_HYPERBLOCKHEADER& header, uint64 nStartHyperID);
     int getLocalblocksPayloadTotalSize(uint64 nStartHyperID,size_t& size);
-    int getAllHyperblockNumInfo(std::list<uint64> &queue);
+    int getAllHyperblockNumInfo(std::set<uint64> &queue);
+    int getAllHashInfo(std::map<uint64, T_SHA256> &hashmap, std::map<uint64, T_SHA256> &headerhashmap);
     int getHyperBlocks(std::list<T_HYPERBLOCK> &queue, uint64 nStartHyperID, uint64 nEndHyperID);
     int getHyperBlock(T_HYPERBLOCK &h, const T_SHA256 &hhash);
     int getUpqueue(std::list<TUPQUEUE> &queue, int page, int size);
@@ -102,6 +108,7 @@ public:
 
     bool isBlockExisted(uint64 hid);
 
+    int updateHashInfo(const uint64 hid, const T_SHA256 headerhash, const T_SHA256 hash);
     int updateOnChainState(const string &requestid, const T_LOCALBLOCKADDRESS& address);
     void initOnChainState(uint64 hid);
 
@@ -151,9 +158,9 @@ public:
         }
         catch (CppSQLite3Exception& ex) {
             cout << sql << ex.errorCode() << ex.errorMessage() << endl;
-			return false;
+            return false;
         }
-		return true;
+        return true;
     }
 
     template<typename... Args>
@@ -167,13 +174,12 @@ public:
         }
         catch (CppSQLite3Exception& ex) {
             cout << sql << ex.errorCode() << ex.errorMessage() << endl;
-			return false;
+            return false;
         }
-		return true;
+        return true;
     }
 
 private:
-    DBmgr();
 
     int createTbls();
     int updateDB();
@@ -185,6 +191,6 @@ private:
     int dbError(const char * funcname, int line, CppSQLite3Exception& ex);
 
 private:
-    CppSQLite3DB *_db;
+    CppSQLite3DB *_db = nullptr;
     std::mutex _mutex;
 };

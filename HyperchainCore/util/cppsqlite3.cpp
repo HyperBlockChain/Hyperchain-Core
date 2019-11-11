@@ -465,6 +465,21 @@ const char* CppSQLite3Query::getStringField(const char* szField, const char* szN
     return getStringField(nField, szNullValue);
 }
 
+string CppSQLite3Query::getTextField(const char* szField, const char* szNullValue/*=""*/)
+{
+	checkVM();
+	int nField = fieldIndex(szField);
+	if (nField < 0 || nField > mnCols - 1)
+	{
+		throw CppSQLite3Exception(CPPSQLITE_ERROR,
+			"Invalid field index requested",
+			DONT_DELETE_MSG);
+	}
+
+	int nLen = sqlite3_column_bytes(mpVM, nField);
+	return string((const char*)sqlite3_column_text(mpVM, nField), nLen);
+}
+
 
 const unsigned char* CppSQLite3Query::getBlobField(int nField, int& nLen)
 {
@@ -1038,6 +1053,11 @@ void CppSQLite3Statement::bind(int nParam, const double dValue)
     }
 }
 
+void CppSQLite3Statement::bind(int nParam, const string &strValue)
+{
+	checkVM();
+	bind(nParam, strValue.c_str(), strValue.size());
+}
 
 void CppSQLite3Statement::bind(int nParam, const unsigned char* blobValue, int nLen)
 {

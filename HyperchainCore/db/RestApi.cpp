@@ -27,7 +27,6 @@ DEALINGS IN THE SOFTWARE.
 #include "../node/Singleton.h"
 #include "../node/NodeManager.h"
 #include "../HyperChain/HyperChainSpace.h"
-#include "../HyperChain/HyperData.h"
 #include "../headers/commonstruct.h"
 #include "../headers/inter_public.h"
 //#include "HChainP2PManager.h"
@@ -77,11 +76,11 @@ CommandHandler restHandler(addr, server_config);
 string tstringToUtf8(const utility::string_t& str)
 {
 #ifdef _UTF16_STRINGS
-    //HC: On Windows, all strings are wide
+    //
     wstring_convert<codecvt_utf8<wchar_t> > strCnv;
     return strCnv.to_bytes(str);
 #else
-    //HC: On POSIX platforms, all strings are narrow
+    //
     return str;
 #endif
 }
@@ -89,13 +88,50 @@ string tstringToUtf8(const utility::string_t& str)
 utility::string_t stringToTstring(const string& str)
 {
 #ifdef _UTF16_STRINGS
-    //HC: On Windows, all strings are wide
-    wstring_convert<codecvt_utf8<wchar_t> > strCnv;
+    //
+    std::wstring_convert<std::codecvt<wchar_t, char, std::mbstate_t>> strCnv;
     return strCnv.from_bytes(str);
 #else
-    //HC: On POSIX platforms, all strings are narrow
+    //
     return str;
 #endif
+}
+
+bool CheckMyVersion(string& newversion)
+{
+    newversion = "";
+    web::json::value json_return;
+    try {
+        web::json::value json_v;
+        web::http::client::http_client client(U("https://www.hyperchain.net/"));
+        client.request(web::http::methods::GET, U("/sw/ParalismLatestSWVersion.json"))
+            .then([](const web::http::http_response& response) {
+            return response.extract_json();
+        })
+            .then([&json_return](const pplx::task<web::json::value>& task) {
+            try {
+                json_return = task.get();
+            }
+            catch (const web::http::http_exception & e) {
+                std::cout << "error " << e.what() << std::endl;
+            }
+        }).wait();
+    }
+    catch (web::json::json_exception & je) {
+        std::cout << je.what();
+        return false;
+    }
+    catch (std::exception & e) {
+        std::cout << e.what();
+        return false;
+    }
+
+    if (!json_return.has_field(U("version"))) {
+        return false;
+    }
+
+    newversion = t2s(json_return[U("version")].as_string());
+    return true;
 }
 
 CommandHandler::CommandHandler(utility::string_t url, http_listener_config server_config) : m_listener(url, server_config)
@@ -108,7 +144,7 @@ CommandHandler::CommandHandler(utility::string_t url, http_listener_config serve
 
 
 
-std::vector<utility::string_t> requestPath(const http_request & message) {
+std::vector<utility::string_t> requestPath(const http_request& message) {
     auto relativePath = uri::decode(message.relative_uri().path());
     return uri::split_path(relativePath);
 }
@@ -217,7 +253,7 @@ void CommandHandler::handle_get(http_request message)
             utility::string_t sHId = cntEntryHId->second;
             uint64_t nHyperBlockId = std::stol(tstringToUtf8(sHId));
 
-            if (true == DBmgr::instance()->isBlockExisted(nHyperBlockId)) {
+            if (true == Singleton<DBmgr>::instance()->isBlockExisted(nHyperBlockId)) {
                 vRet = json::value::string(_XPLATSTR("success"));
                 goto REPLY;
             }
@@ -230,14 +266,14 @@ void CommandHandler::handle_get(http_request message)
                     system_clock::time_point curr = system_clock::now();
                     seconds timespan = std::chrono::duration_cast<seconds>(curr - it->second);
                     if (timespan.count() < 30) {
-                        //HC: the same HID only sync once in 30 seconds
+                        //
                         vRet = json::value::string(_XPLATSTR("downloading"));
                         goto REPLY;
                     }
                 }
             }
 
-            CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
+            CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
             int ret = HSpce->GetRemoteHyperBlockByID(nHyperBlockId);
             if (ret < 0)
                 vRet = json::value::string(_XPLATSTR("nonexistent"));
@@ -270,8 +306,8 @@ void CommandHandler::handle_get(http_request message)
             utility::string_t sNum = cntEntryNum->second;
 
             uint64_t nHyperBlockId = atoi(tstringToUtf8(sHId).c_str());
-			uint16 nLocalBlockId = atoi(tstringToUtf8(sId).c_str());
-			uint16 nNum = atoi(tstringToUtf8(sNum).c_str());
+            uint16 nLocalBlockId = atoi(tstringToUtf8(sId).c_str());
+            uint16 nNum = atoi(tstringToUtf8(sNum).c_str());
 
             RestApi api;
             vRet = api.getLocalblock(nHyperBlockId, nLocalBlockId, nNum);
@@ -315,19 +351,19 @@ void CommandHandler::handle_get(http_request message)
             }
         }
 
-		else if (path[0] == U("GetHyperBlockInfo"))
-		{
-			auto cntEntryId = query.find(U("key"));
-			if (cntEntryId == query.end()) {
-				BADPARAMETER(key);
-				return;
-			}
-			utility::string_t sId = cntEntryId->second;
-			uint64_t nHyperBlockId = atoi(tstringToUtf8(sId).c_str());
+        else if (path[0] == U("GetHyperBlockInfo"))
+        {
+            auto cntEntryId = query.find(U("key"));
+            if (cntEntryId == query.end()) {
+                BADPARAMETER(key);
+                return;
+            }
+            utility::string_t sId = cntEntryId->second;
+            uint64_t nHyperBlockId = atoi(tstringToUtf8(sId).c_str());
 
-			RestApi api;
-			vRet = api.getHyperblockInfo(nHyperBlockId);
-		}
+            RestApi api;
+            vRet = api.getHyperblockInfo(nHyperBlockId);
+        }
         else if (path[0] == U("GetHyperBlockHead"))
         {
             auto cntEntryId = query.find(U("key"));
@@ -341,78 +377,78 @@ void CommandHandler::handle_get(http_request message)
             RestApi api;
             vRet = api.getHyperblockHead(nHyperBlockId);
         }
-		else if (path[0] == U("GetHyperBlockBody"))
-		{
-			auto cntEntryId = query.find(U("key"));
-			if (cntEntryId == query.end()) {
-				BADPARAMETER(key);
-				return;
-			}
-			utility::string_t sId = cntEntryId->second;
-			uint64_t nHyperBlockId = atoi(tstringToUtf8(sId).c_str());
+        else if (path[0] == U("GetHyperBlockBody"))
+        {
+            auto cntEntryId = query.find(U("key"));
+            if (cntEntryId == query.end()) {
+                BADPARAMETER(key);
+                return;
+            }
+            utility::string_t sId = cntEntryId->second;
+            uint64_t nHyperBlockId = atoi(tstringToUtf8(sId).c_str());
 
-			RestApi api;
-			vRet = api.getHyperblockBody(nHyperBlockId);
-		}
+            RestApi api;
+            vRet = api.getHyperblockBody(nHyperBlockId);
+        }
 
-		else if (path[0] == U("GetLocalBlockHead"))
-		{
-			auto cntEntryHId = query.find(U("hid"));
-			if (cntEntryHId == query.end()) {
-				BADPARAMETER(hid);
-				return;
-			}
-			auto cntEntryId = query.find(U("id"));
-			if (cntEntryId == query.end()) {
-				BADPARAMETER(id);
-				return;
-			}
-			auto cntEntryNum = query.find(U("chain_num"));
-			if (cntEntryNum == query.end()) {
-				BADPARAMETER(chain_num);
-				return;
-			}
+        else if (path[0] == U("GetLocalBlockHead"))
+        {
+            auto cntEntryHId = query.find(U("hid"));
+            if (cntEntryHId == query.end()) {
+                BADPARAMETER(hid);
+                return;
+            }
+            auto cntEntryId = query.find(U("id"));
+            if (cntEntryId == query.end()) {
+                BADPARAMETER(id);
+                return;
+            }
+            auto cntEntryNum = query.find(U("chain_num"));
+            if (cntEntryNum == query.end()) {
+                BADPARAMETER(chain_num);
+                return;
+            }
 
-			utility::string_t sHId = cntEntryHId->second;
-			utility::string_t sId = cntEntryId->second;
-			utility::string_t sNum = cntEntryNum->second;
+            utility::string_t sHId = cntEntryHId->second;
+            utility::string_t sId = cntEntryId->second;
+            utility::string_t sNum = cntEntryNum->second;
 
-			uint64_t nHyperBlockId = atoi(tstringToUtf8(sHId).c_str());
-			uint16 nLocalBlockId = atoi(tstringToUtf8(sId).c_str());
-			uint16 nNum = atoi(tstringToUtf8(sNum).c_str());
+            uint64_t nHyperBlockId = atoi(tstringToUtf8(sHId).c_str());
+            uint16 nLocalBlockId = atoi(tstringToUtf8(sId).c_str());
+            uint16 nNum = atoi(tstringToUtf8(sNum).c_str());
 
-			RestApi api;
-			vRet = api.getLocalblockHead(nHyperBlockId, nLocalBlockId, nNum);
-		}
-		else if (path[0] == U("GetLocalBlockBody"))
-		{
-			auto cntEntryHId = query.find(U("hid"));
-			if (cntEntryHId == query.end()) {
-				BADPARAMETER(hid);
-				return;
-			}
-			auto cntEntryId = query.find(U("id"));
-			if (cntEntryId == query.end()) {
-				BADPARAMETER(id);
-				return;
-			}
-			auto cntEntryNum = query.find(U("chain_num"));
-			if (cntEntryNum == query.end()) {
-				BADPARAMETER(chain_num);
-				return;
-			}
+            RestApi api;
+            vRet = api.getLocalblockHead(nHyperBlockId, nLocalBlockId, nNum);
+        }
+        else if (path[0] == U("GetLocalBlockBody"))
+        {
+            auto cntEntryHId = query.find(U("hid"));
+            if (cntEntryHId == query.end()) {
+                BADPARAMETER(hid);
+                return;
+            }
+            auto cntEntryId = query.find(U("id"));
+            if (cntEntryId == query.end()) {
+                BADPARAMETER(id);
+                return;
+            }
+            auto cntEntryNum = query.find(U("chain_num"));
+            if (cntEntryNum == query.end()) {
+                BADPARAMETER(chain_num);
+                return;
+            }
 
-			utility::string_t sHId = cntEntryHId->second;
-			utility::string_t sId = cntEntryId->second;
-			utility::string_t sNum = cntEntryNum->second;
+            utility::string_t sHId = cntEntryHId->second;
+            utility::string_t sId = cntEntryId->second;
+            utility::string_t sNum = cntEntryNum->second;
 
-			uint64_t nHyperBlockId = atoi(tstringToUtf8(sHId).c_str());
-			uint16 nLocalBlockId = atoi(tstringToUtf8(sId).c_str());
-			uint16 nNum = atoi(tstringToUtf8(sNum).c_str());
+            uint64_t nHyperBlockId = atoi(tstringToUtf8(sHId).c_str());
+            uint16 nLocalBlockId = atoi(tstringToUtf8(sId).c_str());
+            uint16 nNum = atoi(tstringToUtf8(sNum).c_str());
 
-			RestApi api;
-			vRet = api.getLocalblockBody(nHyperBlockId, nLocalBlockId, nNum);
-		}
+            RestApi api;
+            vRet = api.getLocalblockBody(nHyperBlockId, nLocalBlockId, nNum);
+        }
 
         /*else if (path[0] == U("GetRegWaitingList"))
         {
@@ -444,9 +480,9 @@ void CommandHandler::handle_get(http_request message)
         }*/
 
         else if (path[0] == U("GetLatestHyperBlockNo")) {
-            uint64 localHID = DBmgr::instance()->getLatestHyperBlockNo();
+            uint64 localHID = Singleton<DBmgr>::instance()->getLatestHyperBlockNo();
 
-            CHyperChainSpace *hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
+            CHyperChainSpace* hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
             uint64 globalHID = hyperchainspace->GetGlobalLatestHyperBlockNo();
 
             if (localHID > globalHID)
@@ -456,7 +492,7 @@ void CommandHandler::handle_get(http_request message)
         }
         else if (path[0] == U("GetNodeRuntimeEnv"))
         {
-            NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+            NodeManager* nodemgr = Singleton<NodeManager>::getInstance();
             if (nodemgr == nullptr)
                 return;
 
@@ -468,7 +504,7 @@ void CommandHandler::handle_get(http_request message)
         }
         else if (path[0] == U("GetStateOfCurrentConsensus"))
         {
-            ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::getInstance();
+            ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
             if (consensuseng == nullptr)
                 return;
 
@@ -491,7 +527,7 @@ void CommandHandler::handle_get(http_request message)
         }
         else if (path[0] == U("GetDataOfCurrentConsensus")) {
 
-            ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::getInstance();
+            ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
             if (consensuseng == nullptr)
                 return;
 
@@ -516,6 +552,32 @@ void CommandHandler::handle_get(http_request message)
                 vRet[_XPLATSTR("chainNum")] = json::value::number(chainNum);
             }
 
+        }
+        else if (path[0] == U("GetDetailOfCurrentConsensus"))
+        {
+            uint64 localHID = Singleton<DBmgr>::instance()->getLatestHyperBlockNo();
+            uint32 localchainBlocks = g_tP2pManagerStatus->listLocalBuddyChainInfo.size();
+            uint32 requestBlocks = g_tP2pManagerStatus->listRecvLocalBuddyReq.size() + g_tP2pManagerStatus->listCurBuddyReq.size();
+            uint32 respondBlocks = g_tP2pManagerStatus->listRecvLocalBuddyRsp.size() + g_tP2pManagerStatus->listCurBuddyRsp.size();
+
+            vRet[_XPLATSTR("latestHyperBlockNo")] = json::value::number(localHID);
+            vRet[_XPLATSTR("localchainBlocks")] = json::value::number(localchainBlocks);
+            vRet[_XPLATSTR("requestBlocks")] = json::value::number(requestBlocks);
+            vRet[_XPLATSTR("respondBlocks")] = json::value::number(respondBlocks);
+        }
+        else if (path[0] == U("GetRequestTaskTypeList"))
+        {
+            TASKTYPE type;
+            CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxCycleQueueTask);
+
+            json::value obj = json::value::array();
+            int i = 0;
+            while (g_tP2pManagerStatus->CycleQueueTask.pop(&type))
+            {
+                obj[i++] = json::value::number(static_cast<uint32>(type));
+            }
+
+            vRet[_XPLATSTR("TaskTypeList")] = obj;
         }
         else if (path[0] == U("CreatCustomerizeConsensusScript"))
         {
@@ -548,15 +610,28 @@ void CommandHandler::handle_get(http_request message)
 
         else if (path[0] == U("GetNeighborNodes"))
         {
-            NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+            NodeManager* nodemgr = Singleton<NodeManager>::getInstance();
 
-            vRet[_XPLATSTR("NeighborNodes")] = json::value::string(s2t(nodemgr->toString()));
+            const HCNodeMap* nodemap = nodemgr->getNodeMap();
+            json::value arr = json::value::array(nodemap->size());
+            auto iter = nodemap->begin();
+            for (int i = 0; iter != nodemap->end(); iter++, i++) {
+                arr[i] = json::value::parse(s2t(iter->second->serialize()));
+            }
+
+            vRet[_XPLATSTR("NeighborNodes")] = arr;
             vRet[_XPLATSTR("NeighborNodesNum")] = json::value::number(nodemgr->getNodeMapSize());
         }
+        else if (path[0] == U("GetNeighborInfo"))
+        {
+            NodeManager* nodemgr = Singleton<NodeManager>::getInstance();
 
+            vRet[_XPLATSTR("NeighborNodesNum")] = json::value::number(nodemgr->getNodeMapSize());
+            vRet[_XPLATSTR("KBucketNodesNum")] = json::value::number(nodemgr->GetKBuckets()->GetNodesNum());
+        }
         else if (path[0] == U("GetHyperBlocksIDList"))
         {
-            CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
+            CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
 
             vector<string> LocalChainSpace;
             HSpce->GetLocalChainShow(LocalChainSpace);
@@ -570,7 +645,7 @@ void CommandHandler::handle_get(http_request message)
 
             size_t nums = HSpce->GetLocalChainIDSize();
             string Ldata;
-            for (auto &t : LocalChainSpace)
+            for (auto& t : LocalChainSpace)
             {
                 Ldata += t;
                 Ldata += ";";
@@ -581,7 +656,7 @@ void CommandHandler::handle_get(http_request message)
         }
         else if (path[0] == U("GetHyperChainSpace"))
         {
-            CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
+            CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
 
             map<string, string> HyperChainSpace;
             HSpce->GetHyperChainShow(HyperChainSpace);
@@ -593,7 +668,7 @@ void CommandHandler::handle_get(http_request message)
             }
 
             json::value obj;
-            for (auto &mdata : HyperChainSpace)
+            for (auto& mdata : HyperChainSpace)
             {
                 obj[s2t(mdata.first)] = json::value::string(s2t(mdata.second));
             }
@@ -603,7 +678,30 @@ void CommandHandler::handle_get(http_request message)
 
             vRet[_XPLATSTR("HyperChainSpace")] = json::value::string(s2t(oss.str()));
         }
+        else if (path[0] == U("GetHyperBlockHealthInfo"))
+        {
+            CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
 
+            map<uint64, uint32> HyperBlockHealthInfo;
+            HSpce->GetHyperBlockHealthInfo(HyperBlockHealthInfo);
+
+            if (HyperBlockHealthInfo.size() <= 0)
+            {
+                vRet[_XPLATSTR("HyperBlockHealthInfo")] = json::value::string(_XPLATSTR(""));
+                return;
+            }
+
+            string Ldata;
+            for (auto& mdata : HyperBlockHealthInfo)
+            {
+                Ldata += to_string(mdata.first);
+                Ldata += ":";
+                Ldata += to_string(mdata.second);
+                Ldata += ";";
+            }
+
+            vRet[_XPLATSTR("HyperBlockHealthInfo")] = json::value::string(s2t(Ldata));
+        }
         else if (path[0] == U("GetNodeIDList"))
         {
             auto cntEntryId = query.find(U("key"));
@@ -616,10 +714,10 @@ void CommandHandler::handle_get(http_request message)
             utility::string_t sId = cntEntryId->second;
             uint64 nblocknum = std::stol(tstringToUtf8(sId));
 
-            CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
+            CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
 
-			map<uint64, set<string>> HyperChainSpace;
-			HSpce->GetHyperChainData(HyperChainSpace);
+            map<uint64, set<string>> HyperChainSpace;
+            HSpce->GetHyperChainData(HyperChainSpace);
 
             if (HyperChainSpace.size() <= 0)
             {
@@ -629,12 +727,12 @@ void CommandHandler::handle_get(http_request message)
             }
 
             string nodelist;
-            for (auto &mdata : HyperChainSpace)
+            for (auto& mdata : HyperChainSpace)
             {
                 if (mdata.first != nblocknum)
                     continue;
 
-                for (auto &sid : mdata.second)
+                for (auto& sid : mdata.second)
                 {
                     nodelist += sid;
                     nodelist += ";";
@@ -665,11 +763,11 @@ void CommandHandler::handle_get(http_request message)
             uint64 nblocknum = std::stol(tstringToUtf8(sblockId));
             string strnodeid = t2s(cntEntryNodeId->second);
 
-            CHyperData * hd = Singleton<CHyperData>::instance();
+            CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
             try {
-                hd->PullHyperDataByHID(nblocknum, strnodeid);
+                HSpce->PullHyperDataByHID(nblocknum, strnodeid);
             }
-            catch (std::exception& e) {
+            catch (std::exception & e) {
                 message.reply(status_codes::OK, json::value(stringToTstring(string("Bad Parameter:") + e.what())));
                 return;
             }
@@ -827,122 +925,122 @@ void CommandHandler::handle_del(http_request message)
 
 void RestApi::blockHeadToJsonValue(const T_LOCALBLOCK& localblock, json::value& val)
 {
-	val[_XPLATSTR("version")] = json::value::string(stringToTstring(localblock.GetVersion().tostring()));
-	val[_XPLATSTR("id")] = json::value::number(localblock.GetID());
+    val[_XPLATSTR("version")] = json::value::string(stringToTstring(localblock.GetVersion().tostring()));
+    val[_XPLATSTR("id")] = json::value::number(localblock.GetID());
 
-	val[_XPLATSTR("hid")] = json::value::number(localblock.GetHID());
-	val[_XPLATSTR("chain_num")] = json::value::number(localblock.GetChainNum());
+    val[_XPLATSTR("hid")] = json::value::number(localblock.GetHID());
+    val[_XPLATSTR("chain_num")] = json::value::number(localblock.GetChainNum());
 
-	val[_XPLATSTR("hash")] = json::value::string(stringToTstring(localblock.GetHashSelf().toHexString()));
+    val[_XPLATSTR("hash")] = json::value::string(stringToTstring(localblock.GetHashSelf().toHexString()));
 
-	val[_XPLATSTR("hash_prev")] = json::value::string(stringToTstring(localblock.GetPreHash().toHexString()));
-	val[_XPLATSTR("hhash")] = json::value::string(stringToTstring(localblock.GetPreHHash().toHexString()));
-	val[_XPLATSTR("ctime")] = json::value::number(localblock.GetCTime());
-	val[_XPLATSTR("nonce")] = json::value::number(localblock.GetNonce());
+    val[_XPLATSTR("hash_prev")] = json::value::string(stringToTstring(localblock.GetPreHash().toHexString()));
+    val[_XPLATSTR("hhash")] = json::value::string(stringToTstring(localblock.GetPreHHash().toHexString()));
+    val[_XPLATSTR("ctime")] = json::value::number(localblock.GetCTime());
+    val[_XPLATSTR("nonce")] = json::value::number(localblock.GetNonce());
 
-	json::value obj = json::value::array();
-	uint16 i = 0;
-	for (auto type : localblock.GetAppType()) {
-		obj[i++] = json::value::number(type.app);
-	}
-	val[_XPLATSTR("app_type")] = obj;
+    json::value obj = json::value::array();
+    uint16 i = 0;
+    for (auto type : localblock.GetAppType()) {
+        obj[i++] = json::value::number(type.app);
+    }
+    val[_XPLATSTR("app_type")] = obj;
 
-	val[_XPLATSTR("root_block_body_hash")] = json::value::string(stringToTstring(localblock.GetRootHash().toHexString()));
-	val[_XPLATSTR("script_hash")] = json::value::string(stringToTstring(localblock.GetScriptHash().toHexString()));
+    val[_XPLATSTR("root_block_body_hash")] = json::value::string(stringToTstring(localblock.GetRootHash().toHexString()));
+    val[_XPLATSTR("script_hash")] = json::value::string(stringToTstring(localblock.GetScriptHash().toHexString()));
 
-	//HC: 获取子块payload_size,block_size
-	val[_XPLATSTR("payload_size")] = json::value::number(localblock.GetPayload().size());
-	val[_XPLATSTR("block_size")] = json::value::number(localblock.GetSize());
+    //
+    val[_XPLATSTR("payload_size")] = json::value::number(localblock.GetPayload().size());
+    val[_XPLATSTR("block_size")] = json::value::number(localblock.GetSize());
 }
 
 void RestApi::blockBodyToJsonValue(const T_LOCALBLOCK& localblock, json::value& val)
 {
-	val[_XPLATSTR("script")] = json::value::string(stringToTstring(localblock.GetScript()));
-	val[_XPLATSTR("auth")] = json::value::string(stringToTstring(localblock.GetAuth()));
-	val[_XPLATSTR("payload")] = json::value::string(stringToTstring(localblock.GetPayload()));
+    val[_XPLATSTR("script")] = json::value::string(stringToTstring(localblock.GetScript()));
+    val[_XPLATSTR("auth")] = json::value::string(stringToTstring(localblock.GetAuth()));
+    val[_XPLATSTR("payload")] = json::value::string(stringToTstring(localblock.GetPayload()));
 }
 
 void RestApi::blockToJsonValue(const T_LOCALBLOCK& localblock, json::value& val)
 {
-	blockHeadToJsonValue(localblock, val);
-	blockBodyToJsonValue(localblock, val);
+    blockHeadToJsonValue(localblock, val);
+    blockBodyToJsonValue(localblock, val);
 }
 
 void RestApi::blockHeadToJsonValue(const T_HYPERBLOCK& hyperblock, size_t hyperBlockSize, json::value& val)
 {
-	val[_XPLATSTR("version")] = json::value::string(stringToTstring(hyperblock.GetVersion().tostring()));
-	val[_XPLATSTR("weight")] = json::value::number(hyperblock.GetWeight());
-	val[_XPLATSTR("hid")] = json::value::number(hyperblock.GetID());
+    val[_XPLATSTR("version")] = json::value::string(stringToTstring(hyperblock.GetVersion().tostring()));
+    val[_XPLATSTR("weight")] = json::value::number(hyperblock.GetWeight());
+    val[_XPLATSTR("hid")] = json::value::number(hyperblock.GetID());
 
-	val[_XPLATSTR("hash")] = json::value::string(stringToTstring(hyperblock.GetHashSelf().toHexString()));
+    val[_XPLATSTR("hash")] = json::value::string(stringToTstring(hyperblock.GetHashSelf().toHexString()));
 
-	val[_XPLATSTR("hash_prev")] = json::value::string(stringToTstring(hyperblock.GetPreHash().toHexString()));
-	val[_XPLATSTR("hash_prev_header")] = json::value::string(stringToTstring(hyperblock.GetPreHeaderHash().toHexString()));
-	val[_XPLATSTR("ctime")] = json::value::number(hyperblock.GetCTime());
+    val[_XPLATSTR("hash_prev")] = json::value::string(stringToTstring(hyperblock.GetPreHash().toHexString()));
+    val[_XPLATSTR("hash_prev_header")] = json::value::string(stringToTstring(hyperblock.GetPreHeaderHash().toHexString()));
+    val[_XPLATSTR("ctime")] = json::value::number(hyperblock.GetCTime());
 
-	val[_XPLATSTR("merkle_hash_all")] = json::value::string(stringToTstring(hyperblock.GetMerkleHash().toHexString()));
-	val[_XPLATSTR("br_root")] = json::value::string(stringToTstring(hyperblock.GetBRRoot().toHexString()));
-	val[_XPLATSTR("xw_hash")] = json::value::string(stringToTstring(hyperblock.GetXWHash().toHexString()));
-	val[_XPLATSTR("script_hash")] = json::value::string(stringToTstring(hyperblock.GetScriptHash().toHexString()));
-	val[_XPLATSTR("br_rule")] = json::value::number(hyperblock.GetBRRule());
+    val[_XPLATSTR("merkle_hash_all")] = json::value::string(stringToTstring(hyperblock.GetMerkleHash().toHexString()));
+    val[_XPLATSTR("br_root")] = json::value::string(stringToTstring(hyperblock.GetBRRoot().toHexString()));
+    val[_XPLATSTR("xw_hash")] = json::value::string(stringToTstring(hyperblock.GetXWHash().toHexString()));
+    val[_XPLATSTR("script_hash")] = json::value::string(stringToTstring(hyperblock.GetScriptHash().toHexString()));
+    val[_XPLATSTR("br_rule")] = json::value::number(hyperblock.GetBRRule());
 
-	json::value obj = json::value::array();
-	for (uint16 i = 0; i < hyperblock.GetChildChainsCount(); i++) {
-		obj[i] = json::value::number(hyperblock.GetChildChainBlockCount(i));
-	}
-	val[_XPLATSTR("childchain_blockscount")] = obj;     //HC: 每条子链拥有的子块数
+    json::value obj = json::value::array();
+    for (uint16 i = 0; i < hyperblock.GetChildChainsCount(); i++) {
+        obj[i] = json::value::number(hyperblock.GetChildChainBlockCount(i));
+    }
+    val[_XPLATSTR("childchain_blockscount")] = obj;     //
 
-	obj = json::value::array();
-	const list<T_SHA256>& tailhashlist = hyperblock.GetChildTailHashList();
-	uint16 i = 0;
-	for (auto tailhash : tailhashlist) {
-		obj[i++] = json::value::string(stringToTstring(tailhash.toHexString()));
-	}
-	val[_XPLATSTR("tailblockshash")] = obj;       //HC: 每条子链尾块的Hash
+    obj = json::value::array();
+    const list<T_SHA256>& tailhashlist = hyperblock.GetChildTailHashList();
+    uint16 i = 0;
+    for (auto tailhash : tailhashlist) {
+        obj[i++] = json::value::string(stringToTstring(tailhash.toHexString()));
+    }
+    val[_XPLATSTR("tailblockshash")] = obj;       //
 
-	//val[_XPLATSTR("hyperBlockHashVersion")] = json::value::number(1);
-	val[_XPLATSTR("hyperBlockSize")] = json::value::number(hyperBlockSize);
+    //val[_XPLATSTR("hyperBlockHashVersion")] = json::value::number(1);
+    val[_XPLATSTR("hyperBlockSize")] = json::value::number(hyperBlockSize);
 }
 
-void RestApi::blockBodyToJsonValue(const T_HYPERBLOCK &hyperblock, json::value& val)
+void RestApi::blockBodyToJsonValue(const T_HYPERBLOCK& hyperblock, json::value& val)
 {
-	int j = 0;
-	json::value vObj = json::value::array();
-	for (auto list : hyperblock.body.localBlocksHeaderHash)
-	{
-		int i = 0;
-		json::value lObj = json::value::array();
-		for (auto hash : list)
-		{
-			lObj[i++] = json::value::string(stringToTstring(hash.toHexString()));
-		}
+    int j = 0;
+    json::value vObj = json::value::array();
+    for (auto list : hyperblock.body.localBlocksHeaderHash)
+    {
+        int i = 0;
+        json::value lObj = json::value::array();
+        for (auto hash : list)
+        {
+            lObj[i++] = json::value::string(stringToTstring(hash.toHexString()));
+        }
 
-		vObj[j++] = lObj;
-	}
-	val[_XPLATSTR("local_blocks_header_hash")] = vObj;     //HC: 子块头hash
+        vObj[j++] = lObj;
+    }
+    val[_XPLATSTR("local_blocks_header_hash")] = vObj;     //
 
-	int k = 0;
-	json::value obj = json::value::array();
-	for (auto addr : hyperblock.GetBRAddr()) {
-		obj[k++] = json::value::string(stringToTstring(addr.toHexString()));
-	}
-	val[_XPLATSTR("br_addrs")] = obj;
+    int k = 0;
+    json::value obj = json::value::array();
+    for (auto addr : hyperblock.GetBRAddr()) {
+        obj[k++] = json::value::string(stringToTstring(addr.toHexString()));
+    }
+    val[_XPLATSTR("br_addrs")] = obj;
 
-	val[_XPLATSTR("script")] = json::value::string(stringToTstring(hyperblock.GetScript()));
-	val[_XPLATSTR("auth")] = json::value::string(stringToTstring(hyperblock.GetAuth()));
+    val[_XPLATSTR("script")] = json::value::string(stringToTstring(hyperblock.GetScript()));
+    val[_XPLATSTR("auth")] = json::value::string(stringToTstring(hyperblock.GetAuth()));
 }
 
 void RestApi::blockToJsonValue(const T_HYPERBLOCK& hyperblock, size_t hyperBlockSize, json::value& val)
 {
-	blockHeadToJsonValue(hyperblock, hyperBlockSize, val);
-	blockBodyToJsonValue(hyperblock, val);
+    blockHeadToJsonValue(hyperblock, hyperBlockSize, val);
+    blockBodyToJsonValue(hyperblock, val);
 }
 
 json::value RestApi::getLocalblock(uint64_t hid, uint16 id, uint16 chain_num)
 {
     json::value LocalBlock;
     T_LOCALBLOCK local;
-    int nRet = DBmgr::instance()->getLocalblock(local, hid, id, chain_num);
+    int nRet = Singleton<DBmgr>::instance()->getLocalblock(local, hid, id, chain_num);
     if (nRet == 0)
         blockToJsonValue(local, LocalBlock);
 
@@ -951,110 +1049,111 @@ json::value RestApi::getLocalblock(uint64_t hid, uint16 id, uint16 chain_num)
 
 json::value RestApi::getLocalblockHead(uint64_t hid, uint16 id, uint16 chain_num)
 {
-	json::value LocalBlock;
-	T_LOCALBLOCK local;
-	int nRet = DBmgr::instance()->getLocalblock(local, hid, id, chain_num);
-	if (nRet == 0)
-		blockHeadToJsonValue(local, LocalBlock);
+    json::value LocalBlock;
+    T_LOCALBLOCK local;
+    int nRet = Singleton<DBmgr>::instance()->getLocalblock(local, hid, id, chain_num);
+    if (nRet == 0)
+        blockHeadToJsonValue(local, LocalBlock);
 
-	return LocalBlock;
+
+    return LocalBlock;
 }
 
 json::value RestApi::getLocalblockBody(uint64_t hid, uint16 id, uint16 chain_num)
 {
-	json::value LocalBlock;
-	T_LOCALBLOCK local;
-	int nRet = DBmgr::instance()->getLocalblock(local, hid, id, chain_num);
-	if (nRet == 0)
-		blockBodyToJsonValue(local, LocalBlock);
+    json::value LocalBlock;
+    T_LOCALBLOCK local;
+    int nRet = Singleton<DBmgr>::instance()->getLocalblock(local, hid, id, chain_num);
+    if (nRet == 0)
+        blockBodyToJsonValue(local, LocalBlock);
 
-	return LocalBlock;
+    return LocalBlock;
 }
 
 json::value RestApi::getHyperblocks(uint64_t nStartId, uint64_t nNum)
 {
-	json::value vHyperBlocks;
-	std::list<T_HYPERBLOCK> queue;
-	uint64_t nEndId = nStartId + nNum - 1;
-	int nRet = DBmgr::instance()->getHyperBlocks(queue, nStartId, nEndId);
-	if (nRet == 0) {
-		for (auto &h : queue) {
-			string_t sKey = stringToTstring(std::to_string(h.GetID()));
-			size_t hyperBlockSize = sizeof(T_HYPERBLOCK);
+    json::value vHyperBlocks;
+    std::list<T_HYPERBLOCK> queue;
+    uint64_t nEndId = nStartId + nNum - 1;
+    int nRet = Singleton<DBmgr>::instance()->getHyperBlocks(queue, nStartId, nEndId);
+    if (nRet == 0) {
+        for (auto& h : queue) {
+            string_t sKey = stringToTstring(std::to_string(h.GetID()));
+            size_t hyperBlockSize = sizeof(T_HYPERBLOCK);
 
-			DBmgr::instance()->getLocalblocksPayloadTotalSize(h.GetID(), hyperBlockSize);
-			blockToJsonValue(h, hyperBlockSize, vHyperBlocks[sKey][0]);
+            Singleton<DBmgr>::instance()->getLocalblocksPayloadTotalSize(h.GetID(), hyperBlockSize);
+            blockToJsonValue(h, hyperBlockSize, vHyperBlocks[sKey][0]);
 
-			int i = 1;
-			std::list<T_LOCALBLOCK> listlocalblock;
-			nRet = DBmgr::instance()->getLocalBlocks(listlocalblock, h.GetID());
-			for (auto &l : listlocalblock) {
-				 blockToJsonValue(l, vHyperBlocks[sKey][i]);
-				++i;
-			}
-		}
-	}
+            int i = 1;
+            std::list<T_LOCALBLOCK> listlocalblock;
+            nRet = Singleton<DBmgr>::instance()->getLocalBlocks(listlocalblock, h.GetID());
+            for (auto& l : listlocalblock) {
+                blockToJsonValue(l, vHyperBlocks[sKey][i]);
+                ++i;
+            }
+        }
+    }
 
-	return vHyperBlocks;
+    return vHyperBlocks;
 }
 
 json::value RestApi::getHyperblockInfo(uint64_t hid)
 {
-	size_t hyperBlockSize = sizeof(T_HYPERBLOCK);
-	json::value vHyperBlocks;
+    size_t hyperBlockSize = sizeof(T_HYPERBLOCK);
 
-	list<T_HYPERBLOCK> listhyperblock;
-	std::list<string> queue;
-	int nRet = DBmgr::instance()->getHyperBlocks(listhyperblock, hid, hid);
-	if (nRet != 0)
-		return vHyperBlocks;
+    json::value vHyperBlocks;
 
-	DBmgr::instance()->getLocalblocksPayloadTotalSize(hid, hyperBlockSize);
+    list<T_HYPERBLOCK> listhyperblock;
+    std::list<string> queue;
+    int nRet = Singleton<DBmgr>::instance()->getHyperBlocks(listhyperblock, hid, hid);
+    if (nRet != 0)
+        return vHyperBlocks;
 
-	for (T_HYPERBLOCK &h : listhyperblock) {
-		 blockToJsonValue(h, hyperBlockSize, vHyperBlocks);
-		break;
-	}
+    Singleton<DBmgr>::instance()->getLocalblocksPayloadTotalSize(hid, hyperBlockSize);
 
-	return vHyperBlocks;
+    for (T_HYPERBLOCK& h : listhyperblock) {
+        blockToJsonValue(h, hyperBlockSize, vHyperBlocks);
+        break;
+    }
+
+    return vHyperBlocks;
 }
 
 json::value RestApi::getHyperblockHead(uint64_t hid)
 {
-	size_t hyperBlockSize = sizeof(T_HYPERBLOCK);
-	json::value vHyperBlocks;
-	list<T_HYPERBLOCK> listhyperblock;
-	std::list<string> queue;
-	int nRet = DBmgr::instance()->getHyperBlocks(listhyperblock, hid, hid);
-	if (nRet != 0)
-		return vHyperBlocks;
+    size_t hyperBlockSize = sizeof(T_HYPERBLOCK);
+    json::value vHyperBlocks;
+    list<T_HYPERBLOCK> listhyperblock;
+    std::list<string> queue;
+    int nRet = Singleton<DBmgr>::instance()->getHyperBlocks(listhyperblock, hid, hid);
+    if (nRet != 0)
+        return vHyperBlocks;
 
-	DBmgr::instance()->getLocalblocksPayloadTotalSize(hid, hyperBlockSize);
+    Singleton<DBmgr>::instance()->getLocalblocksPayloadTotalSize(hid, hyperBlockSize);
 
-	for (T_HYPERBLOCK &h : listhyperblock) {
-		 blockHeadToJsonValue(h, hyperBlockSize, vHyperBlocks);
-		break;
-	}
+    for (T_HYPERBLOCK& h : listhyperblock) {
+        blockHeadToJsonValue(h, hyperBlockSize, vHyperBlocks);
+        break;
+    }
 
-	return vHyperBlocks;
+    return vHyperBlocks;
 }
 
 json::value RestApi::getHyperblockBody(uint64_t hid)
 {
-	size_t hyperBlockSize = sizeof(T_HYPERBLOCK);
-	json::value vHyperBlocks;
-	list<T_HYPERBLOCK> listhyperblock;
-	std::list<string> queue;
-	int nRet = DBmgr::instance()->getHyperBlocks(listhyperblock, hid, hid);
-	if (nRet != 0)
-		return vHyperBlocks;
+    json::value vHyperBlocks;
+    list<T_HYPERBLOCK> listhyperblock;
+    std::list<string> queue;
+    int nRet = Singleton<DBmgr>::instance()->getHyperBlocks(listhyperblock, hid, hid);
+    if (nRet != 0)
+        return vHyperBlocks;
 
-	for (T_HYPERBLOCK &h : listhyperblock) {
-		blockBodyToJsonValue(h, vHyperBlocks);
-		break;
-	}
+    for (T_HYPERBLOCK& h : listhyperblock) {
+        blockBodyToJsonValue(h, vHyperBlocks);
+        break;
+    }
 
-	return vHyperBlocks;
+    return vHyperBlocks;
 }
 
 json::value RestApi::getLocalchain(uint64_t hid, uint64_t chain_num)
@@ -1062,13 +1161,13 @@ json::value RestApi::getLocalchain(uint64_t hid, uint64_t chain_num)
     int blocks = 0;
     int chain_difficulty = 0;
     json::value LocalChain;
-    int nRet = DBmgr::instance()->getLocalchain(hid, chain_num, blocks, chain_difficulty);
+    int nRet = Singleton<DBmgr>::instance()->getLocalchain(hid, chain_num, blocks, chain_difficulty);
     if (nRet == 0) {
-        LocalChain[_XPLATSTR("chain_num")] = json::value::number(chain_num);	//HC: 子链号
-        LocalChain[_XPLATSTR("blocks")] = json::value::number(blocks);			//HC: 子链块数
-        LocalChain[_XPLATSTR("block_chain")] = json::value::string(_XPLATSTR("unknown")); //HC: 子链类型
-		LocalChain[_XPLATSTR("difficulty")] = json::value::number(chain_difficulty);	  //HC: 难度
-        LocalChain[_XPLATSTR("concensus")] = json::value::string(_XPLATSTR("buddy"));	  //HC: 共识算法
+        LocalChain[_XPLATSTR("chain_num")] = json::value::number(chain_num);	//
+        LocalChain[_XPLATSTR("blocks")] = json::value::number(blocks);			//
+        LocalChain[_XPLATSTR("block_chain")] = json::value::string(_XPLATSTR("unknown")); //
+        LocalChain[_XPLATSTR("difficulty")] = json::value::number(chain_difficulty);	  //
+        LocalChain[_XPLATSTR("consensus")] = json::value::string(_XPLATSTR("buddy"));	  //
     }
 
     return LocalChain;
@@ -1076,14 +1175,14 @@ json::value RestApi::getLocalchain(uint64_t hid, uint64_t chain_num)
 
 struct HashFunc
 {
-    std::size_t operator()(const ONCHAINSTATUS &rhs) const {
+    std::size_t operator()(const ONCHAINSTATUS& rhs) const {
         return std::hash<int>()(static_cast<int>(rhs));
     }
 };
 
 struct EqualKey
 {
-    bool operator () (const ONCHAINSTATUS &lhs, const ONCHAINSTATUS &rhs) const {
+    bool operator () (const ONCHAINSTATUS& lhs, const ONCHAINSTATUS& rhs) const {
         return lhs == rhs;
     }
 };
@@ -1099,19 +1198,19 @@ static unordered_map<ONCHAINSTATUS, string, HashFunc, EqualKey> mapstatus = {
     {ONCHAINSTATUS::unknown,"unknown"},
 };
 
-json::value RestApi::getOnchainState(const string & requestID)
+json::value RestApi::getOnchainState(const string& requestID)
 {
     json::value vHyperBlocks;
     T_LOCALBLOCKADDRESS addr;
     size_t queuenum;
     ONCHAINSTATUS status = ONCHAINSTATUS::unknown;
 
-    ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::getInstance();
+    ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
     if (consensuseng) {
         status = consensuseng->GetOnChainState(requestID, queuenum);
 
         if (status == ONCHAINSTATUS::unknown) {
-            //HC: query memory
+            //
             if (consensuseng->CheckSearchOnChainedPool(requestID, addr)) {
                 status = ONCHAINSTATUS::failed;
                 if (addr.isValid()) {
@@ -1119,8 +1218,8 @@ json::value RestApi::getOnchainState(const string & requestID)
                 }
             }
             else {
-                //HC: query database
-                bool isfound = DBmgr::instance()->getOnChainStateFromRequestID(requestID, addr);
+                //
+                bool isfound = Singleton<DBmgr>::instance()->getOnChainStateFromRequestID(requestID, addr);
                 if (!isfound) {
                     status = ONCHAINSTATUS::nonexistent;
                 }
@@ -1169,17 +1268,16 @@ json::value RestApi::MakeRegistration(string strdata)
 bool RestApi::Upqueue(string strdata, vector<string>& out_vc)
 {
     string requestid;
-    ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::getInstance();
+    ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
     if (consensuseng == nullptr) {
         g_console_logger->error("ConsensusEngine is stopped");
         return false;
     }
 
-    uint32 pos = consensuseng->AddNewBlockEx(strdata, requestid);
+    uint32 pos = consensuseng->AddNewBlockEx(T_APPTYPE(), "", strdata, requestid);
     out_vc.push_back(requestid);
     out_vc.push_back(std::to_string(pos));
 
-    DBmgr::instance()->updateOnChainState(requestid, T_LOCALBLOCKADDRESS());
     return true;
 }
 
@@ -1189,7 +1287,7 @@ int RestApi::startRest()
     try {
         restHandler.open().wait();
     }
-    catch (std::exception& ex) {
+    catch (std::exception & ex) {
         g_daily_logger->error("Start RestServer error");
         g_console_logger->error("Start RestServer error");
         cout << "RestServer exception:" << __FUNCTION__ << " " << ex.what() << endl;
@@ -1204,7 +1302,7 @@ int RestApi::stopRest()
     try {
         restHandler.close().wait();
     }
-    catch (std::exception& ex) {
+    catch (std::exception & ex) {
         cout << "RestServer exception:" << __FUNCTION__ << " " << ex.what() << endl;
     }
 

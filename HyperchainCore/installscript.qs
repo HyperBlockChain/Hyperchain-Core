@@ -31,10 +31,9 @@ Component.prototype.createOperations = function()
     component.createOperations();
 	
 	if (systemInfo.productType === "windows") {
-		component.addOperation("Execute", "@TargetDir@/bin/vcredist_x86.exe", "/quiet", "/norestart");
-		component.addOperation("CreateShortcut", "@TargetDir@/bin/hc.exe", "@DesktopDir@/hc.lnk",
-            "workingDirectory=@TargetDir@/bin", "@TargetDir@/bin/hc.exe",
-            "iconId=1", "description=Open HyperChain Application");
+		component.addOperation("CreateShortcut", "@TargetDir@/gui/Paralism-Lite.exe", "@DesktopDir@/Paralism-Lite.lnk",
+            "workingDirectory=@TargetDir@/gui", "@TargetDir@/gui/Paralism-Lite.exe",
+            "iconId=1", "description=Open HyperChain GUI Application");
     }
 	else {
 		
@@ -44,6 +43,7 @@ Component.prototype.createOperations = function()
 		component.addOperation("Execute", "chmod", "a+x", "@TargetDir@/bin/resources");
 		component.addOperation("Execute", "chmod", "a+x", "@TargetDir@/bin/translations");
 		component.addOperation("Execute", "chmod", "a+x", "@TargetDir@/bin/translations/qtwebengine_locales");
+		component.addOperation("Execute", "chmod", "a+x", "@TargetDir@/bin/hyperchain");
 		
 		component.addOperation("Execute", "chmod", "-R", "a+x", "@TargetDir@/bin/plugins");
 		component.addOperation("CreateDesktopEntry", 

@@ -24,20 +24,24 @@ DEALINGS IN THE SOFTWARE.
 
 #include "utility/MutexObj.h"
 
+
 #include <thread>
 #include <memory>
 #include <functional>
+#include <list>
+#include <mutex>
+#include <unordered_map>
 using namespace std;
 
 enum class ONCHAINSTATUS :char {
-    queueing,		//HC: 排队上链中
-    onchaining1,    //HC: local consensus
-    onchaining2,	//HC: global consensus
-    onchained,		//HC: 刚刚完成上链，in mapSearchOnChain
-    matured,		//HC: 几个共识周期（MATURITY_TIME秒）后，依然存在，所以发生分叉被刷下的可能性很小
-    nonexistent,	//HC: 未上过链
-    failed,			//HC: 上链失败
-    unknown,		//HC: system internal error
+    queueing,       //
+    onchaining1,    //
+    onchaining2,    //
+    onchained,      //
+    matured,        //
+    nonexistent,    //
+    failed,         //
+    unknown,        //
 };
 
 class ConsensusEngine {
@@ -48,7 +52,7 @@ public:
     void start();
     void stop();
 
-    //HC: start test thread which auto creates child block and does consensus
+    //
     void startTest() {
         if (_testthread) {
             return;
@@ -74,7 +78,18 @@ public:
         return false;
     }
 
-    uint32 AddNewBlockEx(const string &strdata, string& requestid);
+    uint32 AddNewBlockEx(const T_APPTYPE &app, const string& MTRootHash,
+        const string &strdata, string& requestid);
+    uint32 AddChainEx(const T_APPTYPE & app, const vector<string>& vecMTRootHash,
+        const vector<string>& vecpayload, const vector<CUInt128>& vecNodeId);
+
+
+    void registerAppCallback(const T_APPTYPE &app, const CONSENSUSNOTIFY &notify);
+    void unregisterAppCallback(const T_APPTYPE &app);
+
+    void SlotHyperBlockUpdated(const T_HYPERBLOCK &h);
+
+
     ONCHAINSTATUS GetOnChainState(const LB_UUID& requestId, size_t &queuenum);
     bool CheckSearchOnChainedPool(const LB_UUID& requestId, T_LOCALBLOCKADDRESS& addr);
     LIST_T_LOCALCONSENSUS GetPoeRecordList();
@@ -87,15 +102,15 @@ private:
     void localBuddyReqThread();
     void localBuddyRspThread();
     void SearchOnChainStateThread();
-    void GreateGenesisBlock();
+    void CheckMyVersionThread();
+    void CreateGenesisBlock();
     void SendLocalBuddyReq();
     void ProcessOnChainRspMsg(const CUInt128 &peerid, char* pBuf, unsigned int uiBufLen);
     void StartGlobalBuddy();
     void SendGlobalBuddyReq();
-
+    void AsyncHyperBlockUpdated(const T_HYPERBLOCK &h);
 
     bool checkConsensusCond();
-    void GetLatestHyperBlock();
 
     void TestOnchain();
     //void SynchronizeHyperData(shared_ptr<T_LOCALCONSENSUS>&& t);

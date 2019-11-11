@@ -32,42 +32,42 @@ using namespace std;
 class SeedCommunication
 {
 public:
-	SeedCommunication() : _isExit(false)
-	{}
+    SeedCommunication() : _isExit(false)
+    {}
 
-	~SeedCommunication() {}
+    ~SeedCommunication() {}
 
-	void pullPeerlistFromSeedServer()
-	{
-		TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
+    void pullPeerlistFromSeedServer()
+    {
+        TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
 
-		int num = 0;
-		while (!_isExit) {
-			taskpool->put(make_shared<SearchNeighbourTask>());
+        int num = 0;
+        while (!_isExit) {
+            taskpool->put(std::make_shared<SearchNeighbourTask>());
 
-			num = 0;
-			while (num < 100 && !_isExit) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(200));
-				++num;
-			}
-		}
-	}
+            num = 0;
+            while (num < 100 && !_isExit) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                ++num;
+            }
+        }
+    }
 
-	void start()
-	{
-		_thread.reset(new std::thread(&SeedCommunication::pullPeerlistFromSeedServer, this));
-	}
+    void start()
+    {
+        _thread.reset(new std::thread(&SeedCommunication::pullPeerlistFromSeedServer, this));
+    }
 
-	void stop()
-	{
-		_isExit = true;
-		if (_thread && _thread->joinable()) {
-			_thread->join();
-		}
-	}
+    void stop()
+    {
+        _isExit = true;
+        if (_thread && _thread->joinable()) {
+            _thread->join();
+        }
+    }
 
 private:
-	std::unique_ptr<std::thread> _thread;
-	bool _isExit;
+    std::unique_ptr<std::thread> _thread;
+    bool _isExit;
 };
 

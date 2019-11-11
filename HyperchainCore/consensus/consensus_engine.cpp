@@ -28,7 +28,8 @@ DEALINGS IN THE SOFTWARE.
 #include "db/HyperchainDB.h"
 #include "consensus_engine.h"
 #include "consensus/globalbuddytask.h"
-#include "consensus/hyperblockTask.hpp"
+#include "AppPlugins.h"
+#include "config.h"
 
 #include "headers/commonstruct.h"
 #include "headers/lambda.h"
@@ -36,26 +37,30 @@ DEALINGS IN THE SOFTWARE.
 
 #include "../node/IAccessPoint.h"
 #include "../node/UdpAccessPoint.hpp"
-#include "../HyperChain/HyperData.h"
 #include "../HyperChain/HyperChainSpace.h"
 
 #include <boost/archive/binary_iarchive.hpp>
 #include <boost/archive/binary_oarchive.hpp>
+#include <boost/bind.hpp>
 
 #define MAX_BUF_LEN (1024 * 32)
 
+
 void SendRefuseReq(const CUInt128 &peerid, const string &hash, uint8 type);
-void ChangeLocalBlockPreHash(LIST_T_LOCALCONSENSUS &localList);
 bool JudgExistAtLocalBuddy(LIST_T_LOCALCONSENSUS localList, T_LOCALCONSENSUS localBlockInfo);
 void ReOnChainFun();
 void GetOnChainInfo();
-void updateMyBuddyBlock();
+void updateMyBuddyBlock(const T_HYPERBLOCK &h);
 void SendConfirmReq(const CUInt128 &peerid, uint64 hyperblocknum, const string &hash, uint8 type);
 void mergeChains(LIST_T_LOCALCONSENSUS &globallist, LIST_T_LOCALCONSENSUS &listLocalBuddyChainInfo);
 bool CreateHyperBlock(T_HYPERBLOCK &tHyperChainBlock);
 bool isConfirming(string &currBuddyHash);
 bool isHyperBlockMatched(uint64 hyperblockid, const T_SHA256 &hash, const CUInt128 &peerid);
 bool isEndNode();
+bool checkAppType(const T_LOCALBLOCK& localblock, const T_LOCALBLOCK& buddyblock);
+bool checkPayload(LIST_T_LOCALCONSENSUS& localList);
+bool MergeToGlobalBuddyChains(LIST_T_LOCALCONSENSUS &listLocalBuddyChainInfo);
+
 
 void ConsensusEngine::TestOnchain()
 {
@@ -86,8 +91,8 @@ void ConsensusEngine::TestOnchain()
     while (!_isstoptest) {
         size_t s = 0;
         {
-            CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistOnChainReq);
-            s = g_tP2pManagerStatus.GetListOnChainReq().size();
+            CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistOnChainReq);
+            s = g_tP2pManagerStatus->GetListOnChainReq().size();
         }
         if (s > 3) {
             sleepfn(30);
@@ -97,7 +102,7 @@ void ConsensusEngine::TestOnchain()
         string sPayLoad = strIP + "-" + to_string(i);
         string requestid;
 
-        AddNewBlockEx(sPayLoad, requestid);
+        AddNewBlockEx(T_APPTYPE(), "", sPayLoad, requestid);
         cout << "Created a test block: " << requestid << endl;
 
         i++;
@@ -105,23 +110,73 @@ void ConsensusEngine::TestOnchain()
     }
 }
 
-uint32 ConsensusEngine::AddNewBlockEx(const string &strdata, string& requestid)
+uint32 ConsensusEngine::AddChainEx(const T_APPTYPE & app, const vector<string>& vecMTRootHash,
+                        const vector<string>& vecPayload, const vector<CUInt128>& vecNodeId)
 {
-    g_tP2pManagerStatus.SetSendRegisReqNum(g_tP2pManagerStatus.GetSendRegisReqNum() + 1);
-    g_tP2pManagerStatus.SetSendConfirmingRegisReqNum(g_tP2pManagerStatus.GetSendConfirmingRegisReqNum() + 1);
+    T_SHA256 preHyperBlockHash;
+    uint64 localprehyperblockid = 0;
+    CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+    sp->GetLatestHyperBlockIDAndHash(localprehyperblockid, preHyperBlockHash);
+
+    LIST_T_LOCALCONSENSUS listLocalConsensusInfo;
+
+    size_t num = vecPayload.size();
+    for (size_t i=0; i < num; i++) {
+        T_LOCALCONSENSUS lconsensus;
+        T_BLOCKSTATEADDR sa;
+        sa.SetPeerAddr(T_PEERADDRESS(vecNodeId[i]));
+        lconsensus.SetPeer(sa);
+
+        T_LOCALBLOCK& tLocalBlock = lconsensus.GetLocalBlock();
+
+        tLocalBlock.SetAppType(app);
+        tLocalBlock.SetPayLoad(vecPayload[i]);
+        tLocalBlock.SetPreHyperBlock(localprehyperblockid, preHyperBlockHash);
+        if (tLocalBlock.isAppTxType()) {
+            T_SHA256 h(vecMTRootHash[i]);
+            tLocalBlock.SetBlockBodyHash(h);
+        }
+        else {
+            tLocalBlock.BuildBlockBodyHash();
+        }
+
+        tLocalBlock.CalculateHashSelf();
+        listLocalConsensusInfo.push_back(std::move(lconsensus));
+    }
+
+    //
+    MergeToGlobalBuddyChains(listLocalConsensusInfo);
+
+    return static_cast<uint32>(listLocalConsensusInfo.size());
+}
+
+uint32 ConsensusEngine::AddNewBlockEx(const T_APPTYPE & app, const string& MTRootHash,
+    const string &strdata, string& requestid)
+{
+    g_tP2pManagerStatus->SetSendRegisReqNum(g_tP2pManagerStatus->GetSendRegisReqNum() + 1);
+    g_tP2pManagerStatus->SetSendConfirmingRegisReqNum(g_tP2pManagerStatus->GetSendConfirmingRegisReqNum() + 1);
 
     T_LOCALBLOCK tLocalBlock;
+    tLocalBlock.SetAppType(app);
     tLocalBlock.SetPayLoad(strdata);
 
     T_SHA256 preHyperBlockHash;
     uint64 localprehyperblockid = 0;
-    g_tP2pManagerStatus.GetPreHyperBlockIDAndHash(localprehyperblockid, preHyperBlockHash);
-    tLocalBlock.SetPreHyperBlock(localprehyperblockid,preHyperBlockHash);
-    tLocalBlock.Rebuild();
-    tLocalBlock.CalculateHashSelf();
-    requestid = tLocalBlock.GetUUID(); //HC: base58
+    CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+    sp->GetLatestHyperBlockIDAndHash(localprehyperblockid, preHyperBlockHash);
+    tLocalBlock.SetPreHyperBlock(localprehyperblockid, preHyperBlockHash);
+    if (tLocalBlock.isAppTxType()) {
+        T_SHA256 h(MTRootHash);
+        tLocalBlock.SetBlockBodyHash(h);
+    }
+    else {
+        tLocalBlock.BuildBlockBodyHash();
+    }
 
-    g_tP2pManagerStatus.trackLocalBlock(tLocalBlock);
+    tLocalBlock.CalculateHashSelf();
+    requestid = tLocalBlock.GetUUID(); //
+
+    g_tP2pManagerStatus->trackLocalBlock(tLocalBlock);
 
     NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
     HCNodeSH & me = nodemgr->myself();
@@ -135,27 +190,30 @@ uint32 ConsensusEngine::AddNewBlockEx(const string &strdata, string& requestid)
         0,
         (char*)h.data());
 
-    //HC: 放入待上链链表排队，等待处理
-    CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistOnChainReq);
-    g_tP2pManagerStatus.GetListOnChainReq().push_back(std::move(LocalConsensusInfo));
-    g_tP2pManagerStatus.SetSendPoeNum(g_tP2pManagerStatus.GetSendPoeNum() + 1);
-    return static_cast<uint32>(g_tP2pManagerStatus.GetListOnChainReq().size());
+    Singleton<DBmgr>::instance()->updateOnChainState(requestid, T_LOCALBLOCKADDRESS());
+    //
+    CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistOnChainReq);
+    g_tP2pManagerStatus->GetListOnChainReq().push_back(std::move(LocalConsensusInfo));
+    g_tP2pManagerStatus->SetSendPoeNum(g_tP2pManagerStatus->GetSendPoeNum() + 1);
+    return static_cast<uint32>(g_tP2pManagerStatus->GetListOnChainReq().size());
 }
 
 void ConsensusEngine::start()
 {
-    g_tP2pManagerStatus.loadHyperBlockCache();
-    if (g_tP2pManagerStatus.GetMaxBlockID() == 0) {
-        GreateGenesisBlock();
+    CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+    T_HYPERBLOCK h;
+    if (sp->GetMaxBlockID() == 0 || !sp->getHyperBlock(0, h)) {
+        CreateGenesisBlock();
     }
 
     _threads.emplace_back(&ConsensusEngine::exec, this);
     _threads.emplace_back(&ConsensusEngine::localBuddyReqThread, this);
     _threads.emplace_back(&ConsensusEngine::localBuddyRspThread, this);
     _threads.emplace_back(&ConsensusEngine::SearchOnChainStateThread, this);
+    _threads.emplace_back(&ConsensusEngine::CheckMyVersionThread, this);
 
-    g_tP2pManagerStatus.tBuddyInfo.uiCurBuddyNo = g_tP2pManagerStatus.GetMaxBlockID() + 1;
-    g_tP2pManagerStatus.tBuddyInfo.eBuddyState = IDLE;
+    g_tP2pManagerStatus->tBuddyInfo.uiCurBuddyNo = sp->GetMaxBlockID() + 1;
+    g_tP2pManagerStatus->tBuddyInfo.eBuddyState = IDLE;
 }
 
 void ConsensusEngine::stop()
@@ -169,43 +227,25 @@ void ConsensusEngine::stop()
 
 bool ConsensusEngine::checkConsensusCond()
 {
-    uint64 currMaxBlockNum = g_tP2pManagerStatus.GetMaxBlockID();
-    CHyperChainSpace *hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
-    uint64 maxBlockNum = hyperchainspace->GetGlobalLatestHyperBlockNo();
-
-    if (maxBlockNum > currMaxBlockNum) {
-        CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
-        if (g_tP2pManagerStatus.listLocalBuddyChainInfo.size() == 0 &&
-            g_tP2pManagerStatus.GetListOnChainReq().size() > 0) {
-            //HC: 本节点当前没有参与本轮共识，但有数据在等待上链，所以需要获取最新超块
-            g_tP2pManagerStatus.SetHaveOnChainReq(true);
-            if (!_is_requested_latest_hyperblock) {
-                GetLatestHyperBlock();
-                _is_requested_latest_hyperblock = true;
-            }
-            SLEEP(2 * ONE_SECOND);
-        }
-        _is_able_to_consensus = false;
-    }
-    else {
-        _is_able_to_consensus = true;
-    }
+    CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+    _is_able_to_consensus = sp->IsLatestHyperBlockReady();
 
     return _is_able_to_consensus;
 }
 
 void ConsensusEngine::prepareLocalBuddy()
 {
-    if (g_tP2pManagerStatus.HaveOnChainReq()) {
+    if (g_tP2pManagerStatus->HaveOnChainReq()) {
         {
-            CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
+            CAutoMutexLock muxAuto1(g_tP2pManagerStatus->MuxlistLocalBuddyChainInfo);
             //put the block into pending-on-chain-list
             ReOnChainFun();
         }
 
-        g_tP2pManagerStatus.SetHaveOnChainReq(false);
+        g_tP2pManagerStatus->SetHaveOnChainReq(false);
     }
-
+    //Notify application layer
+    g_tP2pManagerStatus->allAppCallback<cbindex::PUTONCHAINIDX>();
     this_thread::sleep_for(chrono::milliseconds(200));
 }
 
@@ -214,19 +254,19 @@ void ConsensusEngine::exec()
     bool indexGlobal = true;
     bool bFirstTimes = true;
     bool bCreatBlock = false;
-    bool bNeedGetLastBlock = true;
     system_clock::time_point sendtimepoint = system_clock::now();
+    CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+    g_tP2pManagerStatus->RegisterHyperBlockSignal(boost::bind(&ConsensusEngine::SlotHyperBlockUpdated, this, _1));
     while (!_isstop) {
-        switch (g_tP2pManagerStatus.GetCurrentConsensusPhase())
+        switch (g_tP2pManagerStatus->GetCurrentConsensusPhase())
         {
         case CONSENSUS_PHASE::PREPARE_LOCALBUDDY_PHASE:
             bFirstTimes = true;
-            bNeedGetLastBlock = true;
 
-            //HC: 处理上一个共识周期本地的上链数据，如果没有成功那么本周期准备重新上链
-            updateMyBuddyBlock();
+            //
+            updateMyBuddyBlock(sp->GetLatestHyperBlock());
 
-            g_tP2pManagerStatus.cleanConsensusEnv();
+            g_tP2pManagerStatus->cleanConsensusEnv();
 
             if (checkConsensusCond()) {
                 prepareLocalBuddy();
@@ -242,10 +282,10 @@ void ConsensusEngine::exec()
             }
 
             bCreatBlock = false;
-            uint64 tempNum = 0;
+            size_t tempNum = 0;
             {
-                CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistCurBuddyRsp);
-                tempNum = g_tP2pManagerStatus.listCurBuddyRsp.size();
+                CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistCurBuddyRsp);
+                tempNum = g_tP2pManagerStatus->listCurBuddyRsp.size();
             }
             if (tempNum != 0) {
                 SLEEP(2 * ONE_SECOND);
@@ -254,24 +294,26 @@ void ConsensusEngine::exec()
 
             indexGlobal = false;
 
-            if (!g_tP2pManagerStatus.HaveOnChainReq()) {
-                //HC: 将要共识的块数据放到共识队列 listLocalBuddyChainInfo
+            if (!g_tP2pManagerStatus->HaveOnChainReq()) {
+                //
                 GetOnChainInfo();
             }
 
-            uint64 tempNum2 = 0;
+            size_t tempNum2 = 0;
             {
-                CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
-                tempNum2 = g_tP2pManagerStatus.listLocalBuddyChainInfo.size();
+                CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistLocalBuddyChainInfo);
+                tempNum2 = g_tP2pManagerStatus->listLocalBuddyChainInfo.size();
             }
 
             if (tempNum2 == 0) {
+                //
+                prepareLocalBuddy();
                 SLEEP(2 * ONE_SECOND);
                 break;
             }
 
             g_consensus_console_logger->trace("The Node enter LOCAL_BUDDY status, broadcast Local Consensus Request");
-            g_tP2pManagerStatus.tBuddyInfo.eBuddyState = LOCAL_BUDDY;
+            g_tP2pManagerStatus->tBuddyInfo.eBuddyState = LOCAL_BUDDY;
 
             SendLocalBuddyReq();
             SLEEP(10 * ONE_SECOND);
@@ -280,25 +322,15 @@ void ConsensusEngine::exec()
         }
         case CONSENSUS_PHASE::GLOBALBUDDY_PHASE:
         {
-            uint64 tempNum = 0;
-            {
-                CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
-                tempNum = g_tP2pManagerStatus.listLocalBuddyChainInfo.size();
-            }
-            if (tempNum == 0 || tempNum == 1) {
-                SLEEP(2 * ONE_SECOND);
-                break;
-            }
-
             if (!indexGlobal) {
                 indexGlobal = true;
                 g_consensus_console_logger->trace("The Node enter GLOBAL_BUDDY status");
-                g_tP2pManagerStatus.SetStartGlobalFlag(true);
-                g_tP2pManagerStatus.tBuddyInfo.eBuddyState = GLOBAL_BUDDY;
+                g_tP2pManagerStatus->SetStartGlobalFlag(true);
+                g_tP2pManagerStatus->tBuddyInfo.eBuddyState = GLOBAL_BUDDY;
                 StartGlobalBuddy();
             }
             else {
-                //HC: Broadcast Global Consensus Request every 20 seconds
+                //
                 if (system_clock::now() - sendtimepoint > std::chrono::seconds(20)) {
                     SendGlobalBuddyReq();
                     sendtimepoint = system_clock::now();
@@ -309,41 +341,48 @@ void ConsensusEngine::exec()
         }
         case CONSENSUS_PHASE::PERSISTENCE_CHAINDATA_PHASE:
         {
-            g_tP2pManagerStatus.SetStartGlobalFlag(false);
+            g_tP2pManagerStatus->SetStartGlobalFlag(false);
             indexGlobal = false;
             _is_able_to_consensus = false;
             _is_requested_latest_hyperblock = false;
 
-            uint64 tempNum = 0;
-            uint64 tempNum1 = 0;
+            size_t tempNum = 0;
+            size_t tempNum1 = 0;
 
             if (bFirstTimes) {
                 {
-                    CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
-                    tempNum = g_tP2pManagerStatus.listLocalBuddyChainInfo.size();
+                    CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistLocalBuddyChainInfo);
+                    tempNum = g_tP2pManagerStatus->listLocalBuddyChainInfo.size();
 
-                    CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxlistGlobalBuddyChainInfo);
-                    tempNum1 = g_tP2pManagerStatus.listGlobalBuddyChainInfo.size();
+                    CAutoMutexLock muxAuto1(g_tP2pManagerStatus->MuxlistGlobalBuddyChainInfo);
+                    tempNum1 = g_tP2pManagerStatus->listGlobalBuddyChainInfo.size();
                 }
-                if (tempNum != 0 && tempNum1 != 0) {
+                if (tempNum != 0 || tempNum1 != 0) {
                     bCreatBlock = isEndNode();
                     if (bCreatBlock) {
-                        //HC: create hyper block
+                        //
                         T_HYPERBLOCK tHyperChainBlock;
                         if (CreateHyperBlock(tHyperChainBlock)) {
-                            //HC: update hyper into block memory cache
-                            if (g_tP2pManagerStatus.updateHyperBlockCache(tHyperChainBlock)) {
+                            //
+                            if (sp->GetMaxBlockID() > tHyperChainBlock.GetID()) {
+                                g_consensus_console_logger->warn("Current GetMaxBlockID: [{}]", sp->GetMaxBlockID());
+                                g_consensus_console_logger->warn("Create invalid hyper block: [{}] for block id check failed", tHyperChainBlock.GetID());
+                            }
+                            else {
+                                //
+                                CHECK_RESULT ret = sp->CheckDependency(tHyperChainBlock);
+                                if (CHECK_RESULT::VALID_DATA == ret) {
+                                    g_tP2pManagerStatus->SetMulticastNodes();
 
-                                bNeedGetLastBlock = false;
-                                //HC: send hyper block to neighbors
-                                TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-                                taskpool->put(make_shared<BoardcastHyperBlockTask>());
+                                    //
+                                    sp->updateHyperBlockCache(tHyperChainBlock);
+                                }
+                                else {
+                                    g_consensus_console_logger->warn("Create invalid hyper block: {} for dependency check failed", tHyperChainBlock.GetID());
+                                }
                             }
                         }
                     }
-                }
-                if (bNeedGetLastBlock) {
-                    GetLatestHyperBlock();
                 }
 
                 bFirstTimes = false;
@@ -358,26 +397,26 @@ void ConsensusEngine::exec()
 void ConsensusEngine::localBuddyReqThread()
 {
     while (!_isstop) {
-        if (g_tP2pManagerStatus.GetCurrentConsensusPhase() != CONSENSUS_PHASE::LOCALBUDDY_PHASE) {
+        if (g_tP2pManagerStatus->GetCurrentConsensusPhase() != CONSENSUS_PHASE::LOCALBUDDY_PHASE) {
             {
-                CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxlistCurBuddyReq);
-                g_tP2pManagerStatus.listCurBuddyReq.clear();
+                CAutoMutexLock muxAuto1(g_tP2pManagerStatus->MuxlistCurBuddyReq);
+                g_tP2pManagerStatus->listCurBuddyReq.clear();
 
-                CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistRecvLocalBuddyReq);
-                g_tP2pManagerStatus.listRecvLocalBuddyReq.clear();
+                CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistRecvLocalBuddyReq);
+                g_tP2pManagerStatus->listRecvLocalBuddyReq.clear();
             }
             SLEEP(2 * ONE_SECOND);
             continue;
         }
 
-        uint64 tempNum = 0;
-        uint64 tempNum1 = 0;
+        size_t tempNum = 0;
+        size_t tempNum1 = 0;
         {
-            CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxlistCurBuddyReq);
-            tempNum1 = g_tP2pManagerStatus.listCurBuddyReq.size();
+            CAutoMutexLock muxAuto1(g_tP2pManagerStatus->MuxlistCurBuddyReq);
+            tempNum1 = g_tP2pManagerStatus->listCurBuddyReq.size();
 
-            CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistRecvLocalBuddyReq);
-            tempNum = g_tP2pManagerStatus.listRecvLocalBuddyReq.size();
+            CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistRecvLocalBuddyReq);
+            tempNum = g_tP2pManagerStatus->listRecvLocalBuddyReq.size();
         }
 
         if (tempNum == 0) {
@@ -392,14 +431,14 @@ void ConsensusEngine::localBuddyReqThread()
         else {
             T_BUDDYINFO localInfo;
             {
-                CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistRecvLocalBuddyReq);
-                localInfo = g_tP2pManagerStatus.listRecvLocalBuddyReq.front();
-                g_tP2pManagerStatus.listRecvLocalBuddyReq.pop_front();
+                CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistRecvLocalBuddyReq);
+                localInfo = g_tP2pManagerStatus->listRecvLocalBuddyReq.front();
+                g_tP2pManagerStatus->listRecvLocalBuddyReq.pop_front();
             }
-            g_tP2pManagerStatus.tLocalBuddyAddr = localInfo.GetRequestAddress();
+            g_tP2pManagerStatus->tLocalBuddyAddr = localInfo.GetRequestAddress();
 
             TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-            taskpool->put(make_shared<OnChainRspTask>(localInfo.GetRequestAddress()._nodeid,
+            taskpool->put(std::make_shared<OnChainRspTask>(localInfo.GetRequestAddress()._nodeid,
                 std::move(localInfo.GetBuffer()),
                 localInfo.GetBufferLength()));
         }
@@ -409,26 +448,26 @@ void ConsensusEngine::localBuddyReqThread()
 void ConsensusEngine::localBuddyRspThread()
 {
     while (!_isstop) {
-        if (g_tP2pManagerStatus.GetCurrentConsensusPhase() != CONSENSUS_PHASE::LOCALBUDDY_PHASE) {
+        if (g_tP2pManagerStatus->GetCurrentConsensusPhase() != CONSENSUS_PHASE::LOCALBUDDY_PHASE) {
             {
-                CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxlistCurBuddyRsp);
-                g_tP2pManagerStatus.listCurBuddyRsp.clear();
+                CAutoMutexLock muxAuto1(g_tP2pManagerStatus->MuxlistCurBuddyRsp);
+                g_tP2pManagerStatus->listCurBuddyRsp.clear();
 
-                CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistRecvLocalBuddyRsp);
-                g_tP2pManagerStatus.listRecvLocalBuddyRsp.clear();
+                CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistRecvLocalBuddyRsp);
+                g_tP2pManagerStatus->listRecvLocalBuddyRsp.clear();
             }
             SLEEP(2 * ONE_SECOND);
             continue;
         }
 
-        uint64 tempNumTest = 0;
-        uint64 tempNum = 0;
+        size_t tempNumTest = 0;
+        size_t tempNum = 0;
         {
-            CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxlistCurBuddyRsp);
-            tempNum = g_tP2pManagerStatus.listCurBuddyRsp.size();
+            CAutoMutexLock muxAuto1(g_tP2pManagerStatus->MuxlistCurBuddyRsp);
+            tempNum = g_tP2pManagerStatus->listCurBuddyRsp.size();
 
-            CAutoMutexLock muxAuto2(g_tP2pManagerStatus.MuxlistRecvLocalBuddyRsp);
-            tempNumTest = g_tP2pManagerStatus.listRecvLocalBuddyRsp.size();
+            CAutoMutexLock muxAuto2(g_tP2pManagerStatus->MuxlistRecvLocalBuddyRsp);
+            tempNumTest = g_tP2pManagerStatus->listRecvLocalBuddyRsp.size();
         }
 
         if (tempNumTest == 0) {
@@ -443,11 +482,11 @@ void ConsensusEngine::localBuddyRspThread()
         else {
             T_BUDDYINFO localInfo;
             {
-                CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxlistRecvLocalBuddyRsp);
-                localInfo = g_tP2pManagerStatus.listRecvLocalBuddyRsp.front();
-                g_tP2pManagerStatus.listRecvLocalBuddyRsp.pop_front();
+                CAutoMutexLock muxAuto1(g_tP2pManagerStatus->MuxlistRecvLocalBuddyRsp);
+                localInfo = g_tP2pManagerStatus->listRecvLocalBuddyRsp.front();
+                g_tP2pManagerStatus->listRecvLocalBuddyRsp.pop_front();
             }
-            g_tP2pManagerStatus.tLocalBuddyAddr = localInfo.GetRequestAddress();
+            g_tP2pManagerStatus->tLocalBuddyAddr = localInfo.GetRequestAddress();
 
             ProcessOnChainRspMsg(localInfo.GetRequestAddress()._nodeid,
                 const_cast<char*>(localInfo.GetBuffer().c_str()), localInfo.GetBufferLength());
@@ -470,7 +509,30 @@ time_t convert_str_to_tm(const char * str_time)
 
 const uint64 GENESISBLOCKID = -1;
 
-void ConsensusEngine::GreateGenesisBlock()
+T_LOCALBLOCK GetAppGenesisBlock(const string& appname, uint16 localid, time_t t, APPTYPE type)
+{
+    T_LOCALBLOCK localBlock;
+    localBlock.SetID(localid);
+    localBlock.SetCTime(t);
+    localBlock.SetAppType(T_APPTYPE(type, 0, 0, 0));
+    localBlock.SetChainNum(1);
+    localBlock.SetPreHyperBlock(GENESISBLOCKID, T_SHA256(0));
+
+    string payload;
+    string blockmtroothash = g_appPlugin->GetGenesisBlock(appname, payload);
+    if (payload.empty() || blockmtroothash.empty()) {
+        throw runtime_error(string("cannot get genesis block of ") + appname);
+    }
+
+    localBlock.SetPayLoad(payload);
+
+    T_SHA256 tBlockBodyHash(blockmtroothash);
+    localBlock.SetBlockBodyHash(tBlockBodyHash);
+    
+    return localBlock;
+}
+
+void ConsensusEngine::CreateGenesisBlock()
 {
     T_SHA512 h(1);
     ostringstream oss;
@@ -478,32 +540,47 @@ void ConsensusEngine::GreateGenesisBlock()
 
     time_t t = convert_str_to_tm("2019-03-06 15:50:52");
 
-    //HC:To GenesisBlock,block id is 0,previous hyper block id is -1
+    //
     T_LOCALBLOCK tLocalBlock;
     tLocalBlock.SetID(1);
     tLocalBlock.SetCTime(t);
     tLocalBlock.SetChainNum(1);
     tLocalBlock.SetPreHyperBlock(GENESISBLOCKID, T_SHA256(0));
     tLocalBlock.SetPayLoad(oss.str());
-    tLocalBlock.Rebuild();
-    tLocalBlock.CalculateHashSelf();
+    tLocalBlock.BuildBlockBodyHash();
 
     LIST_T_LOCALBLOCK ListLocalBlock;
     ListLocalBlock.push_back(tLocalBlock);
 
+    try {
+
+        //
+        T_LOCALBLOCK paracoinLocalBlock = GetAppGenesisBlock("paracoin", 2, t, APPTYPE::paracoin);
+        ListLocalBlock.push_back(paracoinLocalBlock);
+
+        //
+        T_LOCALBLOCK ledgerLocalBlock = GetAppGenesisBlock("ledger", 3, t, APPTYPE::ledger);
+        ListLocalBlock.push_back(ledgerLocalBlock);
+    }
+    catch(std::exception& e) {
+        g_consensus_console_logger->anyway("CreateGenesisBlock Failed: {}", e.what());
+        return;
+    }
+
+    //
     T_HYPERBLOCK tHyperBlock;
     tHyperBlock.SetID(0);
     tHyperBlock.SetCTime(t);
-    tHyperBlock.SetWeight(1);
     tHyperBlock.SetPreHash(T_SHA256(0));
     tHyperBlock.SetPreHeaderHash(T_SHA256(0));
 
     tHyperBlock.AddChildChain(std::move(ListLocalBlock));
     tHyperBlock.Rebuild();
 
-    g_tP2pManagerStatus.updateHyperBlockCache(tHyperBlock);
+    CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+    sp->updateHyperBlockCache(tHyperBlock);
 
-    g_tP2pManagerStatus.SetHaveOnChainReq(false);
+    g_tP2pManagerStatus->SetHaveOnChainReq(false);
 
 }
 
@@ -524,8 +601,8 @@ void ConsensusEngine::ProcessOnChainRspMsg(const CUInt128 &peerid, char* pBuf, u
     }
 
     size_t nodeSize = 0;
-    CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
-    nodeSize = g_tP2pManagerStatus.listLocalBuddyChainInfo.size();
+    CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistLocalBuddyChainInfo);
+    nodeSize = g_tP2pManagerStatus->listLocalBuddyChainInfo.size();
     if (nodeSize == 0) {
         return;
     }
@@ -534,7 +611,7 @@ void ConsensusEngine::ProcessOnChainRspMsg(const CUInt128 &peerid, char* pBuf, u
         return;
     }
 
-    //HC: 如果超块不匹配拒绝并退出处理
+    //
     uint64 hyperchainnum = P2pProtocolOnChainRspRecv.GetHyperBlockNum();
     if (!isHyperBlockMatched(hyperchainnum, P2pProtocolOnChainRspRecv.tHyperBlockHash, peerid)) {
         g_consensus_console_logger->info("Refuse buddy request for different hyper block from {}", peerid.ToHexString());
@@ -543,24 +620,25 @@ void ConsensusEngine::ProcessOnChainRspMsg(const CUInt128 &peerid, char* pBuf, u
         return;
     }
 
-    //HC: 已经放入块集合中了吗？
-    CAutoMutexLock muxAuto3(g_tP2pManagerStatus.MuxlistCurBuddyRsp);
-    ITR_LIST_T_BUDDYINFOSTATE itr = g_tP2pManagerStatus.listCurBuddyRsp.begin();
-    for (; itr != g_tP2pManagerStatus.listCurBuddyRsp.end(); itr++) {
+    //
+    CAutoMutexLock muxAuto3(g_tP2pManagerStatus->MuxlistCurBuddyRsp);
+    ITR_LIST_T_BUDDYINFOSTATE itr = g_tP2pManagerStatus->listCurBuddyRsp.begin();
+    for (; itr != g_tP2pManagerStatus->listCurBuddyRsp.end(); itr++) {
         if (0 == strncmp((*itr).strBuddyHash, P2pProtocolOnChainRspRecv.GetHash(), DEF_STR_HASH256_LEN)) {
             return;
         }
     }
 
     T_BUDDYINFOSTATE buddyInfo;
-    copyLocalBuddyList(buddyInfo.localList, g_tP2pManagerStatus.listLocalBuddyChainInfo);
+    copyLocalBuddyList(buddyInfo.localList, g_tP2pManagerStatus->listLocalBuddyChainInfo);
 
     bool index = false;
     bool isExistMyBlock = false;
     NodeManager *nodemanger = Singleton<NodeManager>::getInstance();
     HCNodeSH me = nodemanger->myself();
 
-    //HC: 这里取收到的所有块和已有的块合并
+    //
+    auto firstelm = buddyInfo.localList.begin();
     for (uint64 i = 0; i < P2pProtocolOnChainRspRecv.GetBlockCount(); i++) {
         T_LOCALCONSENSUS  LocalBlockInfo;
         try {
@@ -577,27 +655,35 @@ void ConsensusEngine::ProcessOnChainRspMsg(const CUInt128 &peerid, char* pBuf, u
         }
         index = JudgExistAtLocalBuddy(buddyInfo.GetList(), LocalBlockInfo);
         if (isExistMyBlock && !index) {
-            //HC: 出现2个本节点块,LocalBlockInfo此块是本节点的，但是已经不在buddy队列里
+            //
             g_consensus_console_logger->error("There are my two blocks in a consensus period,Skip...");
-            //HC: Skip this buddy.
+            //
             return;
         }
 
         if (index)
             continue;
 
+        T_LOCALBLOCK& block = LocalBlockInfo.GetLocalBlock();
+        if (!checkAppType(firstelm->GetLocalBlock(), block)) {
+            g_consensus_console_logger->info("Different application type,cannot make buddy");
+            continue;
+        }
         buddyInfo.LocalListPushBack(LocalBlockInfo);
         buddyInfo.LocalListSort();
     }
 
+    if (!checkPayload(buddyInfo.localList)) {
+        return;
+    }
     buddyInfo.Set(P2pProtocolOnChainRspRecv.GetHash(), RECV_ON_CHAIN_RSP, _tpeeraddress(peerid));
 
-    //HC: listCurBuddyRsp中存储所有待共识的buddy组合
-    g_tP2pManagerStatus.listCurBuddyRsp.push_back(buddyInfo);
+    //
+    g_tP2pManagerStatus->listCurBuddyRsp.push_back(buddyInfo);
 
-    //HC: if my status isn't confirming, then send confirm request.
-    //HC: here cannot call isConfirming function because MuxlistCurBuddyRsp object is used in isConfirming function.
-    for (auto &buddy : g_tP2pManagerStatus.listCurBuddyRsp) {
+    //
+    //
+    for (auto &buddy : g_tP2pManagerStatus->listCurBuddyRsp) {
         if (buddy.GetBuddyState() == SEND_CONFIRM) {
             return;
         }
@@ -608,41 +694,39 @@ void ConsensusEngine::ProcessOnChainRspMsg(const CUInt128 &peerid, char* pBuf, u
 
 void GetOnChainInfo()
 {
-    CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
+    CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistLocalBuddyChainInfo);
     {
-        if (g_tP2pManagerStatus.listOnChainReq.empty()) {
-            g_tP2pManagerStatus.tBuddyInfo.eBuddyState = IDLE;
+        if (g_tP2pManagerStatus->listOnChainReq.empty()) {
+            g_tP2pManagerStatus->tBuddyInfo.eBuddyState = IDLE;
             return;
         }
 
         T_LOCALCONSENSUS onChainInfo;
-        onChainInfo = g_tP2pManagerStatus.listOnChainReq.front();
-        g_tP2pManagerStatus.listOnChainReq.pop_front();
+        onChainInfo = g_tP2pManagerStatus->listOnChainReq.front();
+        g_tP2pManagerStatus->listOnChainReq.pop_front();
 
-        g_tP2pManagerStatus.listLocalBuddyChainInfo.push_back(onChainInfo);
+        g_tP2pManagerStatus->listLocalBuddyChainInfo.emplace_back(std::move(onChainInfo));
 
         g_consensus_console_logger->info("GetOnChainInfo,listLocalBuddyChainInfo phase:{} push a block:{}",
-            (uint8)g_tP2pManagerStatus.GetCurrentConsensusPhase(),
+            (uint8)g_tP2pManagerStatus->GetCurrentConsensusPhase(),
             onChainInfo.GetLocalBlock().GetPayLoadPreview());
 
-        g_tP2pManagerStatus.listLocalBuddyChainInfo.sort(CmpareOnChain());
+        g_tP2pManagerStatus->listLocalBuddyChainInfo.sort(CmpareOnChain());
 
         int i = 0;
-        for (auto &b : g_tP2pManagerStatus.listLocalBuddyChainInfo) {
+        for (auto &b : g_tP2pManagerStatus->listLocalBuddyChainInfo) {
             g_consensus_console_logger->info("GetOnChainInfo,listLocalBuddyChainInfo:{} {}", ++i, b.GetLocalBlock().GetPayLoadPreview());
         }
 
-        g_tP2pManagerStatus.tBuddyInfo.usBlockNum = static_cast<uint16>(g_tP2pManagerStatus.listLocalBuddyChainInfo.size());
+        g_tP2pManagerStatus->tBuddyInfo.usBlockNum = static_cast<uint16>(g_tP2pManagerStatus->listLocalBuddyChainInfo.size());
 
-        g_tP2pManagerStatus.tBuddyInfo.uiCurBuddyNo = g_tP2pManagerStatus.GetMaxBlockID() + 1;
-        g_tP2pManagerStatus.tBuddyInfo.eBuddyState = LOCAL_BUDDY;
-        g_tP2pManagerStatus.uiNodeState = CONFIRMING;
-
-        g_tP2pManagerStatus.curBuddyBlock = onChainInfo;
-
+        CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+        g_tP2pManagerStatus->tBuddyInfo.uiCurBuddyNo = sp->GetMaxBlockID() + 1;
+        g_tP2pManagerStatus->tBuddyInfo.eBuddyState = LOCAL_BUDDY;
+        g_tP2pManagerStatus->uiNodeState = CONFIRMING;
     }
 
-    g_tP2pManagerStatus.SetHaveOnChainReq(true);
+    g_tP2pManagerStatus->SetHaveOnChainReq(true);
 
     return;
 }
@@ -650,13 +734,13 @@ void GetOnChainInfo()
 void SendConfirmReq(const CUInt128 &peerid, uint64 hyperblocknum, const string &hash, uint8 type)
 {
     TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-    taskpool->put(make_shared<OnChainConfirmTask>(peerid, hyperblocknum, hash, type));
+    taskpool->put(std::make_shared<OnChainConfirmTask>(peerid, hyperblocknum, hash, type));
 }
 
 void ConsensusEngine::SendLocalBuddyReq()
 {
     TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-    taskpool->put(make_shared<OnChainTask>());
+    taskpool->put(std::make_shared<OnChainTask>());
 }
 
 void copyLocalBuddyList(LIST_T_LOCALCONSENSUS &endList, LIST_T_LOCALCONSENSUS fromList)
@@ -670,37 +754,16 @@ void copyLocalBuddyList(LIST_T_LOCALCONSENSUS &endList, LIST_T_LOCALCONSENSUS fr
     }
 }
 
-void putStream(boost::archive::binary_oarchive &oa, T_HYPERBLOCK &hyperblock)
-{
-    oa << hyperblock.GetHashSelf();
-    oa << hyperblock;
-
-    const vector<LIST_T_LOCALBLOCK>& childchains = hyperblock.GetChildChains();
-
-    assert(hyperblock.GetChildChainsCount() == childchains.size());
-    size_t totalBlocks = 0;
-    for (auto &cchain : childchains) {
-		uint32 blocknum = cchain.size();
-		oa << blocknum;
-		for (auto iter = cchain.begin(); iter != cchain.end(); iter++) {
-			oa << (*iter);
-		}
-        totalBlocks += blocknum;
-    }
-    assert(hyperblock.GetChildBlockCount() == totalBlocks);
-}
-
-
 void SendRefuseReq(const CUInt128 &peerid, const string &hash, uint8 type)
 {
     TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-    taskpool->put(make_shared<OnChainRefuseTask>(peerid, hash, type));
+    taskpool->put(std::make_shared<OnChainRefuseTask>(peerid, hash, type));
 }
 
 void SendCopyLocalBlock(T_LOCALCONSENSUS &localBlock)
 {
     TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-    taskpool->put(make_shared<CopyBlockTask>(localBlock));
+    taskpool->put(std::make_shared<CopyBlockTask>(localBlock));
 }
 
 bool JudgExistAtLocalBuddy(LIST_T_LOCALCONSENSUS localList, T_LOCALCONSENSUS localBlockInfo)
@@ -711,7 +774,7 @@ bool JudgExistAtLocalBuddy(LIST_T_LOCALCONSENSUS localList, T_LOCALCONSENSUS loc
             && ((*itrList).GetPeer().GetPeerAddrOut() == localBlockInfo.GetPeer().GetPeerAddrOut())) {
             string h1 = (*itrList).GetLocalBlock().GetUUID();
             string h2 = localBlockInfo.GetLocalBlock().GetUUID();
-            if ( h1 == h2) {
+            if (h1 == h2) {
                 return true;
             }
         }
@@ -723,9 +786,9 @@ bool MergeToGlobalBuddyChains(LIST_T_LOCALCONSENSUS &listLocalBuddyChainInfo)
 {
     bool isNewChain = true;
     int num = 0;
-    CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistGlobalBuddyChainInfo);
-    auto itr = g_tP2pManagerStatus.listGlobalBuddyChainInfo.begin();
-    for (; itr != g_tP2pManagerStatus.listGlobalBuddyChainInfo.end(); itr++) {
+    CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistGlobalBuddyChainInfo);
+    auto itr = g_tP2pManagerStatus->listGlobalBuddyChainInfo.begin();
+    for (; itr != g_tP2pManagerStatus->listGlobalBuddyChainInfo.end(); itr++) {
         num++;
 
         size_t globalchainlen = itr->size();
@@ -748,7 +811,7 @@ bool MergeToGlobalBuddyChains(LIST_T_LOCALCONSENSUS &listLocalBuddyChainInfo)
             for (; globalblock != globalchain->end() && isContained; globalblock++) {
                 if ((localblock->GetLocalBlock().GetUUID()
                     == globalblock->GetLocalBlock().GetUUID())) {
-                    //HC: block is same,compare the next block.
+                    //
                     sameblocklist.push_back(*localblock);
                     break;
                 }
@@ -763,15 +826,15 @@ bool MergeToGlobalBuddyChains(LIST_T_LOCALCONSENSUS &listLocalBuddyChainInfo)
         if (sameblocknumber > 0 && !isContained) {
 
             if (sameblocknumber > 1) {
-                //HC: merge two chains,Two chains have 2 or more than 2 blocks is same.
+                //
                 g_consensus_console_logger->info("merge two chains");
                 mergeChains(*itr, listLocalBuddyChainInfo);
                 return false;
 
             }
             else {
-                //HC: This is a critical error.
-                //HC: Todo
+                //
+                //
                 g_consensus_console_logger->critical("Two chains have {} same block: ", sameblocknumber);
                 for (auto &b : listLocalBuddyChainInfo) {
                     g_consensus_console_logger->critical("ReceivedChainInfo block: {} {}",
@@ -802,7 +865,7 @@ bool MergeToGlobalBuddyChains(LIST_T_LOCALCONSENSUS &listLocalBuddyChainInfo)
                 g_consensus_console_logger->warn("The chain contains another one.");
             }
             if (globalchainlen < localchainlen) {
-                g_tP2pManagerStatus.listGlobalBuddyChainInfo.erase(itr);
+                g_tP2pManagerStatus->listGlobalBuddyChainInfo.erase(itr);
                 isNewChain = true;
             }
             else {
@@ -814,9 +877,9 @@ bool MergeToGlobalBuddyChains(LIST_T_LOCALCONSENSUS &listLocalBuddyChainInfo)
 
     if (isNewChain) {
         if (listLocalBuddyChainInfo.size() >= LEAST_START_GLOBAL_BUDDY_NUM) {
-            g_tP2pManagerStatus.listGlobalBuddyChainInfo.push_back(listLocalBuddyChainInfo);
-            g_tP2pManagerStatus.tBuddyInfo.usChainNum = static_cast<uint16>(g_tP2pManagerStatus.listGlobalBuddyChainInfo.size());
-            g_tP2pManagerStatus.listGlobalBuddyChainInfo.sort(CmpareGlobalBuddy());
+            g_tP2pManagerStatus->listGlobalBuddyChainInfo.push_back(listLocalBuddyChainInfo);
+            g_tP2pManagerStatus->tBuddyInfo.usChainNum = static_cast<uint16>(g_tP2pManagerStatus->listGlobalBuddyChainInfo.size());
+            g_tP2pManagerStatus->listGlobalBuddyChainInfo.sort(CmpareGlobalBuddy());
         }
     }
 
@@ -840,37 +903,39 @@ void mergeChains(LIST_T_LOCALCONSENSUS &globallist, LIST_T_LOCALCONSENSUS &local
     }
 }
 
-//HC: on chain try again
+//
 void ReOnChainFun()
 {
     NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
     HCNodeSH me = nodemgr->myself();
 
     T_LOCALCONSENSUS localInfo;
-    ITR_LIST_T_LOCALCONSENSUS itrList = g_tP2pManagerStatus.listLocalBuddyChainInfo.begin();
-    for (; itrList != g_tP2pManagerStatus.listLocalBuddyChainInfo.end(); itrList++) {
+    ITR_LIST_T_LOCALCONSENSUS itrList = g_tP2pManagerStatus->listLocalBuddyChainInfo.begin();
+    for (; itrList != g_tP2pManagerStatus->listLocalBuddyChainInfo.end(); itrList++) {
         if ((*itrList).GetPeer().GetPeerAddr() == me->getNodeId<CUInt128>()) {
-            localInfo = (*itrList);
+            T_LOCALCONSENSUS& localInfo = (*itrList);
+
+            g_consensus_console_logger->info("***ReOnChainFun***: phase:{} block:{}",
+                (uint8)g_tP2pManagerStatus->GetCurrentConsensusPhase(),
+                localInfo.GetLocalBlock().GetPayLoadPreview());
 
             localInfo.uiRetryTime += 1;
-            g_tP2pManagerStatus.listLocalBuddyChainInfo.clear();
-            g_tP2pManagerStatus.listOnChainReq.push_front(localInfo);
-            g_consensus_console_logger->info("***ReOnChainFun***: phase:{} block:{}",
-                (uint8)g_tP2pManagerStatus.GetCurrentConsensusPhase(),
-                localInfo.GetLocalBlock().GetPayLoadPreview());
+            g_tP2pManagerStatus->listOnChainReq.emplace_front(std::move(localInfo));
+            g_tP2pManagerStatus->listLocalBuddyChainInfo.clear();
+
             break;
         }
     }
 }
 
-bool CurBuddyBlockInTheHyperBlock(T_HYPERBLOCK &blockInfos, T_LOCALCONSENSUS *buddyblock)
+bool CurBuddyBlockInTheHyperBlock(const T_HYPERBLOCK &blockInfos, T_LOCALCONSENSUS *buddyblock)
 {
     bool index = false;
     auto itr = blockInfos.GetChildChains().begin();
-    for (; itr != blockInfos.GetChildChains().end(); itr++) {
-        ITR_LIST_T_LOCALBLOCK subItr = itr->begin();
+    for (; itr != blockInfos.GetChildChains().end(); ++itr) {
+        auto subItr = itr->begin();
         for (; subItr != itr->end(); subItr++) {
-            //HC: don't use block hash which is variable
+            //
             if (buddyblock->GetLocalBlockUUID() == subItr->GetUUID()) {
                 index = true;
                 break;
@@ -884,83 +949,116 @@ bool CurBuddyBlockInTheHyperBlock(T_HYPERBLOCK &blockInfos, T_LOCALCONSENSUS *bu
     return index;
 }
 
-//HC: 块数据是否上链成功，如果不成功下个共识周期继续上链
-//HC: 如果上链成功，清空上链数据链表
-//HC: TO DO: 这里不完善需要改进，未考虑分叉情况,一旦分叉上链的结果可能完全不同。
-void updateMyBuddyBlock()
+//
+//
+//
+void updateMyBuddyBlock(const T_HYPERBLOCK &h)
 {
     NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
     HCNodeSH me = nodemgr->myself();
 
-    //HC: Is my local block in hyperblock?
-    bool isfound = false;
-    T_LOCALCONSENSUS *localInfo;
-    CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
-    if (g_tP2pManagerStatus.listLocalBuddyChainInfo.size() == 0) {
+    //
+    T_LOCALCONSENSUS *localInfo = nullptr;
+    CAutoMutexLock muxAuto1(g_tP2pManagerStatus->MuxlistLocalBuddyChainInfo);
+    if (g_tP2pManagerStatus->listLocalBuddyChainInfo.size() == 0 && g_tP2pManagerStatus->listOnChainReq.size() == 0) {
         return;
     }
-    ITR_LIST_T_LOCALCONSENSUS itrList = g_tP2pManagerStatus.listLocalBuddyChainInfo.begin();
-    for (; itrList != g_tP2pManagerStatus.listLocalBuddyChainInfo.end(); itrList++) {
+    auto itrList = g_tP2pManagerStatus->listLocalBuddyChainInfo.begin();
+    for (; itrList != g_tP2pManagerStatus->listLocalBuddyChainInfo.end(); itrList++) {
         if ((*itrList).GetPeer().GetPeerAddr() == me->getNodeId<CUInt128>()) {
             localInfo = &(*itrList);
-            isfound = true;
             break;
         }
     }
-
-    bool isIncluded = false;
-    if (isfound) {
-        CAutoMutexLock muxAuto(g_tP2pManagerStatus.m_MuxHchainBlockList);
-        isIncluded = CurBuddyBlockInTheHyperBlock(g_tP2pManagerStatus.GetPreHyperBlock(), localInfo);
+    if (!localInfo) {
+        return;
     }
+    bool isIncluded = false;
+    isIncluded = CurBuddyBlockInTheHyperBlock(h, localInfo);
     g_consensus_console_logger->info("updateMyBuddyBlock: current buddy block included in hyperblock? {}", isIncluded);
     if (!isIncluded) {
         ReOnChainFun();
     }
     else {
-        //HC: All block in hyper chain,so clear local buddy chain.
-        g_tP2pManagerStatus.uiSendConfirmingRegisReqNum -= 1;
-        g_tP2pManagerStatus.listLocalBuddyChainInfo.clear();
+        //
+        g_tP2pManagerStatus->uiSendConfirmingRegisReqNum -= 1;
+        g_tP2pManagerStatus->listLocalBuddyChainInfo.clear();
+    }
+}
+
+void ConsensusEngine::SlotHyperBlockUpdated(const T_HYPERBLOCK &h)
+{
+    AsyncHyperBlockUpdated(h);
+    //std::thread(&ConsensusEngine::AsyncHyperBlockUpdated, this, h).detach();
+}
+
+void ConsensusEngine::AsyncHyperBlockUpdated(const T_HYPERBLOCK &h)
+{
+    NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+    HCNodeSH me = nodemgr->myself();
+
+    //
+    T_LOCALCONSENSUS *localInfo = nullptr;
+    CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistLocalBuddyChainInfo);
+    if (g_tP2pManagerStatus->listLocalBuddyChainInfo.size() == 0 && g_tP2pManagerStatus->listOnChainReq.size() == 0) {
+        return;
+    }
+    auto itrList = g_tP2pManagerStatus->listLocalBuddyChainInfo.begin();
+    for (; itrList != g_tP2pManagerStatus->listLocalBuddyChainInfo.end(); itrList++) {
+        if ((*itrList).GetPeer().GetPeerAddr() == me->getNodeId<CUInt128>()) {
+            localInfo = &(*itrList);
+            break;
+        }
+    }
+
+    bool isIncluded = false;
+    if (localInfo) {
+        isIncluded = CurBuddyBlockInTheHyperBlock(h, localInfo);
+        g_consensus_console_logger->info("AsyncHyperBlockUpdated: current buddy block included in hyperblock : {}", isIncluded);
+        if (isIncluded) {
+            //
+            g_tP2pManagerStatus->uiSendConfirmingRegisReqNum -= 1;
+            g_tP2pManagerStatus->listLocalBuddyChainInfo.clear();
+            return;
+        }
+    }
+
+    //
+    itrList = g_tP2pManagerStatus->listOnChainReq.begin();
+    for (; itrList != g_tP2pManagerStatus->listOnChainReq.end(); itrList++) {
+        isIncluded = CurBuddyBlockInTheHyperBlock(h, &(*itrList));
+        if (isIncluded) {
+            g_tP2pManagerStatus->listOnChainReq.erase(itrList);
+            g_consensus_console_logger->info("AsyncHyperBlockUpdated: listOnChainReq's buddy block included in hyperblock");
+            break;
+        }
     }
 }
 
 
 void ConsensusEngine::StartGlobalBuddy()
 {
+    //
+    g_tP2pManagerStatus->allAppCallback<cbindex::PUTGLOBALCHAINIDX>();
+
+    //
     TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-    taskpool->put(make_shared<GlobalBuddyStartTask>());
+    taskpool->put(std::make_shared<GlobalBuddyStartTask>());
 }
 
 void ConsensusEngine::SendGlobalBuddyReq()
 {
     TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-    taskpool->put(make_shared<GlobalBuddySendTask>());
-}
-
-
-void ConsensusEngine::GetLatestHyperBlock()
-{
-    if (g_tP2pManagerStatus.HaveOnChainReq()) {
-        uint64 localHID = g_tP2pManagerStatus.GetMaxBlockID();
-        CHyperChainSpace *hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
-        uint64 globalHID = hyperchainspace->GetGlobalLatestHyperBlockNo();
-
-        if (globalHID > localHID) {
-            //HC: Download Lastest HyperBlock on Remote Node
-            hyperchainspace->GetRemoteHyperBlockByID(globalHID);
-
-            g_consensus_console_logger->info("Downloading Hyperblock {} from Hyperchain network.", globalHID);
-        }
-    }
+    taskpool->put(std::make_shared<GlobalBuddySendTask>());
 }
 
 ONCHAINSTATUS ConsensusEngine::GetOnChainState(const LB_UUID& requestId, size_t &queuenum)
 {
     {
-        CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistOnChainReq);
-        LIST_T_LOCALCONSENSUS::iterator itrOnChain = g_tP2pManagerStatus.listOnChainReq.begin();
+        CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistOnChainReq);
+        LIST_T_LOCALCONSENSUS::iterator itrOnChain = g_tP2pManagerStatus->listOnChainReq.begin();
         queuenum = 0;
-        for (; itrOnChain != g_tP2pManagerStatus.listOnChainReq.end(); itrOnChain++) {
+        for (; itrOnChain != g_tP2pManagerStatus->listOnChainReq.end(); itrOnChain++) {
             queuenum++;
             if (0 == requestId.compare((*itrOnChain).GetLocalBlockUUID().c_str())) {
                 return ONCHAINSTATUS::queueing;
@@ -969,13 +1067,13 @@ ONCHAINSTATUS ConsensusEngine::GetOnChainState(const LB_UUID& requestId, size_t 
     }
 
     {
-        CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
-        LIST_T_LOCALCONSENSUS::iterator itrOnChaining = g_tP2pManagerStatus.listLocalBuddyChainInfo.begin();
-        for (; itrOnChaining != g_tP2pManagerStatus.listLocalBuddyChainInfo.end(); itrOnChaining++) {
+        CAutoMutexLock muxAuto1(g_tP2pManagerStatus->MuxlistLocalBuddyChainInfo);
+        LIST_T_LOCALCONSENSUS::iterator itrOnChaining = g_tP2pManagerStatus->listLocalBuddyChainInfo.begin();
+        for (; itrOnChaining != g_tP2pManagerStatus->listLocalBuddyChainInfo.end(); itrOnChaining++) {
             if (0 == requestId.compare((*itrOnChaining).GetLocalBlockUUID().c_str())) {
-                CONSENSUS_PHASE phase = g_tP2pManagerStatus.GetCurrentConsensusPhase();
+                CONSENSUS_PHASE phase = g_tP2pManagerStatus->GetCurrentConsensusPhase();
                 if ((phase == CONSENSUS_PHASE::GLOBALBUDDY_PHASE || phase == CONSENSUS_PHASE::PERSISTENCE_CHAINDATA_PHASE)
-                    && g_tP2pManagerStatus.listLocalBuddyChainInfo.size() > 1) {
+                    && g_tP2pManagerStatus->listLocalBuddyChainInfo.size() > 1) {
                     return ONCHAINSTATUS::onchaining2;
                 }
                 return ONCHAINSTATUS::onchaining1;
@@ -988,14 +1086,37 @@ ONCHAINSTATUS ConsensusEngine::GetOnChainState(const LB_UUID& requestId, size_t 
 
 bool ConsensusEngine::CheckSearchOnChainedPool(const LB_UUID& requestId, T_LOCALBLOCKADDRESS& addr)
 {
-    CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxMapSearchOnChain);
-    if (g_tP2pManagerStatus.mapSearchOnChain.count(requestId) > 0) {
-        addr = g_tP2pManagerStatus.mapSearchOnChain.at(requestId).addr;
+    CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxMapSearchOnChain);
+    if (g_tP2pManagerStatus->mapSearchOnChain.count(requestId) > 0) {
+        addr = g_tP2pManagerStatus->mapSearchOnChain.at(requestId).addr;
         return true;
     }
     return false;
 }
 
+extern bool CheckMyVersion(string& newversion);
+void ConsensusEngine::CheckMyVersionThread()
+{
+    std::function<void(int)> sleepfn = [this](int sleepseconds) {
+        int i = 0;
+        int maxtimes = sleepseconds * 1000 / 200;
+        while (i++ < maxtimes) {
+            if (_isstop) {
+                break;
+            }
+            this_thread::sleep_for(chrono::milliseconds(200));
+        }
+    };
+
+    while (!_isstop) {
+        string strNewVersion;
+        CheckMyVersion(strNewVersion);
+        if (strNewVersion != VERSION_STRING) {
+            g_consensus_console_logger->anyway("Found new version: {}, Please update", strNewVersion);
+        }
+        sleepfn(5 * 60);
+    }
+}
 
 void ConsensusEngine::SearchOnChainStateThread()
 {
@@ -1012,16 +1133,16 @@ void ConsensusEngine::SearchOnChainStateThread()
     while (!_isstop)
     {
         {
-            CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxMapSearchOnChain);
-            ITR_MAP_T_SEARCHONCHAIN itr = g_tP2pManagerStatus.mapSearchOnChain.begin();
-            for (; itr != g_tP2pManagerStatus.mapSearchOnChain.end();) {
+            CAutoMutexLock muxAuto1(g_tP2pManagerStatus->MuxMapSearchOnChain);
+            ITR_MAP_T_SEARCHONCHAIN itr = g_tP2pManagerStatus->mapSearchOnChain.begin();
+            for (; itr != g_tP2pManagerStatus->mapSearchOnChain.end();) {
                 size_t queuenum;
                 ONCHAINSTATUS status = GetOnChainState((*itr).first, queuenum);
                 uint64 timeNow = (uint64)time(nullptr);
                 if (timeNow - (*itr).second.uiTime > MATURITY_TIME &&
                     status == ONCHAINSTATUS::unknown) {
-                    //HC: 已经成熟且未在进行共识，删除
-                    itr = g_tP2pManagerStatus.mapSearchOnChain.erase(itr);
+                    //
+                    itr = g_tP2pManagerStatus->mapSearchOnChain.erase(itr);
                 }
                 else {
                     itr++;
@@ -1035,17 +1156,27 @@ void ConsensusEngine::SearchOnChainStateThread()
 
 LIST_T_LOCALCONSENSUS ConsensusEngine::GetPoeRecordList()
 {
-    CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistOnChainReq);
-    return g_tP2pManagerStatus.listOnChainReq;
+    CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistOnChainReq);
+    return g_tP2pManagerStatus->listOnChainReq;
 }
 
 uint16 ConsensusEngine::GetStateOfCurrentConsensus(uint64 &blockNo, uint16 &blockNum, uint16 &chainNum)
 {
-    blockNo = g_tP2pManagerStatus.GetBuddyInfo().GetCurBuddyNo();
-    blockNum = g_tP2pManagerStatus.GetBuddyInfo().GetBlockNum();
-    chainNum = g_tP2pManagerStatus.GetBuddyInfo().GetChainNum();
+    blockNo = g_tP2pManagerStatus->GetBuddyInfo().GetCurBuddyNo();
+    blockNum = g_tP2pManagerStatus->GetBuddyInfo().GetBlockNum();
+    chainNum = g_tP2pManagerStatus->GetBuddyInfo().GetChainNum();
 
-    return g_tP2pManagerStatus.GetBuddyInfo().GetBuddyState();
+    return g_tP2pManagerStatus->GetBuddyInfo().GetBuddyState();
+}
+
+void ConsensusEngine::registerAppCallback(const T_APPTYPE &app, const CONSENSUSNOTIFY &notify)
+{
+    g_tP2pManagerStatus->setAppCallback(app, notify);
+}
+
+void ConsensusEngine::unregisterAppCallback(const T_APPTYPE &app)
+{
+    g_tP2pManagerStatus->removeAppCallback(app);
 }
 
 void PutIntoConsensusList(T_BUDDYINFOSTATE &buddyinfostate)
@@ -1055,44 +1186,44 @@ void PutIntoConsensusList(T_BUDDYINFOSTATE &buddyinfostate)
 
     buddyinfostate.uibuddyState = CONSENSUS_CONFIRMED;
     bool index = false;
-    //HC: put child blocks into consensus list: listLocalBuddyChainInfo
+    //
     ITR_LIST_T_LOCALCONSENSUS itrSub = buddyinfostate.localList.begin();
     for (; itrSub != buddyinfostate.localList.end(); itrSub++) {
-        index = JudgExistAtLocalBuddy(g_tP2pManagerStatus.listLocalBuddyChainInfo, (*itrSub));
+        index = JudgExistAtLocalBuddy(g_tP2pManagerStatus->listLocalBuddyChainInfo, (*itrSub));
         if (index)
             continue;
 
         g_consensus_console_logger->info("PutIntoConsensusList: push block into listLocalBuddyChainInfo: {}",
             (*itrSub).GetLocalBlock().GetPayLoadPreview());
-        g_tP2pManagerStatus.listLocalBuddyChainInfo.push_back((*itrSub));
-        g_tP2pManagerStatus.listLocalBuddyChainInfo.sort(CmpareOnChain());
-        g_tP2pManagerStatus.tBuddyInfo.usBlockNum = static_cast<uint16>(g_tP2pManagerStatus.listLocalBuddyChainInfo.size());
+        g_tP2pManagerStatus->listLocalBuddyChainInfo.push_back((*itrSub));
+        g_tP2pManagerStatus->listLocalBuddyChainInfo.sort(CmpareOnChain());
+        g_tP2pManagerStatus->tBuddyInfo.usBlockNum = static_cast<uint16>(g_tP2pManagerStatus->listLocalBuddyChainInfo.size());
 
         if ((*itrSub).GetPeer().GetPeerAddr()._nodeid != me->getNodeId<CUInt128>()) {
-            g_tP2pManagerStatus.SetRecvPoeNum(g_tP2pManagerStatus.GetRecvPoeNum() + 1);
+            g_tP2pManagerStatus->SetRecvPoeNum(g_tP2pManagerStatus->GetRecvPoeNum() + 1);
         }
         SendCopyLocalBlock((*itrSub));
 
-        g_tP2pManagerStatus.SetRecvRegisReqNum(g_tP2pManagerStatus.GetRecvRegisReqNum() + 1);
-        g_tP2pManagerStatus.SetRecvConfirmingRegisReqNum(g_tP2pManagerStatus.GetRecvConfirmingRegisReqNum() + 1);
+        g_tP2pManagerStatus->SetRecvRegisReqNum(g_tP2pManagerStatus->GetRecvRegisReqNum() + 1);
+        g_tP2pManagerStatus->SetRecvConfirmingRegisReqNum(g_tP2pManagerStatus->GetRecvConfirmingRegisReqNum() + 1);
     }
 }
 
 bool makeBuddy(const string & confirmhash)
 {
     bool ismakebuddy = false;
-    CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
+    CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistLocalBuddyChainInfo);
     {
-        CAutoMutexLock muxAuto1(g_tP2pManagerStatus.MuxlistCurBuddyRsp);
-        ITR_LIST_T_BUDDYINFOSTATE itrRsp = g_tP2pManagerStatus.listCurBuddyRsp.begin();
-        for (; itrRsp != g_tP2pManagerStatus.listCurBuddyRsp.end();) {
+        CAutoMutexLock muxAuto1(g_tP2pManagerStatus->MuxlistCurBuddyRsp);
+        ITR_LIST_T_BUDDYINFOSTATE itrRsp = g_tP2pManagerStatus->listCurBuddyRsp.begin();
+        for (; itrRsp != g_tP2pManagerStatus->listCurBuddyRsp.end();) {
             if (0 == strncmp((*itrRsp).strBuddyHash, confirmhash.c_str(), DEF_STR_HASH256_LEN)) {
                 (*itrRsp).uibuddyState = CONSENSUS_CONFIRMED;
             }
             else if ((*itrRsp).GetBuddyState() != CONSENSUS_CONFIRMED) {
                 SendRefuseReq((*itrRsp).GetPeerAddrOut()._nodeid,
                     string((*itrRsp).strBuddyHash, DEF_STR_HASH256_LEN), RECV_REQ);
-                itrRsp = g_tP2pManagerStatus.listCurBuddyRsp.erase(itrRsp);
+                itrRsp = g_tP2pManagerStatus->listCurBuddyRsp.erase(itrRsp);
                 continue;
             }
             ++itrRsp;
@@ -1100,14 +1231,14 @@ bool makeBuddy(const string & confirmhash)
     }
 
     {
-        CAutoMutexLock muxAutoReq(g_tP2pManagerStatus.MuxlistCurBuddyReq);
+        CAutoMutexLock muxAutoReq(g_tP2pManagerStatus->MuxlistCurBuddyReq);
 
-        auto itr = g_tP2pManagerStatus.listCurBuddyReq.begin();
-        for (; itr != g_tP2pManagerStatus.listCurBuddyReq.end();) {
+        auto itr = g_tP2pManagerStatus->listCurBuddyReq.begin();
+        for (; itr != g_tP2pManagerStatus->listCurBuddyReq.end();) {
             if (0 == strncmp((*itr).strBuddyHash, confirmhash.c_str(), DEF_STR_HASH256_LEN) && (*itr).uibuddyState != CONSENSUS_CONFIRMED) {
                 PutIntoConsensusList(*itr);
                 int i = 0;
-                for (auto &b : g_tP2pManagerStatus.listLocalBuddyChainInfo) {
+                for (auto &b : g_tP2pManagerStatus->listLocalBuddyChainInfo) {
                     g_consensus_console_logger->info("makeBuddy: listLocalBuddyChainInfo: {} {}", ++i, b.GetLocalBlock().GetPayLoadPreview());
                 }
                 ismakebuddy = true;
@@ -1115,7 +1246,7 @@ bool makeBuddy(const string & confirmhash)
             else if ((*itr).GetBuddyState() != CONSENSUS_CONFIRMED) {
                 SendRefuseReq((*itr).GetPeerAddrOut()._nodeid,
                     string((*itr).strBuddyHash, DEF_STR_HASH256_LEN), RECV_RSP);
-                itr = g_tP2pManagerStatus.listCurBuddyReq.erase(itr);
+                itr = g_tP2pManagerStatus->listCurBuddyReq.erase(itr);
                 continue;
             }
             ++itr;
@@ -1123,23 +1254,23 @@ bool makeBuddy(const string & confirmhash)
     }
 
     g_consensus_console_logger->info("makeBuddy: listCurBuddyReq size: {} listCurBuddyRsp size: {}, makebuddy:{}",
-        g_tP2pManagerStatus.listCurBuddyReq.size(),
-        g_tP2pManagerStatus.listCurBuddyRsp.size(), ismakebuddy);
+        g_tP2pManagerStatus->listCurBuddyReq.size(),
+        g_tP2pManagerStatus->listCurBuddyRsp.size(), ismakebuddy);
 
     if (ismakebuddy) {
-        CAutoMutexLock muxAuto2(g_tP2pManagerStatus.MuxlistRecvLocalBuddyRsp);
-        g_tP2pManagerStatus.listRecvLocalBuddyRsp.clear();
+        CAutoMutexLock muxAuto2(g_tP2pManagerStatus->MuxlistRecvLocalBuddyRsp);
+        g_tP2pManagerStatus->listRecvLocalBuddyRsp.clear();
 
-        CAutoMutexLock muxAuto3(g_tP2pManagerStatus.MuxlistRecvLocalBuddyReq);
-        g_tP2pManagerStatus.listRecvLocalBuddyReq.clear();
+        CAutoMutexLock muxAuto3(g_tP2pManagerStatus->MuxlistRecvLocalBuddyReq);
+        g_tP2pManagerStatus->listRecvLocalBuddyReq.clear();
     }
     return ismakebuddy;
 }
 
 bool isConfirming(string &currBuddyHash)
 {
-    CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistCurBuddyRsp);
-    for (auto &buddy : g_tP2pManagerStatus.listCurBuddyRsp) {
+    CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistCurBuddyRsp);
+    for (auto &buddy : g_tP2pManagerStatus->listCurBuddyRsp) {
         if (buddy.GetBuddyState() == SEND_CONFIRM) {
             currBuddyHash = string(buddy.GetBuddyHash(), DEF_STR_HASH256_LEN);
             return true;
@@ -1150,26 +1281,32 @@ bool isConfirming(string &currBuddyHash)
 
 bool CreateHyperBlock(T_HYPERBLOCK &tHyperBlock)
 {
-    CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
+    CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistGlobalBuddyChainInfo);
+    if (g_tP2pManagerStatus->listGlobalBuddyChainInfo.size() == 0) {
+        return false;
+    }
 
-    auto localconsensus = g_tP2pManagerStatus.listLocalBuddyChainInfo.begin();
+    auto globalconsensus = g_tP2pManagerStatus->listGlobalBuddyChainInfo.begin()->begin();
 
-    CAutoMutexLock muxAuto1(g_tP2pManagerStatus.m_MuxHchainBlockList);
-    T_HYPERBLOCK &preHyperBlock = g_tP2pManagerStatus.GetPreHyperBlock();
+    CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+
+    T_HYPERBLOCK preHyperBlock = sp->GetLatestHyperBlock();
 
     const T_SHA256& hhash = preHyperBlock.GetHashSelf();
-
-    if (localconsensus->GetLocalBlock().GetPreHHash() != hhash) {
-        if (!g_tP2pManagerStatus.getHyperBlock(localconsensus->GetLocalBlock().GetPreHHash(), preHyperBlock)) {
+    T_LOCALBLOCK& localblock = globalconsensus->GetLocalBlock();
+    if (localblock.GetPreHHash() != hhash) {
+        if (!sp->getHyperBlock(localblock.GetPreHHash(), preHyperBlock)) {
+            //
+            //
             g_consensus_console_logger->error("Failed to Creat HyperBlock: {}, preHyperBlock don't exist",
-                localconsensus->GetLocalBlock().GetHID());
+                localblock.GetHID());
             return false;
         }
     }
 
     tHyperBlock.SetID(preHyperBlock.GetID() + 1);
     tHyperBlock.SetPreHash(preHyperBlock.GetHashSelf());
-    tHyperBlock.SetCTime(g_tP2pManagerStatus.GettTimeOfConsensus());
+    tHyperBlock.SetCTime(g_tP2pManagerStatus->GettTimeOfConsensus());
     tHyperBlock.SetPreHeaderHash(preHyperBlock.calculateHeaderHashSelf());
 
     uint16 blockNum = 0;
@@ -1178,12 +1315,79 @@ bool CreateHyperBlock(T_HYPERBLOCK &tHyperBlock)
 
     g_consensus_console_logger->anyway("Creating HyperBlock: {}", tHyperBlock.header.uiID);
 
-    uint32_t chainnum = 0;
-    auto itr = g_tP2pManagerStatus.listGlobalBuddyChainInfo.begin();
-    for (; itr != g_tP2pManagerStatus.listGlobalBuddyChainInfo.end(); ++itr) {
+    //
+    map<T_APPTYPE,char> mapLedgerApp;
+    multimap<T_APPTYPE, list<LIST_T_LOCALCONSENSUS>::iterator> appmap;
+    auto& globalChain = g_tP2pManagerStatus->listGlobalBuddyChainInfo;
+    for (auto chain = globalChain.begin(); chain != globalChain.end(); ++chain ) {
+        T_LOCALBLOCK& block = (*chain).begin()->GetLocalBlock();
+        if (block.isAppTxType()) {
+            mapLedgerApp[block.GetAppType()] = 0;
+            appmap.insert(std::pair<T_APPTYPE, list<LIST_T_LOCALCONSENSUS>::iterator>(block.GetAppType(), chain));
+        }
+    }
 
+    //
+    T_SHA256 prevhhash = preHyperBlock.GetHashSelf();
+    uint32_t prevhid = preHyperBlock.GetID();
+    for (auto app : mapLedgerApp) {
+        if (appmap.count(app.first) > 1) {
+            for (auto mi = appmap.lower_bound(app.first); mi != appmap.upper_bound(app.first); ) {
+                vector<T_PAYLOADADDR> vecPayload;
+                for (auto& localconsensus: *mi->second) {
+                    vecPayload.emplace_back(T_LOCALBLOCKADDRESS(), localconsensus.GetLocalBlock().GetPayLoad());
+                }
+                CBRET ret = g_tP2pManagerStatus->appCallback<cbindex::CHECKCHAINIDX>(
+                    app.first, vecPayload, prevhid, prevhhash);
+                if (ret == CBRET::REGISTERED_FALSE) {
+                   globalChain.erase(mi->second);
+                   appmap.erase(mi++);
+                }
+                else {
+                    mi++;
+                }
+            }
+        }
+    }
+
+    for (auto app : mapLedgerApp) {
+        if (appmap.count(app.first) > 1) {
+            auto currMax = appmap.lower_bound(app.first);
+            auto mi = currMax;
+            mi++;
+            for (; mi != appmap.upper_bound(app.first); ++mi) {
+               if (mi->second->size() < currMax->second->size()) {
+                   globalChain.erase(mi->second);
+               }
+               else if (mi->second->size() == currMax->second->size()) {
+                   //
+                   auto hash = mi->second->begin()->GetLocalBlock().GetHashSelf();
+                   auto hashcurrMax = currMax->second->begin()->GetLocalBlock().GetHashSelf();
+                   if (hash > hashcurrMax) {
+                       globalChain.erase(mi->second);
+                   }
+                   else {
+                       globalChain.erase(currMax->second);
+                       currMax = mi;
+                   }
+               }
+               else {
+                   globalChain.erase(currMax->second);
+                   currMax = mi;
+               }
+            }
+            g_consensus_console_logger->anyway("Removed {} {} chains",
+                appmap.count(app.first) - 1, app.first.isLedge() ? "ledger" : "paracoin");
+        }
+    }
+
+    //
+    uint32_t chainnum = 0;
+    auto itr = globalChain.begin();
+    for (; itr != globalChain.end(); ++itr) {
         chainnum++;
         blockNum = 0;
+        T_APPTYPE app;
         auto subItr = (*itr).begin();
         for (; subItr != (*itr).end(); ++subItr) {
 
@@ -1195,13 +1399,17 @@ bool CreateHyperBlock(T_HYPERBLOCK &tHyperBlock)
                 continue;
             }
             blockNum += 1;
-            g_consensus_console_logger->anyway("\t HyperBlock: {}:{} payload:{}", chainnum, blockNum,
+            g_consensus_console_logger->anyway("\t {}:{} {} payload:{}", chainnum, blockNum,
+				subItr->tLocalBlock.GetAppType().tohexstring(),
                 subItr->tLocalBlock.GetPayLoadPreview());
 
             listLocalBlockInfo.emplace_back((*subItr).tLocalBlock);
+            app = subItr->tLocalBlock.GetAppType();
         }
 
-        listLocalBlockInfo.sort(CmpareOnChainLocal());
+        if (!app.isParaCoin()) {
+            listLocalBlockInfo.sort(CmpareOnChainLocal());
+        }
         tHyperBlock.AddChildChain(std::move(listLocalBlockInfo));
         listLocalBlockInfo.clear();
     }
@@ -1209,11 +1417,11 @@ bool CreateHyperBlock(T_HYPERBLOCK &tHyperBlock)
     tHyperBlock.Rebuild();
 
     g_consensus_console_logger->anyway("New HyperBlock: {} hash:{}", tHyperBlock.GetID(),
-                                    tHyperBlock.GetHashSelf().toHexString());
+        tHyperBlock.GetHashSelf().toHexString());
     return true;
 }
 
-//HC: 计算本节点是否是共识链上最后一个节点如果是则负责创建超块
+//
 bool isEndNode()
 {
     bool isEndNodeBuddyChain = false;
@@ -1221,16 +1429,32 @@ bool isEndNode()
     NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
     HCNodeSH me = nodemgr->myself();
 
-    CAutoMutexLock muxAuto(g_tP2pManagerStatus.MuxlistLocalBuddyChainInfo);
-    if (g_tP2pManagerStatus.listLocalBuddyChainInfo.size() == 0)
-        return false;
-    LIST_T_LOCALCONSENSUS::iterator itr = g_tP2pManagerStatus.listLocalBuddyChainInfo.end();
-    itr--;
+    do {
+        CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistLocalBuddyChainInfo);
+        if (g_tP2pManagerStatus->listLocalBuddyChainInfo.size() == 0) {
+            break;
+        }
+        LIST_T_LOCALCONSENSUS::iterator itr = g_tP2pManagerStatus->listLocalBuddyChainInfo.end();
+        itr--;
 
-    if ((*itr).GetPeer().GetPeerAddr() == me->getNodeId<CUInt128>()) {
-        isEndNodeBuddyChain = true;
+        if ((*itr).GetPeer().GetPeerAddr() == me->getNodeId<CUInt128>()) {
+            isEndNodeBuddyChain = true;
+        }
+    } while (false);
+
+    //
+    if (!isEndNodeBuddyChain)
+    {
+        CAutoMutexLock muxAuto1(g_tP2pManagerStatus->MuxlistGlobalBuddyChainInfo);
+        for (auto& childchain : g_tP2pManagerStatus->listGlobalBuddyChainInfo) {
+            auto childblock = childchain.end();
+            childblock--;
+            if ((*childblock).GetPeer().GetPeerAddr() == me->getNodeId<CUInt128>()) {
+                isEndNodeBuddyChain = true;
+                break;
+            }
+        }
     }
-
     return isEndNodeBuddyChain;
 }
 
@@ -1238,7 +1462,8 @@ bool isHyperBlockMatched(uint64 hyperblockid, const T_SHA256 &hash, const CUInt1
 {
     T_SHA256 preHyperBlockHash;
     uint64 localhyperblockid = 0;
-    g_tP2pManagerStatus.GetPreHyperBlockIDAndHash(localhyperblockid, preHyperBlockHash);
+    CHyperChainSpace *sp = Singleton<CHyperChainSpace, string>::getInstance();
+    sp->GetLatestHyperBlockIDAndHash(localhyperblockid, preHyperBlockHash);
 
     bool isMatched = true;
     bool isNeedUpdateHyperBlock = false;
@@ -1262,10 +1487,54 @@ bool isHyperBlockMatched(uint64 hyperblockid, const T_SHA256 &hash, const CUInt1
     }
 
     if (isNeedUpdateHyperBlock) {
-        //HC: give me your hyper block
+        //
         g_consensus_console_logger->info("Hello friend, give me your HyperBlock:{}", hyperblockid);
-        CHyperData hyperdata;
-        hyperdata.PullHyperDataByHID(hyperblockid, peerid.ToHexString());
+        sp->PullHyperDataByHID(hyperblockid, peerid.ToHexString());
     }
     return isMatched;
+}
+
+
+bool checkAppType(const T_LOCALBLOCK& localblock, const T_LOCALBLOCK& buddyblock)
+{
+    T_APPTYPE localapptype = localblock.GetAppType();
+    if (localblock.isAppTxType() || buddyblock.isAppTxType()) {
+        if (localblock.GetAppType() != buddyblock.GetAppType()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool checkPayload(LIST_T_LOCALCONSENSUS& localList)
+{
+    //
+    auto itrblock = localList.begin();
+
+    uint16 i = 0;
+    map<boost::any, T_LOCALBLOCKADDRESS> outpt;
+    boost::any hashPrev;
+
+    for (; itrblock != localList.end();) {
+
+        T_LOCALBLOCK& block = itrblock->GetLocalBlock();
+        T_LOCALBLOCKADDRESS addr;
+        addr.set(block.GetHID(), 1, i + 1);
+        T_PAYLOADADDR payloadaddr(addr, block.GetPayLoad());
+
+        CBRET ret = g_tP2pManagerStatus->appCallback<cbindex::VALIDATEFNIDX>(block.GetAppType(), payloadaddr, outpt, hashPrev);
+        if (ret == CBRET::REGISTERED_FALSE) {
+            g_consensus_console_logger->warn("checkPayload() : invalid buddy data,removed");
+            localList.erase(itrblock++);
+            continue;
+        }
+        i++;
+        itrblock++;
+    }
+
+    //
+    if (localList.size() < 2) {
+        return false;
+    }
+    return true;
 }
