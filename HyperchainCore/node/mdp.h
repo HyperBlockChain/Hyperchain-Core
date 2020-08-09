@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -20,49 +20,45 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 DEALINGS IN THE SOFTWARE.
 */
 
-#include "TaskThreadPool.h"
-#include "newLog.h"
+#pragma once
 
-TaskThreadPool::TaskThreadPool(uint32_t numthreads, uint32_t maxnumtasks) :
-    _numthreads(numthreads), _taskqueue(maxnumtasks), _isstop(false)
-{
-    std::function<void()> f = std::bind(&TaskThreadPool::exec_task, this);
-    for (size_t i = 0; i < _numthreads; i++) {
-        _threads.emplace_back(thread(f));
-    }
-}
 
-void TaskThreadPool::stop()
-{
-    _taskqueue.stop();
-    _isstop = true;
-    for (auto& t : _threads) {
-        t.join();
-    }
-    _threads.clear();
-}
 
-bool TaskThreadPool::put(QueueTask &&t)
-{
-    bool ret = _taskqueue.push(std::forward<QueueTask>(t));
-    if (!ret) {
-        g_daily_logger->error("TaskThreadPool::put() _taskqueue put fail , size = {}", _taskqueue.size());
-    }
-    return ret;
-}
+#define MDPC_CLIENT         "MDPC01"
 
-void TaskThreadPool::exec_task()
-{
-    while (!_isstop) {
-        list<QueueTask> tasklist;
-        _taskqueue.pop(tasklist);
-        for (auto &t : tasklist) {
-            if (t->isRespond()) {
-                t->execRespond();
-            }
-            else {
-                t->exec();
-            }
-        }
-    }
-}
+
+
+#define MDPW_WORKER         "MDPW01"
+
+
+
+#define MDP_MON "MDPMON"
+
+
+
+#define MDPW_READY          "\001"
+#define MDPW_IDLE           "\002"
+#define MDPW_REQUEST        "\003"
+#define MDPW_REPLY          "\004"
+#define MDPW_HEARTBEAT      "\005"
+#define MDPW_DISCONNECT     "\006"
+
+#define HC_BROKER "inproc:
+
+
+#define CONSENSUS_SERVICE "consensus"
+#define CONSENSUS_T_SERVICE "consensus_task"
+
+#define NODE_SERVICE "node"
+#define NODE_T_SERVICE "node_task"
+
+#define HYPERCHAINSPACE_SERVICE "hyperchainspace"
+#define HYPERCHAINSPACE_T_SERVICE "hyperchain_task"
+
+#define HYPERBLOCK_PUB_SERVICE "inproc://hyperblock_pub"
+
+extern zmq::context_t * g_inproc_context;
+extern int g_sys_interrupted;
+
+
+

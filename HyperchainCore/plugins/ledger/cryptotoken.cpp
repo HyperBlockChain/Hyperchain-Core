@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -120,8 +120,9 @@ CBlock CreateGenesisBlock(const string& name, const string& desc, vector<unsigne
     txNew.nVersion = 1;
     txNew.vin.resize(GENESISBLOCK_VIN_COUNT);
     txNew.vout.resize(1);
-    //
-    //txNew.vin[0].scriptSig = CScript() << 486604799 << CBigNum(4) 
+    
+
+    //txNew.vin[0].scriptSig = CScript() << 486604799 << CBigNum(4)
     txNew.vin[0].scriptSig = CScript()
         << std::vector<unsigned char>((const unsigned char*)(&name[0]), (const unsigned char*)(&name[0]) + name.size());
 
@@ -160,10 +161,11 @@ extern CWallet* pwalletMain;
 CBlock CreateGenesisBlock(uint32_t nTime, const string& name, const string& desc, vector<unsigned char> logo, int32_t nVersion,
     const int64_t& genesisSupply, const std::vector<unsigned char>& newPublicKey)
 {
-    //const CScript genesisOutputScript = CScript() 
+    //const CScript genesisOutputScript = CScript()
     //    << ParseHex("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f") << OP_CHECKSIG;
 
-    //
+    
+
     const CScript genesisOutputScript = CScript() << newPublicKey << OP_CHECKSIG;
 
     return CreateGenesisBlock(name, desc, logo, genesisOutputScript, nTime, nVersion, genesisSupply);
@@ -178,7 +180,8 @@ CBlock SearchGenesisBlock(uint32_t nTime, const string& name, const string& desc
     return genesis;
 }
 
-//
+
+
 void NewGenesisBlock(uint32_t nTime, const string& name, const string& desc, vector<unsigned char> logo, int32_t nVersion, const int64_t& genesisSupply,
     CKey& newKey)
 {
@@ -334,7 +337,8 @@ bool CryptoToken::IsSysToken(const string& shorthash)
     return shorthash == GetHashPrefixOfSysGenesis();
 }
 
-//
+
+
 bool CryptoToken::ReadTokenFile(const string& name, string& shorthash, string& errormsg)
 {
     namespace fs = boost::filesystem;
@@ -470,7 +474,8 @@ CBlock CryptoToken::GetGenesisBlock()
 }
 
 
-//
+
+
 CBlock CryptoToken::MineGenesisBlock(const CKey& newKey)
 {
     string& logo = mapSettings["logo"];
@@ -514,7 +519,8 @@ CBlock CryptoToken::MineGenesisBlock(const CKey& newKey)
 
 bool CryptoToken::AddKeyToWallet(const CKey& newKey)
 {
-    //
+    
+
     string currenttoken = g_cryptoToken.GetName();
 
     string strWallet = GetTokenWalletFile(GetTokenConfigPath());
@@ -549,6 +555,8 @@ bool CryptoToken::ContainToken(const string& tokenhash)
     bool isDefaultCoin = (tokenhash == GetHashPrefixOfSysGenesis());
 
     CryptoToken currency(isDefaultCoin);
+    currency.SelectNetWorkParas();
+
     string tknhash = tokenhash;
     string errmsg;
     if (!isDefaultCoin && !currency.ReadTokenFile("", tknhash, errmsg)) {
@@ -619,15 +627,17 @@ string CryptoToken::GetNameOfSysGenesis() {
 void CryptoToken::SetDefaultParas()
 {
     mapSettings = { {"name", "ledger"},
-                       {"description",""},
+                       {"description","www.hyperchain.net"},
                        {"logo",""},
                        {"version","1"},
-                       {"supply","100000000"},   //
+                       {"supply","100000000"},   
+
                        {"time","1568277586"},
-                       {"address","16RmSuJuiEjaZYSRCb3VYzEKLXp8zxjvXX"}, //
-                       {"publickey","040b387e6c74db8aa3ea38d6708dba46ce345c9a3a2772021ef9ac5809663bff84f17e22cf4bc824d7848d932178a72b40a45050f3e5f5be97dc359019e91b5f6c"},
-                       {"hashgenesisblock","1dc4e125f97802dc42d27e4b6f017ae44c49fbb07ded1a356e9f1ce3e816f3d7"},
-                       {"hashmerkleroot","941c6319e19fd5c534f3341be13f2e219c48c053c3d524537aa977342b93a432"},
+                       {"address","1CJmHdwaCvzkoY4vGJTM9v8CCA9Ge1kLmw"}, 
+
+                       {"publickey","04ad943c2f812817b188e65b3ce7ee8c808ba14e146044ee8abf5926e371560807f37f28c84906e0779b3552425e9d804c068173154ca35c7a33e5579fab381307"},
+                       {"hashgenesisblock","eb524a61f15c88d165bbd9820c1a20a7465eb046b782f9b1f45e34373abf715e"},
+                       {"hashmerkleroot","d57bbb366497bd47c38ac2038bf3d8f4852e547d1d5438e6abc1b7751f50325c"},
                        {"hid","0"},
                        {"chainnum","1"},
                        {"localid","3"},
@@ -636,7 +646,7 @@ void CryptoToken::SetDefaultParas()
 
 void CryptoToken::SelectNetWorkParas()
 {
-    string model = "sanbox";
+    string model = "sandbox";
     if (mapArgs.count("-model")) {
         model = mapArgs["-model"];
         if (model == "informal" || model == "formal") {
@@ -644,9 +654,11 @@ void CryptoToken::SelectNetWorkParas()
                       {"description","www.hyperchain.net"},
                       {"logo",""},
                       {"version","1"},
-                      {"supply","100000000"},                           //
+                      {"supply","100000000"},                           
+
                       {"time","1572531412"},
-                      {"address","1Ao8Rk36otR5uksWQffCgcvQ6Y5YNkDB8J"}, //
+                      {"address","1Ao8Rk36otR5uksWQffCgcvQ6Y5YNkDB8J"}, 
+
                       {"publickey","040b29eb299db9348698e3bad3fa0532e98a4ceccf4d55786ea97222647ad0bf3327fca5cfef0809638bb67c5f9ca0b5badad32ff78203408eef64b75702990ba8"},
                       {"hashgenesisblock","9c7a96e0670a81e9071ae6cd438eb4579292bcc5046ed0233031ac3682431f7d"},
                       {"hashmerkleroot","bb076e94df2fc651e7040d2e7ba0232fc37b9b2bb511b33f967ce1d5b9cee4cd"},
@@ -657,7 +669,8 @@ void CryptoToken::SelectNetWorkParas()
             return;
         }
     }
-    //
+    
+
     SetDefaultParas();
 }
 CryptoToken g_cryptoToken;

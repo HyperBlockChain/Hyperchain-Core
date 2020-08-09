@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -162,7 +162,8 @@ bool CWallet::EncryptWallet(const string& strWalletPassphrase)
 
     CCrypter crypter;
     int64 nStartTime = GetTimeMillis();
-    //
+    
+
     crypter.SetKeyFromPassphrase(strWalletPassphrase, kMasterKey.vchSalt, 25000, kMasterKey.nDerivationMethod);
     kMasterKey.nDeriveIterations = 2500000 / ((double)(GetTimeMillis() - nStartTime));
 
@@ -189,7 +190,8 @@ bool CWallet::EncryptWallet(const string& strWalletPassphrase)
             pwalletdbEncryption->TxnBegin();
             pwalletdbEncryption->WriteMasterKey(nMasterKeyMaxID, kMasterKey);
         }
-        //
+        
+
         if (!EncryptKeys(vMasterKey))
         {
             if (fFileBacked)
@@ -361,7 +363,8 @@ bool CWallet::IsMine(const CTxIn &txin) const
     return false;
 }
 
-//
+
+
 int64 CWallet::GetDebit(const CTxIn &txin) const
 {
     CRITICAL_BLOCK(cs_wallet)
@@ -511,7 +514,7 @@ void CWalletTx::GetAccountAmounts(const string& strAccount, int64& nGenerated, i
     }
 }
 
-void CWalletTx::AddSupportingTransactions(CTxDB& txdb)
+void CWalletTx::AddSupportingTransactions(CTxDB_Wrapper& txdb)
 {
     vtxPrev.clear();
 
@@ -574,11 +577,11 @@ bool CWalletTx::WriteToDisk()
     return CWalletDB(pwallet->strWalletFile).WriteTx(GetHash(), *this);
 }
 
-int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
+int CWallet::ScanForWalletTransactions(CBlockIndexSP pindexStart, bool fUpdate)
 {
     int ret = 0;
 
-    CBlockIndex* pindex = pindexStart;
+    CBlockIndexSP pindex = pindexStart;
     CRITICAL_BLOCK(cs_wallet)
     {
         while (pindex)
@@ -590,7 +593,7 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
                 if (AddToWalletIfInvolvingMe(tx, &block, fUpdate))
                     ret++;
             }
-            pindex = pindex->pnext;
+            pindex = pindex->pnext();
         }
     }
     return ret;
@@ -598,7 +601,7 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
 
 void CWallet::ReacceptWalletTransactions()
 {
-    CTxDB txdb("r");
+    CTxDB_Wrapper txdb("r");
     bool fRepeat = true;
     while (fRepeat) CRITICAL_BLOCK(cs_wallet)
     {
@@ -654,7 +657,7 @@ void CWallet::ReacceptWalletTransactions()
     }
 }
 
-void CWalletTx::RelayWalletTransaction(CTxDB& txdb)
+void CWalletTx::RelayWalletTransaction(CTxDB_Wrapper& txdb)
 {
     BOOST_FOREACH(const CMerkleTx& tx, vtxPrev)
     {
@@ -678,7 +681,7 @@ void CWalletTx::RelayWalletTransaction(CTxDB& txdb)
 
 void CWalletTx::RelayWalletTransaction()
 {
-    CTxDB txdb("r");
+    CTxDB_Wrapper txdb("r");
     RelayWalletTransaction(txdb);
 }
 
@@ -702,7 +705,7 @@ void CWallet::ResendWalletTransactions()
 
     // Rebroadcast any of our txes that aren't in a block yet
     printf("ResendWalletTransactions()\n");
-    CTxDB txdb("r");
+    CTxDB_Wrapper txdb("r");
     CRITICAL_BLOCK(cs_wallet)
     {
         // Sort them in chronological order
@@ -921,11 +924,11 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CW
 
     wtxNew.pwallet = this;
 
-    CRITICAL_BLOCK(cs_main)
+    CRITICAL_BLOCK_T_MAIN(cs_main)
         CRITICAL_BLOCK(cs_wallet)
     {
         // txdb must be opened before the mapWallet lock
-        CTxDB txdb("r");
+        CTxDB_Wrapper txdb("r");
         {
             nFeeRet = nTransactionFee;
             loop
@@ -1035,7 +1038,7 @@ bool CWallet::CreateTransaction(CScript scriptPubKey, int64 nValue, CWalletTx& w
 // Call after CreateTransaction unless you want to abort
 bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
 {
-    CRITICAL_BLOCK(cs_main)
+    CRITICAL_BLOCK_T_MAIN(cs_main)
         CRITICAL_BLOCK(cs_wallet)
     {
         printf("CommitTransaction:\n%s", wtxNew.ToString().c_str());
@@ -1074,7 +1077,8 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
         if (!wtxNew.AcceptToMemoryPool())
         {
             // This must not fail. The transaction has already been signed and recorded.
-            //
+            
+
             EraseFromWallet(wtxNew.GetHash());
             printf("CommitTransaction() : Error: Transaction not valid");
             return false;
@@ -1164,7 +1168,7 @@ int CWallet::LoadWallet(bool& fFirstRunRet)
         if (!SetAddressBookName(CBitcoinAddress(vchDefaultKey), ""))
             return DB_LOAD_FAIL;
     }
-    
+
     m_threadFlushWallet.reset(new std::thread(&ThreadFlushWalletDB, &strWalletFile));
     return DB_LOAD_OK;
 }

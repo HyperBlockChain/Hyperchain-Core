@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -313,7 +313,8 @@ typedef struct _tp2pprotocolonchainrsp
     uint64 uiHyperBlockNum;
     uint64  uiBlockCount;
     T_SHA256 tHyperBlockHash;
-    int8 strHash[DEF_STR_HASH256_LEN]; //
+    int8 strHash[DEF_STR_HASH256_LEN]; 
+
 
     _tp2pprotocolonchainrsp& operator = (const _tp2pprotocolonchainrsp& arRes);
     void SetP2pprotocolonchainrsp(T_P2PPROTOCOLRSP Result, uint64 HyperBlockNum, uint64  BlockCount, int8 *Hash);

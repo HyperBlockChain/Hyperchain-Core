@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -48,7 +48,8 @@ int CHyperchainDB::saveHyperBlocksToDB(const vector<T_HYPERBLOCK> &vHyperblock)
 
 int CHyperchainDB::cleanTmp(HyperchainDB &hyperchainDB)
 {
-    //
+    
+
     if (hyperchainDB.size() > 0)
     {
         HyperchainDB::iterator it = hyperchainDB.begin();
@@ -68,6 +69,20 @@ int CHyperchainDB::cleanTmp(HyperchainDB &hyperchainDB)
         hyperchainDB.erase(hyperchainDB.begin(), hyperchainDB.end());
     }
     return 0;
+}
+
+bool CHyperchainDB::getHyperBlockbyHeaderHash(T_HYPERBLOCK &h, const T_SHA256 &headerhash)
+{
+    int ret = Singleton<DBmgr>::instance()->getHyperBlockbyHeaderHash(h, headerhash);
+    if (ret != 0) {
+        return false;
+    }
+    addLocalBlocksbyhhash(h);
+    if (!h.verify()) {
+        std::printf("Invalid hyper block: %llu in my storage\n", h.GetID());
+        return false;
+    }
+    return true;
 }
 
 bool CHyperchainDB::getHyperBlock(T_HYPERBLOCK &h, const T_SHA256 &hhash)
@@ -113,7 +128,8 @@ void CHyperchainDB::addLocalBlocks(T_HYPERBLOCK &h)
             chainnum = l.GetChainNum();
         }
         if (chainnum != l.GetChainNum()) {
-            //
+            
+
             h.AddChildChain(std::move(childchain));
             childchain.clear();
             chainnum = l.GetChainNum();
@@ -125,7 +141,34 @@ void CHyperchainDB::addLocalBlocks(T_HYPERBLOCK &h)
     }
 }
 
-//
+void CHyperchainDB::addLocalBlocksbyhhash(T_HYPERBLOCK &h)
+{
+    LIST_T_LOCALBLOCK localblocklist;
+    LIST_T_LOCALBLOCK childchain;
+    int chainnum = -1;
+    Singleton<DBmgr>::instance()->getLocalBlocks(localblocklist, h.GetHashSelf());
+    for (auto & l : localblocklist) {
+
+        if (chainnum == -1) {
+            chainnum = l.GetChainNum();
+        }
+        if (chainnum != l.GetChainNum()) {
+            
+
+            h.AddChildChain(std::move(childchain));
+            childchain.clear();
+            chainnum = l.GetChainNum();
+        }
+        childchain.push_back(std::move(l));
+    }
+    if (!childchain.empty()) {
+        h.AddChildChain(std::move(childchain));
+    }
+}
+
+
+
+
 uint64 CHyperchainDB::GetLatestHyperBlockNo()
 {
     return Singleton<DBmgr>::instance()->getLatestHyperBlockNo();

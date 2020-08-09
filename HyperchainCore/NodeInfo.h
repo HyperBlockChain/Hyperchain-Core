@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -26,18 +26,20 @@ using namespace std;
 class CNodeInfo
 {
 public:
-	CNodeInfo(int nCredibility, int nComputingPower, int nIP, int nPort, string	strKadId)
-		:m_nCredibility(nCredibility), m_nComputingPower(nComputingPower), m_nIP(nIP), m_nPort(nIP), m_strKadId(strKadId){}
+    CNodeInfo(int nCredibility, int nComputingPower, int nIP, int nPort, string	strKadId)
+        :m_nCredibility(nCredibility), m_nComputingPower(nComputingPower), m_nIP(nIP), m_nPort(nIP), m_strKadId(strKadId)
+    {
+    }
 
-	string GetKadId();
-	int	GetIP();
-	int GetPort();
+    string GetKadId();
+    int	GetIP();
+    int GetPort();
 
 private:
-	int		m_nCredibility;
-	int		m_nComputingPower;
-	int		m_nIP;
-	int		m_nPort;
-	string	m_strKadId;
+    int		m_nCredibility;
+    int		m_nComputingPower;
+    int		m_nIP;
+    int		m_nPort;
+    string	m_strKadId;
 };
 

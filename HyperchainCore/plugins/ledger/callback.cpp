@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -43,7 +43,6 @@ using namespace boost;
 
 
 extern map<uint256, CBlock> mapBlocks;
-extern CCriticalSection cs_mapBlocks;
 
 bool ResolveBlock(CBlock &block, const char *payload, size_t payloadlen);
 extern bool CommitToConsensus(CBlock* pblock, string& requestid, string& errmsg);
@@ -75,7 +74,8 @@ bool IsGenesisBlock(const T_APPTYPE& t)
     return false;
 }
 
-//
+
+
 std::map<uint32_t, time_t> mapPullingHyperBlock;
 CCriticalSection cs_pullingHyperBlock;
 void RSyncRemotePullHyperBlock(uint32_t hid, string nodeid = "")
@@ -88,7 +88,8 @@ void RSyncRemotePullHyperBlock(uint32_t hid, string nodeid = "")
         }
         else {
             if (now - mapPullingHyperBlock[hid] < 20) {
-                //
+                
+
                 return;
             }
             else {
@@ -132,7 +133,8 @@ bool UpdateAppAddress(const CBlock& genesisblock, const T_LOCALBLOCKADDRESS& add
     string tokenhash = cryptoToken.GetHashPrefixOfGenesis();
     string errmsg;
     if (!cryptoTokenFromLocal.ReadTokenFile(cryptoToken.GetName(), tokenhash, errmsg)) {
-        //
+        
+
         return ERROR_FL("%s", errmsg.c_str());
     }
 
@@ -151,7 +153,7 @@ bool IsMyBlock(const T_APPTYPE& t)
     uint16 chainnum = 0;
     uint16 localid = 0;
     t.get(hid, chainnum, localid);
-    
+
     if (hid != g_cryptoToken.GetHID() ||
         chainnum != g_cryptoToken.GetChainNum() ||
         localid != g_cryptoToken.GetLocalID()) {
@@ -174,13 +176,16 @@ bool HandleGenesisBlockCb(vector<T_PAYLOADADDR>& vecPA)
     return true;
 }
 
-//
+
+
 bool PutTxsChainCb()
 {
-    //
+    
+
     std::lock_guard<std::mutex> lck(g_muxConsensusBlock);
     if (g_spConsensusBlock) {
-        //
+        
+
         return false;
     }
 
@@ -209,7 +214,8 @@ bool PutTxsChainCb()
 }
 
 
-//
+
+
 bool CheckChainCb(vector<T_PAYLOADADDR>& vecPA)
 {
     if (vecPA.size() == 0) {
@@ -256,14 +262,16 @@ bool CheckChainCb(vector<T_PAYLOADADDR>& vecPA)
 }
 
 
-//
-bool LedgeAcceptChainCb(const T_APPTYPE& app, vector<T_PAYLOADADDR>& vecPA, uint32_t& hid, T_SHA256& thhash)
+
+
+bool LedgerAcceptChainCb(map<T_APPTYPE,vector<T_PAYLOADADDR>>& mapPayload, uint32_t& hidFork, uint32_t& hid, T_SHA256& thhash, bool isLatest)
 {
     T_APPTYPE meApp(APPTYPE::ledger, g_cryptoToken.GetHID(), g_cryptoToken.GetChainNum(), g_cryptoToken.GetLocalID());
-    if (app != meApp) {
+    if (!mapPayload.count(meApp)) {
         return false;
     }
 
+    vector<T_PAYLOADADDR>& vecPA = mapPayload[meApp];
     if (vecPA.size() == 0) {
         return false;
     }
@@ -283,7 +291,7 @@ bool LedgeAcceptChainCb(const T_APPTYPE& app, vector<T_PAYLOADADDR>& vecPA, uint
 			CBlock *prevSibling = (i == 0 ? nullptr : &vecBlock[i - 1]);
             if (vecBlock[i].AcceptBlock(vecPA[i].addr, prevSibling)) {
                 uint256 hash = vecBlock[i].GetHash();
-                printf("LedgeAcceptChainCb() : (%s) %s is accepted\n", vecPA[i].addr.tostring().c_str(),
+                printf("LedgerAcceptChainCb() : (%s) %s is accepted\n", vecPA[i].addr.tostring().c_str(),
                     hash.ToString().substr(0, 20).c_str());
             }
             else {
@@ -307,7 +315,8 @@ bool LedgeAcceptChainCb(const T_APPTYPE& app, vector<T_PAYLOADADDR>& vecPA, uint
         }
     }
 
-    //
+    
+
     PutTxsChainCb();
 
     return true;
@@ -325,9 +334,11 @@ namespace boost {
     }
 }
 
-//
-//
-bool ValidateLedgeDataCb(T_PAYLOADADDR& payloadaddr,
+
+
+
+
+bool ValidateLedgerDataCb(T_PAYLOADADDR& payloadaddr,
                         map<boost::any,T_LOCALBLOCKADDRESS>& mapOutPt,
                         boost::any& hashPrevBlock)
 {
@@ -349,7 +360,8 @@ bool ValidateLedgeDataCb(T_PAYLOADADDR& payloadaddr,
     if (!block.CheckTrans())
         return ERROR_FL("CheckTrans FAILED");
 
-    //
+    
+
     for (auto tx : block.vtx) {
         if (tx.IsCoinBase()) {
             continue;
@@ -369,7 +381,7 @@ bool ValidateLedgeDataCb(T_PAYLOADADDR& payloadaddr,
     return true;
 }
 
-bool UpdateLedgeDataCb(string& payload, string &newpaylod)
+bool UpdateLedgerDataCb(string& payload, string &newpaylod)
 {
     CBlock block;
     if (!ResolveBlock(block, payload.c_str(), payload.size())) {
@@ -381,7 +393,8 @@ bool UpdateLedgeDataCb(string& payload, string &newpaylod)
         //don't need update.
         return false;
     }
-    //
+    
+
     block.hashPrevBlock = pindexPrev->GetBlockHash();
     //block.nTime = max(pindexPrev->GetMedianTimePast() + 1, GetAdjustedTime());
 
@@ -396,13 +409,17 @@ bool UpdateLedgeDataCb(string& payload, string &newpaylod)
     return true;
 }
 
-//
-bool LedgeBlockUUIDCb(string& payload, string& uuidpayload)
+
+
+bool LedgerBlockUUIDCb(string& payload, string& uuidpayload)
 {
-    //
-    //
+    
+
+    
+
     uuidpayload = payload.substr(0, sizeof(int));
-    //
+    
+
     uuidpayload += payload.substr(sizeof(int) + sizeof(uint256));
     return true;
 }
@@ -418,7 +435,8 @@ bool GetVPath(T_LOCALBLOCKADDRESS& sAddr, T_LOCALBLOCKADDRESS& eAddr, vector<str
                 p = p->pprev;
                 continue;
             } else if (p->addr.hid < sAddr.hid) {
-                //
+                
+
                 return false;
             }
             else {
@@ -439,7 +457,7 @@ bool GetVPath(T_LOCALBLOCKADDRESS& sAddr, T_LOCALBLOCKADDRESS& eAddr, vector<str
 }
 
 /*
-void checkLedge()
+void checkLedger()
 {
     vector<uint256> vWorkQueue;
     CDataStream vMsg(vRecv);
@@ -517,18 +535,22 @@ void UpdateMaxBlockAddr(const T_LOCALBLOCKADDRESS& addr)
         txdb.Close();
     }
 }
-//
+
+
 void UpdateBlockIndex()
 {
     if(pindexBest->addr < addrMaxChain) {
         CHyperChainSpace* hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
         T_APPTYPE app(APPTYPE::ledger);
         vector<T_PAYLOADADDR> vecPA;
+        T_SHA256 thhash;
 		uint32 hid = pindexBest->addr.hid + 1;
         while (hid <= addrMaxChain.hid) {
-            //
-            if (!hyperchainspace->GetLocalBlocksByHID(hid++, app, vecPA)) {
-                //
+            
+
+            if (!hyperchainspace->GetLocalBlocksByHID(hid++, app, thhash, vecPA)) {
+                
+
                 break;
             }
             CheckChainCb(vecPA);
@@ -602,7 +624,8 @@ void ThreadRSyncGetBlock(void* parg)
         }
 
         T_APPTYPE app(APPTYPE::ledger);
-        //
+        
+
         if (!searchBlockOngoing.startaddr.isValid()) {
             hyperchainspace->GetAppBlocksByAddr(itergb->startaddr, itergb->endaddr, app);
             tOngoingTimePoint = std::time(nullptr);
@@ -621,7 +644,8 @@ void ThreadRSyncGetBlock(void* parg)
 
         auto now = std::time(nullptr);
         if (now - tOngoingTimePoint > 120) {
-            //
+            
+
             hyperchainspace->GetAppBlocksByAddr(searchBlockOngoing.startaddr, searchBlockOngoing.endaddr, app);
             tOngoingTimePoint = std::time(nullptr);
         }
@@ -634,7 +658,8 @@ void ThreadRSyncGetBlock(void* parg)
     }
 }
 
-//
+
+
 void RSyncGetBlock(const T_LOCALBLOCKADDRESS& addr)
 {
     RSyncRemotePullHyperBlock(addr.hid);
@@ -651,7 +676,8 @@ void RSyncGetBlock(const T_LOCALBLOCKADDRESS& addr)
     if (listGetBlock.size() > 0 && listGetBlock.rbegin()->endaddr.hid ) {
         auto searchpos = listGetBlock.rbegin()->endaddr;
         if (searchpos >= addr) {
-            //
+            
+
             return;
         }
         pos.startaddr = searchpos;
@@ -669,7 +695,7 @@ void RSyncGetBlock(const T_LOCALBLOCKADDRESS& addr)
 void showBlockIndex()
 {
 #undef printf
-    std::printf("Best chain Ledge block addr:%s Height:%d \nPrev Block Hash:%s\n Hash:%s \n%p\n", pindexBest->addr.tostring().c_str(),
+    std::printf("Best chain Ledger block addr:%s Height:%d \nPrev Block Hash:%s\n Hash:%s \n%p\n", pindexBest->addr.tostring().c_str(),
         pindexBest->Height(), pindexBest->pprev->GetBlockHash().ToString().c_str(),
         pindexBest->GetBlockHash().ToString().c_str(),
         pindexBest);
@@ -723,7 +749,7 @@ void AppRunningArg(int& app_argc, string& app_argv)
 
     for (auto& elm : mapArgs)
     {
-        string stroption = elm.first; 
+        string stroption = elm.first;
         if (!elm.second.empty()) {
             stroption += "=";
             stroption += elm.second;
@@ -736,11 +762,11 @@ void AppRunningArg(int& app_argc, string& app_argv)
 void AppInfo(string& info)
 {
     ostringstream oss;
-    oss << "Ledge module's current token name: " << g_cryptoToken.GetName() << " - "
+    oss << "Ledger module's current token name: " << g_cryptoToken.GetName() << " - "
         << g_cryptoToken.GetHashPrefixOfGenesis() <<endl
         << "block message: " << g_cryptoToken.GetDesc() << endl
-        << "Genesis block address: " << g_cryptoToken.GetHID() << " " 
-        << g_cryptoToken.GetChainNum() << " " 
+        << "Genesis block address: " << g_cryptoToken.GetHID() << " "
+        << g_cryptoToken.GetChainNum() << " "
         << g_cryptoToken.GetLocalID() << endl;
 
     info = oss.str();
@@ -760,7 +786,7 @@ void AppInfo(string& info)
         pindexBest->Height(),
         pindexBest->addr.tostring().c_str(),
         pindexBest->pprev ? (pindexBest->pprev->GetBlockHash().ToString().c_str()) : "null",
-        pindexBest->GetBlockHash().ToString().c_str() 
+        pindexBest->GetBlockHash().ToString().c_str()
         );
 
     info += buff;

@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -40,8 +40,8 @@ class CppSQLite3DB;
 class DBmgr
 {
 public:
-	DBmgr();
-	virtual ~DBmgr();
+    DBmgr();
+    virtual ~DBmgr();
 
     int open(const char * dbpath);
     bool isOpen();
@@ -85,16 +85,31 @@ public:
     int delEvidence(std::string hash);
     int delEvidence(const TEVIDENCEINFO &evidence);
     int deleteHyperblockAndLocalblock(uint64 hid);
+    int rollbackHyperblockAndLocalblock(uint64 hid);
+    int deleteHyperblockAndLocalblock(T_SHA256 headerhash);
+    int SaveHyperblock(const T_HYPERBLOCK& hyperblock);
+    int SaveLocalblock(const T_LOCALBLOCK& localblock, uint64 hid, uint16 chainnum, T_SHA256 hhash);
     int insertHyperblock(const T_HYPERBLOCK& hyperblock);
     int insertLocalblock(const T_LOCALBLOCK& localblock, uint64 hid, uint16 chainnum);
     int updateHyperblock(const T_HYPERBLOCK& hyperblock);
     int getLocalblock(T_LOCALBLOCK& info, uint64 hid, uint16 id, uint16 chain_num);
     int getLocalchain(uint64 hid, int chain_num, int &blocks, int &chain_difficulty);
     int getLocalBlocks(std::list<T_LOCALBLOCK> &queue, uint64 nHyperID);
+    int getLocalBlocks(std::list<T_LOCALBLOCK> &queue, T_SHA256 hhash);
 
+    int getHyperBlockbyHeaderHash(T_HYPERBLOCK &h, const T_SHA256 &headerhash);
     int getHyperblockshead(T_HYPERBLOCKHEADER& header, uint64 nStartHyperID);
     int getLocalblocksPayloadTotalSize(uint64 nStartHyperID,size_t& size);
     int getAllHyperblockNumInfo(std::set<uint64> &queue);
+    int getHeaderByHash(T_HYPERBLOCKHEADER &header, T_SHA256 &headerhash);
+    int getHeaderIndexByHash(T_HEADERINDEX &headerindex, T_SHA256 headerhash);
+    int getAllSingleHeaderInfo(map<T_SHA256, T_SINGLEHEADER> &singleheadermap);
+    int getAllHeaderIndex(MAP_T_HEADERINDEX &headerindexmap);
+    int updateHeaderIndex(T_HEADERINDEX headerindex);
+    int getAllHeaderHashInfo(std::map<uint64, T_SHA256> &headerhashmap);
+    int getHeadersByID(std::map<T_SHA256, T_HYPERBLOCKHEADER> &headermap, uint64 nStartHyperID, uint64 nEndHyperID);
+    int getHeadersByID(std::list<T_HYPERBLOCKHEADER> &headerlist, uint64 nStartHyperID, uint64 nEndHyperID);
+    int getFurcatedHeaderHash(uint64 hid, T_SHA256 headerhash, vector<T_SHA256> &headerhashvec);
     int getAllHashInfo(std::map<uint64, T_SHA256> &hashmap, std::map<uint64, T_SHA256> &headerhashmap);
     int getHyperBlocks(std::list<T_HYPERBLOCK> &queue, uint64 nStartHyperID, uint64 nEndHyperID);
     int getHyperBlock(T_HYPERBLOCK &h, const T_SHA256 &hhash);
@@ -106,11 +121,25 @@ public:
     int getLatestHyperBlock(T_HYPERBLOCK& hyperblock);
     bool getOnChainStateFromRequestID(const string &requestid, T_LOCALBLOCKADDRESS &addr);
 
+    bool isHeaderIndexExisted(uint64 hid);
+    bool isHeaderExistedbyHash(T_SHA256 hash);
     bool isBlockExisted(uint64 hid);
+    bool isBlockExistedbyHash(T_SHA256 hash);
+    bool isBlockExistedbyHeaderHash(T_SHA256 headerhash);
+    bool isBlockExistedOnBestChain(uint64 hid);
 
+    int rollbackHashInfo(uint64 hid);
+    int deleteHeader(T_SHA256 headerhash);
+    int deleteHeaderIndex(T_SHA256 headerhash);
+    int deleteSingleHeaderInfo(T_SHA256 headerhash);
+    int rollbackHeaderHashInfo(uint64 hid);
+    int updateHeaderHashInfo(const uint64 hid, const T_SHA256 headerhash);
     int updateHashInfo(const uint64 hid, const T_SHA256 headerhash, const T_SHA256 hash);
+    int updateHeaderInfo(const uint64 hid, const T_SHA256 headerhash, const T_HYPERBLOCKHEADER header);
+    int updateSingleHeaderInfo(T_SINGLEHEADER singleheader);
     int updateOnChainState(const string &requestid, const T_LOCALBLOCKADDRESS& address);
     void initOnChainState(uint64 hid);
+    void rehandleOnChainState(uint64 hid);
 
     void bindParam(CppSQLite3Statement &stmt, int i)
     {}

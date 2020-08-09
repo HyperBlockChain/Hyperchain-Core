@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -21,23 +21,25 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#pragma once
+
 #include "headers.h"
 
 #include "node/ITask.hpp"
 #include "node/Singleton.h"
 #include "node/NodeManager.h"
-#include "node/TaskThreadPool.h"
 #include "node/SearchNeighbourTask.h"
 #include "node/UdpAccessPoint.hpp"
+#include "node/UdpRecvDataHandler.hpp"
 
-//#include "wnd/common.h"
+#include "cryptotoken.h"
 #include "ledgertask.h"
 #include "protocol.h"
 
 #include <iostream>
 #include <map>
 using namespace std;
+
+extern CryptoToken g_cryptoToken;
 
 extern bool AppInit2(int argc, char* argv[]);
 extern void ShutdownExcludeRPCServer();
@@ -53,13 +55,14 @@ int OperatorApplication(std::shared_ptr<OPAPP> parg)
 
     auto& apphash = std::get<0>(*t);
     auto& mapParas = std::get<1>(*t);
-    
+
     mapParas["-tokenhash"] = apphash;
 
     ShutdownExcludeRPCServer();
 
-    //
-    std:;deque<string> appli;
+    
+
+    std::deque<string> appli;
 
     appli.push_front("hc");
 
@@ -67,7 +70,7 @@ int OperatorApplication(std::shared_ptr<OPAPP> parg)
     std::shared_ptr<char*> app_argv(new char* [app_argc]);
 
     for (auto& elm : mapParas) {
-        
+
         string stroption = elm.first;
         if (!elm.second.empty()) {
             stroption += "=";
@@ -90,16 +93,9 @@ int OperatorApplication(std::shared_ptr<OPAPP> parg)
     return 0;
 }
 
-void pingNode(const CAddress &addrConnect)
-{
-	//The peer nodeid maybe be unknown.
-	TaskThreadPool *taskpool = Singleton<TaskThreadPool>::instance();
-	taskpool->put(make_shared<PingTask>(addrConnect));
-}
 
 void sendToNode(CNode* pnode)
 {
-    TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
     TRY_CRITICAL_BLOCK(pnode->cs_vSend)
     {
         CDataStream& vSend = pnode->vSend;
@@ -108,7 +104,8 @@ void sendToNode(CNode* pnode)
             int nBytes = vSend.size();
             if (nBytes > 0)
             {
-                taskpool->put(make_shared<LedgeTask>(pnode->nodeid, &vSend[0], nBytes));
+                LedgerTask tsk(pnode->nodeid, &vSend[0], nBytes);
+                tsk.exec();
                 vSend.erase(vSend.begin(), vSend.begin() + nBytes);
                 pnode->nLastSend = GetTime();
             }
@@ -163,42 +160,44 @@ void recvFromNode(CNode* pnode, const char *pchBuf, size_t nBytes)
     }
 }
 
-const CUInt128 * FindNodeId(const CAddress &addrConnect)
-{
-    NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-    UdpAccessPoint ap(addrConnect.ToStringIP(), std::atoi(addrConnect.ToStringPort().c_str()));
-
-    return nodemgr->FindNodeId(&ap);
-}
-
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
-void LedgeRspTask::exec()
+void LedgerTask::exec()
 {
-}
-
-void LedgeRspTask::execRespond()
-{
-
-}
-
-void LedgeTask::exec()
-{
-    DataBuffer<LedgeTask> msgbuf(std::move(_msg));
+    DataBuffer<LedgerTask> msgbuf(std::move(_msg));
     _nodemgr->sendTo(CUInt128(_nodeid), msgbuf);
 }
 
-void LedgeTask::execRespond()
+void LedgerTask::execRespond()
 {
     //Received ledger message from other node.
     //push message into node buffer.
-    string sentnodeid = _sentnodeid.ToHexString();
-    CRITICAL_BLOCK(cs_vNodes)
-        BOOST_FOREACH(CNode* pnode, vNodes)
-        if (pnode->nodeid == sentnodeid) {
-            recvFromNode(pnode, _payload, _payloadlen);
-            break;
-        }
+    LEDGER_TASKTYPE tt = (LEDGER_TASKTYPE)*_payload;
+    switch (tt) {
+    case LEDGER_TASKTYPE::LEDGER: {
+        string sentnodeid = _sentnodeid.ToHexString();
+        //CRITICAL_BLOCK(cs_main)
+        CRITICAL_BLOCK(cs_vNodes)
+            BOOST_FOREACH(CNode* pnode, vNodes)
+            if (pnode->nodeid == sentnodeid) {
+                recvFromNode(pnode, _payload + sizeof(LEDGER_TASKTYPE), _payloadlen - sizeof(LEDGER_TASKTYPE));
+            }
+        break;
+    }
+    case LEDGER_TASKTYPE::LEDGER_PING_NODE: {
+        PingTask task(getRecvBuf());
+        task.execRespond();
+        break;
+    }
+    case LEDGER_TASKTYPE::LEDGER_PING_NODE_RSP: {
+        PingRspTask task(getRecvBuf());
+        task.execRespond();
+        break;
+    }
+    default:
+        return;
+    }
+
 }
 
 
@@ -207,35 +206,42 @@ void LedgeTask::execRespond()
 
 void PingRspTask::exec()
 {
-    DataBuffer<PingRspTask> databuf(_nodemgr->myself()->serialize());
+    char prefix = (char)LEDGER_TASKTYPE::LEDGER_PING_NODE_RSP;
+    string self(prefix, 1);
+    self += _nodemgr->myself()->serialize();
+
+    DataBuffer<PingRspTask> databuf(std::move(self));
     _nodemgr->sendTo(_sentnodeid, databuf);
 }
 
 void PingRspTask::execRespond()
 {
     //save node
-    HCNodeSH  node = _nodemgr->getNode(_sentnodeid);
-    if (!node) {
-        node = _nodemgr->parseNode(_msg);
-        printf("%s: added a new Ledge node.\n", __FUNCTION__);
-    }
+    string payload(_payload, _payloadlen);
+    T_APPTYPE apptype;
+    size_t offset = apptype.unserialize(payload) + 1;
 
-    HCNode::APList &aplist = node->getAPList();
-    UdpAccessPoint udppoint("127.0.0.1", 0);
-    auto ret = std::find_if(aplist.begin(), aplist.end(), [&](const HCNode::APList::reference apCurr) {
-        if (apCurr->id() == udppoint.id()) {
-            return true;
-        }
-        return false;
-    });
-
-    if (ret == std::end(aplist)) {
-        printf("%s: cannot find udp access point\n", __FUNCTION__);
+    uint32 hid;
+    uint16 chainnum;
+    uint16 localid;
+    apptype.get(hid, chainnum, localid);
+    if (!g_cryptoToken.IsTokenSame(hid, chainnum, localid)) {
+        printf("%s: application type is different.\n", __FUNCTION__);
         return;
     }
-    UdpAccessPoint *ap = dynamic_cast<UdpAccessPoint*>(ret->get());
-    CAddress addrConnect(ap->ip(), (int)ap->port());
 
+    UdpAccessPoint udppoint("", 0);
+    if (!_nodemgr->getNodeAP(_sentnodeid, &udppoint)) {
+        if (!_nodemgr->parseNode(payload.substr(offset), &udppoint)) {
+            printf("%s: cannot find udp access point\n", __FUNCTION__);
+            return;
+        }
+        printf("%s: added a new Ledger node.\n", __FUNCTION__);
+    }
+
+    CAddress addrConnect(udppoint.ip(), (int)udppoint.port());
+
+    CRITICAL_BLOCK(cs_main)
     CRITICAL_BLOCK(cs_vNodes)
     {
         BOOST_FOREACH(CNode* pnode, vNodes)
@@ -248,7 +254,7 @@ void PingRspTask::execRespond()
             }
 
         //no found
-        printf("Create a new outbound node and insert into Ledge nodes.\n");
+        printf("Create a new outbound node and insert into Ledger nodes.\n");
         CNode* pNode = new CNode(-1, addrConnect, false);
         pNode->nodeid = _sentnodeid.ToHexString();
         pNode->nTimeConnected = GetTime();
@@ -261,50 +267,83 @@ void PingRspTask::execRespond()
 
 void PingTask::exec()
 {
-	UdpAccessPoint ap(_addrConnect.ToStringIP(),std::atoi(_addrConnect.ToStringPort().c_str()));
+    DataBuffer<PingTask> databuf(1);
+    char *p = databuf.payload();
+    *p = (char)LEDGER_TASKTYPE::LEDGER_PING_NODE;
 
-	//HCNodeSH & me = _nodemgr->myself();
-	//msgbuf.insert(0, me->getNodeId<string>());
+    NodeManager* nodemgr = Singleton<NodeManager>::getInstance();
 
-	DataBuffer<PingTask> databuf(0);
-
-	string data = databuf.tostring();
-	ap.write(data.c_str(), data.size());
+    nodemgr->sendToAllNodes(databuf);
 }
 
 void PingTask::execRespond()
 {
-    TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-    taskpool->put(make_shared<PingRspTask>(std::move(_sentnodeid), _payload));
+    PingRspTask tsk(std::move(_sentnodeid), _payload);
+    tsk.exec();
 }
 
+static bool isRegistered = false;
 
 extern "C" BOOST_SYMBOL_EXPORT
 bool RegisterTask(void* objFac)
 {
-    objectFactory* objFactory = reinterpret_cast<objectFactory*>(objFac);
-    if (!objFactory) {
+    UdpRecvDataHandler* datahandler = reinterpret_cast<UdpRecvDataHandler*>(objFac);
+    if (!datahandler) {
         return false;
     }
 
-    objFactory->RegisterType<ITask, PingTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::LEDGE_PING_NODE));
-    objFactory->RegisterType<ITask, PingRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::LEDGE_PING_NODE_RSP));
-    objFactory->RegisterType<ITask, LedgeTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::LEDGE));
-    objFactory->RegisterType<ITask, LedgeRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::LEDGE_RSP));
+    datahandler->registerAppTask(TASKTYPE::LEDGER, LEDGER_T_SERVICE);
+    isRegistered = true;
     return true;
 }
 
 extern "C" BOOST_SYMBOL_EXPORT
 void UnregisterTask(void* objFac)
 {
-    objectFactory* objFactory = reinterpret_cast<objectFactory*>(objFac);
-    if (!objFactory) {
+    if (!isRegistered) {
         return;
     }
 
-    objFactory->UnregisterType<ITask, PingTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::LEDGE_PING_NODE));
-    objFactory->UnregisterType<ITask, PingRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::LEDGE_PING_NODE_RSP));
-    objFactory->UnregisterType<ITask, LedgeTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::LEDGE));
-    objFactory->UnregisterType<ITask, LedgeRspTask, TASKBUF>(static_cast<uint32_t>(TASKTYPE::LEDGE_RSP));
+    UdpRecvDataHandler* datahandler = reinterpret_cast<UdpRecvDataHandler*>(objFac);
+    if (!datahandler) {
+        return;
+    }
+
+    datahandler->unregisterAppTask(TASKTYPE::LEDGER);
+}
+
+static MsgHandler ledgermsghandler;
+
+static void handleLedgerTask(void *wrk, zmsg *msg)
+{
+    msg->unwrap();
+    string buf = msg->pop_front();
+    auto taskbuf = std::make_shared<string>(std::move(buf));
+
+    HCMQWrk *realwrk = reinterpret_cast<HCMQWrk*>(wrk);
+
+    TASKTYPE tt = *(TASKTYPE*)(taskbuf->c_str() + CUInt128::value + sizeof(ProtocolVer));
+    if (tt != TASKTYPE::PARACOIN) {
+        return;
+    }
+
+    LedgerTask task(std::move(taskbuf));
+    task.execRespond();
+}
+
+void StartMQHandler()
+{
+    std::function<void(void*, zmsg*)> fwrk =
+        std::bind(&handleLedgerTask, std::placeholders::_1, std::placeholders::_2);
+
+    ledgermsghandler.registerTaskWorker(LEDGER_T_SERVICE, fwrk);
+    ledgermsghandler.start();
+    cout << "Ledger MQID:   " << ledgermsghandler.getID() << endl;
+
+}
+
+void StopMQHandler()
+{
+    ledgermsghandler.stop();
 }
 

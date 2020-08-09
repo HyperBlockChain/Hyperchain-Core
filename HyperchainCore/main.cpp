@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -56,10 +56,9 @@ DEALINGS IN THE SOFTWARE.
 
 #include "node/Singleton.h"
 #include "node/NodeManager.h"
-#include "node/TaskThreadPool.h"
 #include "node/UdpAccessPoint.hpp"
 #include "node/UdpRecvDataHandler.hpp"
-#include "node/seedcommu.hpp"
+#include "node/HCMQBroker.h"
 
 #include "HyperChain/HyperChainSpace.h"
 #include "HyperChain/PullChainSpaceTask.hpp"
@@ -68,6 +67,7 @@ DEALINGS IN THE SOFTWARE.
 
 #include "consolecommandhandler.h"
 #include "consensus/consensus_engine.h"
+
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
@@ -201,11 +201,14 @@ public:
         std::string dlog = logpath + "/hyperchain.log";
         std::string flog = logpath + "/hyperchain_basic.log";
         std::string rlog = logpath + "/hyperchain_rotating.log";
-        spdlog::set_level(spdlog::level::err); //
+        spdlog::set_level(spdlog::level::err); 
+
         spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] [thread %t] %v");
         g_daily_logger = spdlog::daily_logger_mt("daily_logger", dlog.c_str(), 0, 30);
+        g_daily_logger->set_level(spdlog::level::info);
         g_basic_logger = spdlog::basic_logger_mt("file_logger", flog.c_str());
-        //
+        
+
         g_rotating_logger = spdlog::rotating_logger_mt("rotating_logger", rlog.c_str(), 1048576 * 100, 3);
         g_console_logger = spdlog::stdout_color_mt("console");
         g_console_logger->set_level(spdlog::level::err);
@@ -234,9 +237,17 @@ bool g_isChild = false;
 
 void stopAll()
 {
+    g_sys_interrupted = 1; 
+
     if (g_appPlugin) {
         cout << "Stopping Applications..." << endl;
         g_appPlugin->StopAllApp();
+    }
+
+    auto datahandler = Singleton<UdpRecvDataHandler>::getInstance();
+    if (datahandler) {
+        cout << "Stopping UdpRecvDataHandler..." << endl;
+        datahandler->stop();
     }
 
     ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::getInstance();
@@ -256,21 +267,30 @@ void stopAll()
         nodeUpkeepThreadpool->stop();
     }
 
-    UdpThreadPool *udpthreadpool = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance();
+    NodeManager* nmg = Singleton<NodeManager>::getInstance();
+    if (nmg) {
+        cout << "Stopping NodeManager..." << endl;
+        nmg->stop();
+    }
+
+    UdtThreadPool *udpthreadpool = Singleton<UdtThreadPool, const char*, uint32_t>::getInstance();
+    //UdpThreadPool *udpthreadpool = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance();
     if (udpthreadpool) {
         cout << "Stopping UDP..." << endl;
         udpthreadpool->stop();
     }
 
-    auto pool = Singleton<TaskThreadPool>::getInstance();
-    if (pool) {
-        cout << "Stopping TaskThreadPool..." << endl;
-        pool->stop();
-    }
-    if (g_nodetype != NodeType::LedgeRPCClient) {
+    if (g_nodetype != NodeType::LedgerRPCClient) {
         cout << "Stopping Rest Server..." << endl;
         RestApi::stopRest();
     }
+
+    HCMQBroker *brk = Singleton<HCMQBroker>::getInstance();
+    if (brk) {
+        cout << "Stopping HCBroker..." << endl;
+        brk->stop();
+    }
+
     if (Singleton<DBmgr>::instance()->isOpen()) {
         cout << "Closing Database..." << endl;
         Singleton<DBmgr>::instance()->close();
@@ -303,7 +323,8 @@ bool dumpCallback(const google_breakpad::MinidumpDescriptor& descriptor, void* c
     stopAll();
     cout << "Rebooting..." << endl;
 
-    //
+    
+
     std::shared_ptr<char*> hc_argv(new char*[g_argc + 2]);
 
     int i = 0;
@@ -399,26 +420,27 @@ static google_breakpad::ExceptionHandler* exceptionhandler = nullptr;
 
 int main(int argc, char *argv[])
 {
-    cout << "Copyright 2016-2019 hyperchain.net (Hyperchain)." << endl << endl;
+    cout << "Copyright 2016-2020 hyperchain.net (Hyperchain)." << endl << endl;
     ParseParameters(argc, argv);
 
     string strUsage = string() +
         _("Hyperchain version") + " " + VERSION_STRING + "\n\n" +
         _("Usage:") + "\t\t\t\t\t\t\t\t\t\t\n" +
-        "  Hyperchain [options]                   \t  " + "\n" +
-        "  Hyperchain [options] <command> [params]\t  " + _("Execute command\n") +
-        "  Hyperchain [options] help              \t\t  " + _("List commands\n") +
-        "  Hyperchain [options] help <command>    \t\t  " + _("Get help for a command\n") +
+        "  hc [options]                   \t  " + "\n" +
+        "  hc [options] <command> [params]\t  " + _("Execute command\n") +
+        "  hc [options] help              \t\t  " + _("List commands\n") +
+        "  hc [options] help <command>    \t\t  " + _("Get help for a command\n") +
         _("Options:\n") +
         "  -? or --help     \t\t  " + _("Print help message\n") +
         "  -v               \t\t  " + _("Print version message\n") +
-        "  -runasss         \t\t  " + _("Run as a seed server\n") +
         //"  -bg              \t\t  " + _("Run as a background server,only for *nux\n") +
         "  -child           \t\t  " + _("Run as a child process,only inner use for *nux\n") +
-        "  -me=<ip:port>    \t\t  " + _("Specify my address,for example:10.0.0.1:8116,cannot use with runasss\n") +
+        "  -me=<ip:port>    \t\t  " + _("Listen for connections from other nodes,for example:10.0.0.1:8116\n") +
         "  -seedserver=<ip:port> \t\t  " + _("Specify a seed server,for example:127.0.0.1:8116\n") +
+        "  -restport=<port> \t\t  " + _("Listen for RESTful connections on <port> (default: 8080)\n") +
         "  -datadir=<dir>   \t\t  " + _("Specify data directory\n") +
-        //
+        
+
         "  -with=<app>      \t\t  " + _("Start with application, for example:-with=ledger, -with=paracoin\n") +
         //"  -conf=<file>     \t\t  " + _("Specify configuration file (default: ledger.conf)\n") +
         //"  -pid=<file>      \t\t  " + _("Specify pid file (default: bitcoind.pid)\n") +
@@ -451,7 +473,7 @@ int main(int argc, char *argv[])
         "  -rpcallowip=<ip> \t\t  " + _("Allow JSON-RPC connections from specified IP address\n") +
         //"  -rpcconnect=<ip> \t  " + _("Send commands to node running on <ip> (default: 127.0.0.1)\n");
         "  -rpcparaport=<port>  \t\t  " + _("Listen for ParaCoin JSON-RPC connections on <port> (default: 8118)\n") +
-        "  -rpcledgerrport=<port>  \t\t  " + _("Listen for Ledger JSON-RPC connections on <port> (default: 8119)\n");
+        "  -rpcledgerport=<port>  \t\t  " + _("Listen for Ledger JSON-RPC connections on <port> (default: 8119)\n");
     //"  -keypool=<n>     \t  " + _("Set key pool size to <n> (default: 100)\n") +
     //"  -rescan          \t  " + _("Rescan the block chain for missing wallet transactions\n");
 
@@ -504,7 +526,8 @@ int main(int argc, char *argv[])
     }
 #else
 
-    //
+    
+
     umask(0);
     while (!foreground) {
         pid_t pid = fork();
@@ -531,6 +554,14 @@ int main(int argc, char *argv[])
     }
 
 #endif
+
+    hclogger log;
+
+    HCMQBroker *brk = Singleton<HCMQBroker>::instance();
+    g_inproc_context = brk->context();
+    brk->start();
+    cout << "HCBroker::Start..." << endl;
+
     string seedserver = "127.0.0.1:8116";
     if (mapHCArgs.count("-seedserver")) {
         seedserver = mapHCArgs["-seedserver"];
@@ -539,27 +570,23 @@ int main(int argc, char *argv[])
         makeSeedServer(seedserver);
     }
     else if (!mapHCArgs.count("-me")) {
-        g_nodetype = NodeType::LedgeRPCClient;
+        g_nodetype = NodeType::LedgerRPCClient;
     }
     else {
         g_nodetype = NodeType::Bootstrap;
         cout << "Run as a normal node with bootstrap" << endl;
     }
 
-    hclogger log;
-
-    g_tP2pManagerStatus = Singleton<T_P2PMANAGERSTATUS>::instance();
-
     std::string dbpath = make_db_path();
     dbpath += "/hyperchain.db";
     Singleton<DBmgr>::instance()->open(dbpath.c_str());
 
-	pro_ver = SAND_BOX;
-	if (mapHCArgs.count("-model") && mapHCArgs["-model"] == "informal")
-		pro_ver = INFORMAL_NET;
+    pro_ver = ProtocolVer::NET::SAND_BOX;
+    if (mapHCArgs.count("-model") && mapHCArgs["-model"] == "informal")
+        pro_ver = ProtocolVer::NET::INFORMAL_NET;
 
-    Singleton<TaskThreadPool>::instance();
     NodeManager *nodemgr = Singleton<NodeManager>::instance();
+    nodemgr->start();
 
     string udpip;
     int udpport = 8115;
@@ -576,31 +603,45 @@ int main(int argc, char *argv[])
         nodemgr->seedServer(me);
 
     Singleton<UdpRecvDataHandler>::instance();
-    UdpThreadPool *udpthreadpool = Singleton<UdpThreadPool, const char*, uint32_t>::instance("", udpport);
-    udpthreadpool->start();
-    cout << "UdpThreadPool::Start ... udpport: " << udpport << endl;
+
+    UdtThreadPool *udpthreadpool = Singleton<UdtThreadPool, const char*, uint32_t>::instance("", udpport);
 
     NodeUPKeepThreadPool* nodeUpkeepThreadpool = Singleton<NodeUPKeepThreadPool>::instance();
 
     g_appPlugin = Singleton<AppPlugins,int, char**>::instance(argc, argv);
 
-    if (g_nodetype != NodeType::LedgeRPCClient) {
+    if (g_nodetype != NodeType::LedgerRPCClient) {
 
         nodeUpkeepThreadpool->start();
-        cout << "NodeUPKeepThreadPool::Start ... " << endl;
+        cout << "NodeUPKeepThreadPool::Start... " << endl;
 
         hyperchainspace->start(Singleton<DBmgr>::instance());
-        cout << "HyperChainSpace::Start ... " << endl;
+        cout << "HyperChainSpace::Start... " << endl;
 
-        RestApi::startRest();
+        udpthreadpool->start();
+
+        int nPort = 8080;
+        if (mapHCArgs.count("-restport")) {
+            nPort = std::stoi(mapHCArgs["-restport"]);
+        }
+        RestApi::startRest(nPort);
 
         ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::instance();
         consensuseng->start();
 
+        if (mapHCArgs.count("-teston")) {
+            consensuseng->startTest();
+        }
+
         g_appPlugin->StartAllApp();
+
+        cout << "Consensus MQID:   " << Singleton<ConsensusEngine>::getInstance()->MQID() << endl;
+        cout << "ChainSpace MQID:  " << Singleton<CHyperChainSpace, string>::getInstance()->MQID() << endl;
+        cout << "NodeManager MQID: " << Singleton<NodeManager>::getInstance()->MQID() << endl << endl;
     }
     else {
-        //
+        
+
         g_appPlugin->StartAllApp();
     }
     ConsoleCommandHandler console;

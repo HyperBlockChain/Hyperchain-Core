@@ -130,7 +130,8 @@ result hash(const epoch_context_full& context, const hash256& header_hash, uint6
 bool verify_final_hash(const hash256& header_hash, const hash256& mix_hash, uint64_t nonce,
     const hash256& boundary) noexcept;
 
-//
+
+
 hash256 verify_final_hash(
     const hash256& header_hash, const hash256& mix_hash, uint64_t nonce) noexcept;
 

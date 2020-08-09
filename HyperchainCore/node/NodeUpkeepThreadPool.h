@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -22,73 +22,56 @@ DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
-#include <sstream>
-#include <list>
+#include <set>
 #include <thread>
-#include <memory>
-#include <functional>
-#include <unordered_map>
-using namespace std;
-
 #include "ITask.hpp"
-#include "SyncQueue.h"
 
+using namespace std;
 using std::chrono::system_clock;
-class PingPullNode
-{
-public:
-    PingPullNode() { ; }
-    PingPullNode(const CUInt128 &nodeid);
 
-    bool isSendAgain();							//
 
-    CUInt128 m_nodeID;
-    int m_nSendNum;								//
-    system_clock::time_point  m_lastSendTime;	//
-};
 
-//
 class NodeUPKeepThreadPool
 {
 public:
-    NodeUPKeepThreadPool();
+    NodeUPKeepThreadPool() = default;
     ~NodeUPKeepThreadPool() { stop(); }
 
     void start();
     void stop();
+    void AddToPingList(const CUInt128 nodeid);
+    void AddToPingList(vector<CUInt128>& vecNewNode);
 
-    void PreparePullList();
-    void RemoveNodeFromPullList(const CUInt128 &nodeid);
-    bool RemoveFrontFromPullList(const CUInt128 &nodeid);
-    bool GetFrontNodeFromPullList(PingPullNode& node);
-    void AppendToPullList(PingPullNode& node);
-    bool IsPullListEmpty();
-    size_t  GetPullListSize() {
-        return m_lstPullNode.size();
-    }
-
-    void InitPullList();
-    bool IsNodeInPingList(const CUInt128 &nodeid);
-    void AddToPingList(vector<CUInt128> vecNewNode);//HC：K桶里被挤走的节点进入Ping列表
-    void AddToPingList(const CUInt128 &nodeid);
     void RemoveNodeFromPingList(const CUInt128 &nodeid);
-    bool RemoveFrontFromPingList(const CUInt128 &nodeid);
-    bool GetFrontNodeFromPingList(PingPullNode &node);
-    void AppendToPingList(PingPullNode& node);
-    bool IsPingListEmpty();
-    size_t  GetPingListSize() {
-        return m_lstPingNode.size();
-    }
+
+    void NodePing();
+    void NodeFind();
 
 private:
-    void NodeFind();
-    void NodePing();
-    std::thread		m_NodeFindThread;
-    std::thread		m_NodePingThread;
-    bool m_isstop;
 
-    std::list<PingPullNode> m_lstPullNode;
-    std::list<PingPullNode> m_lstPingNode;
-    mutex _guardPull;  //
-    mutex _guardPing;  //
+    void InitPullList();
+    void PreparePullList();
+
+    std::set<CUInt128>& getPingNodeSet();
+    std::set<CUInt128>& getAddNodeSet();
+
+    void PreparePingSet();
+    void DoPing();
+    void EmitPingSignal(int nDelaySecond);
+
+    std::list<CUInt128> m_lstPullNode;
+
+    
+
+    bool                m_pingSecSet;
+    std::set<CUInt128> m_setPingNode1;
+    std::set<CUInt128> m_setPingNode2;
+
+    enum class pingstate : char {
+        prepare,
+        ping1,
+        ping2,
+        check,
+    };
+    pingstate m_pingstate = pingstate::prepare;
 };

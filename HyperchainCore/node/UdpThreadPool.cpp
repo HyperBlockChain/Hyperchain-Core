@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -207,21 +207,21 @@ void UdpThreadPool::start()
 {
     g_daily_logger->info("UdpThreadPool::Start ...");
 
-    m_listenthread = thread(&UdpThreadPool::RecvData, this);
+    m_listenthread = std::thread(&UdpThreadPool::RecvData, this);
 
     for (size_t i = 0; i < m_sendthreads_num; i++) {
-        m_sendthreads.push_back(thread(&UdpThreadPool::Send, this));
+        m_sendthreads.push_back(std::thread(&UdpThreadPool::Send, this));
     }
 
     for (size_t i = 0; i < m_retrythreads_num; i++) {
-        m_retrythreads.push_back(thread(&UdpThreadPool::SendAgain, this));
+        m_retrythreads.push_back(std::thread(&UdpThreadPool::SendAgain, this));
     }
 
     for (size_t i = 0; i < m_recvthreads_num; i++) {
-        m_recvthreads.push_back(thread(&UdpThreadPool::Recv, this));
+        m_recvthreads.push_back(std::thread(&UdpThreadPool::Recv, this));
     }
 
-    m_checkthread = thread(&UdpThreadPool::CheckExpired, this);
+    m_checkthread = std::thread(&UdpThreadPool::CheckExpired, this);
 }
 
 void UdpThreadPool::stop()
@@ -299,7 +299,8 @@ int UdpThreadPool::send(const string &peerIP, uint32_t peerPort, const char * bu
     catch (std::bad_alloc & e) {
         g_daily_logger->error("UdpThreadPool::send(new T_UDPNODE failed!) {}", e.what());
         cout << "UdpThreadPool::send(new T_UDPNODE failed!) " << e.what() << endl;
-        //
+        
+
         return -1;
     }
 
@@ -331,7 +332,7 @@ int UdpThreadPool::send(const string &peerIP, uint32_t peerPort, const char * bu
         return -1;
     }
 
-    lock_guard<mutex> lk(m_sendMapLock);
+    std::lock_guard<std::mutex> lk(m_sendMapLock);
     m_sendMap[UdpHeader.uPacketNum] = tpUdpNode;
 
     return 0;
@@ -339,7 +340,8 @@ int UdpThreadPool::send(const string &peerIP, uint32_t peerPort, const char * bu
 
 void UdpThreadPool::slice_ack_resp_add(vector<uint8_t> &bitmap, uint16_t id)
 {
-    //
+    
+
     uint8_t bit_list[8] = { 1, 2, 4, 8, 16, 32, 64, 128 };
     uint16_t p = id / 8;
     uint8_t site_value = id % 8;
@@ -354,7 +356,8 @@ void UdpThreadPool::slice_ack_resp_add(vector<uint8_t> &bitmap, uint16_t id)
 
 bool UdpThreadPool::slice_ack_resp_check(vector<uint8_t> &bitmap, uint16_t id) const
 {
-    //
+    
+
     uint8_t bit_list[8] = { 1, 2, 4, 8, 16, 32, 64, 128 };
     uint16_t p = id / 8;
     uint8_t site_value = id % 8;
@@ -384,7 +387,8 @@ void UdpThreadPool::SendData(T_PUDPNODE t)
     serverAddr.sin_port = htons(t->Port);
 
     if (t->UdpHeader.uSliceTotalNum <= 1) {
-        //
+        
+
         memset(frameBuffer, 0, MAX_BUFFER_SIZE);
         memcpy(frameBuffer, &(t->UdpHeader), UdpHeaderSize);
         memcpy(frameBuffer + UdpHeaderSize, t->DataBuf, t->UdpHeader.uBufLen);
@@ -411,7 +415,8 @@ void UdpThreadPool::SendData(T_PUDPNODE t)
         return;
     }
 
-    //
+    
+
     char tmp_buf[UDP_SLICE_MAX_SIZE];
     T_UDPSLICEHEADER UdpSliceHeader;
     uint32_t sliceNum = t->UdpHeader.uSliceTotalNum;
@@ -485,9 +490,10 @@ void UdpThreadPool::SendData(T_PUDPNODE t)
         TmpCount++;
         currentSliceIndex++;
 
-        //
-        if ((TmpCount != 0) && (TmpCount % 100 == 0))
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        
+
+        if ((TmpCount != 0) && (TmpCount % 2 == 0))
+            std::this_thread::sleep_for(std::chrono::microseconds(300));
     }
 
     uint64_t intervaltime = TmpCount * MAX_INTERVAL_TIME;
@@ -531,12 +537,14 @@ void UdpThreadPool::SendAgain()
 
         for (auto &t : sendlist) {
             if (t->RetryTimes >= MAX_SEND_TIMES || t->ClearFlag == ACK_FLAG) {
-                //
+                
+
                 g_daily_logger->debug("PacketNum = {}, RetryTimes = {}, ClearFlag = {}", t->UdpHeader.uPacketNum, t->RetryTimes, t->ClearFlag);
 
-                //
+                
+
                 {
-                    lock_guard<mutex> lk(m_sendMapLock);
+                    std::lock_guard<std::mutex> lk(m_sendMapLock);
                     ITR_MAP_T_PUDPNODE iter_map = this->m_sendMap.find(t->UdpHeader.uPacketNum);
                     if (iter_map != this->m_sendMap.end()) {
                         if (iter_map->second != NULL)
@@ -548,7 +556,8 @@ void UdpThreadPool::SendAgain()
                         g_daily_logger->debug("ERROR: not find PacketNum({}) in m_sendMap!", t->UdpHeader.uPacketNum);
                 }
 
-                //
+                
+
                 if (t->DataBuf != NULL) {
                     delete[]t->DataBuf;
                     t->DataBuf = NULL;
@@ -572,7 +581,8 @@ void UdpThreadPool::SendAgain()
 //                serverAddr.sin_port = htons(t->Port);
 //
 //                if (t->UdpHeader.uSliceTotalNum <= 1) {
-//                    //
+//                    
+
 //                    memset(frameBuffer, 0, MAX_BUFFER_SIZE);
 //                    memcpy(frameBuffer, &(t->UdpHeader), UdpHeaderSize);
 //                    memcpy(frameBuffer + UdpHeaderSize, t->DataBuf, t->UdpHeader.uBufLen);
@@ -604,7 +614,8 @@ void UdpThreadPool::SendAgain()
 //                    continue;
 //                }
 //
-//                //
+//                
+
 //                char tmp_buf[UDP_SLICE_MAX_SIZE];
 //                T_UDPSLICEHEADER UdpSliceHeader;
 //                uint32_t sliceNum = t->UdpHeader.uSliceTotalNum;
@@ -678,7 +689,8 @@ void UdpThreadPool::SendAgain()
 //                    TmpCount++;
 //                    currentSliceIndex++;
 //
-//                    //
+//                    
+
 //                    if ((TmpCount != 0) && (TmpCount % 100 == 0))
 //                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
 //
@@ -697,9 +709,10 @@ void UdpThreadPool::SendAgain()
 
             TmpCount++;
 
-            //
-            if ((TmpCount != 0) && (TmpCount % 100 == 0)) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            
+
+            if ((TmpCount != 0) && (TmpCount % 2 == 0)) {
+                std::this_thread::sleep_for(std::chrono::microseconds(300));
                 TmpCount = 0;
             }
         }
@@ -721,7 +734,8 @@ void UdpThreadPool::RecvData()
     OpenUdpSocket();
 
     while (!m_isstop) {
-        timeout.tv_sec = 10; //
+        timeout.tv_sec = 10; 
+
         timeout.tv_usec = 0;
 
         FD_ZERO(&fd);
@@ -729,7 +743,8 @@ void UdpThreadPool::RecvData()
 
         selectRet = select(m_listenFd + 1, &fd, NULL, NULL, &timeout);
         if (selectRet == 0) {
-            //
+            
+
             continue;
         }
         if (selectRet == -1) {
@@ -781,6 +796,11 @@ void UdpThreadPool::RecvData()
             continue;
         }
 
+        if (recvNum == 4 && 0 == strcmp(recvBuf, "ping")) {
+            sendto(this->m_listenFd, "ok", 2, 0, (struct sockaddr*)&(fromAddr), fromLen);
+            continue;
+        }
+
         T_RECVNODE RecvNode;
         RecvNode.fromAddr = fromAddr;
         RecvNode.recvNum = recvNum;
@@ -825,7 +845,8 @@ void UdpThreadPool::Recv()
             fromPort = ntohs(t.fromAddr.sin_port);
             recvBuf = t.recvbuf;
 
-            if (recvBuf[0] == PACKET_HEADER) //
+            if (recvBuf[0] == PACKET_HEADER) 
+
             {
                 T_PUDPHEADER udpHeader;
                 udpHeader = (T_PUDPHEADER)recvBuf;
@@ -833,7 +854,7 @@ void UdpThreadPool::Recv()
 
                 if (udpHeader->PacketType == UDP_ACK_PAKTYPE)
                 {
-                    lock_guard<mutex> lk(m_sendMapLock);
+                    std::lock_guard<std::mutex> lk(m_sendMapLock);
                     ITR_MAP_T_PUDPNODE iter_map = this->m_sendMap.find(udpHeader->uPacketNum);
                     if (iter_map != this->m_sendMap.end())
                         (iter_map->second)->ClearFlag = ACK_FLAG;
@@ -841,18 +862,22 @@ void UdpThreadPool::Recv()
                     continue;
                 }
 
-                //
+                
 
-                if (udpHeader->uSliceTotalNum <= 1)		//
+
+                if (udpHeader->uSliceTotalNum <= 1)		
+
                 {
-                    //
+                    
+
                     uiCrc = crc32buf(dataBuf, udpHeader->uBufLen);
                     if (uiCrc != udpHeader->uDataBufCrc) {
                         g_daily_logger->info("UdpThreadPool::Recv() crc wrong, id = {}", udpHeader->uPacketNum);
                         continue;
                     }
 
-                    //
+                    
+
                     udpHeader->PacketType = UDP_ACK_PAKTYPE;
 
                     int sendlen = sendto(this->m_listenFd, (const char *)udpHeader, UdpHeaderSize, 0, (struct sockaddr*)&(t.fromAddr), fromLen);
@@ -870,7 +895,8 @@ void UdpThreadPool::Recv()
                     else
                         g_daily_logger->debug("UdpThreadPool::Recv() send ack pack (PacketNum = {})", udpHeader->uPacketNum);
 
-                    //
+                    
+
                 RETRY:
                     bret = udprecvhandler->put(fromIp.c_str(), fromPort, dataBuf, udpHeader->uBufLen);
                     if (bret == false) {
@@ -887,20 +913,23 @@ void UdpThreadPool::Recv()
                     continue;
                 }
 
-                //
-                //
+                
+
+                
+
                 T_PACKETKEY PacketKey(fromIp, fromPort, udpHeader->uPacketNum);
                 T_PACKETNODE PacketNode;
                 memcpy(&(PacketNode._udpheader), udpHeader, UdpHeaderSize);
                 {
-                    lock_guard<mutex> lock(m_packetMapLock);
+                    std::lock_guard<std::mutex> lock(m_packetMapLock);
                     m_packetMap[PacketKey] = PacketNode;
                 }
 
                 recvBuf = dataBuf;
             }
 
-            if (recvBuf[0] == SLICE_HEADER)	//
+            if (recvBuf[0] == SLICE_HEADER)	
+
             {
                 T_PUDPSLICEHEADER SliceHeader;
                 SliceHeader = (T_PUDPSLICEHEADER)recvBuf;
@@ -908,7 +937,7 @@ void UdpThreadPool::Recv()
 
                 if (SliceHeader->SliceType == UDP_ACK_PAKTYPE)
                 {
-                    lock_guard<mutex> lk(m_sendMapLock);
+                    std::lock_guard<std::mutex> lk(m_sendMapLock);
                     ITR_MAP_T_PUDPNODE iter_map = this->m_sendMap.find(SliceHeader->uPacketNum);
                     if (iter_map != this->m_sendMap.end())
                         slice_ack_resp_add((iter_map->second)->bitmap, SliceHeader->uSliceCurrIndex);
@@ -916,15 +945,18 @@ void UdpThreadPool::Recv()
                     continue;
                 }
 
-                //
-                //
+                
+
+                
+
                 uiCrc = crc32buf(sliceBuf, SliceHeader->uSliceBufLen);
                 if (uiCrc != SliceHeader->uSliceBufCrc) {
                     g_daily_logger->info("UdpThreadPool::Recv() slice crc wrong, id = {}", SliceHeader->uSliceCurrIndex);
                     continue;
                 }
 
-                //
+                
+
                 SliceHeader->SliceType = UDP_ACK_PAKTYPE;
 
                 int sendlen = sendto(this->m_listenFd, (const char *)SliceHeader, UdpSliceHeaderSize, 0, (struct sockaddr*)&(t.fromAddr), fromLen);
@@ -948,13 +980,14 @@ void UdpThreadPool::Recv()
                 MAP_SLICEDATA tmp_slice_map;
                 T_PACKETKEY PacketKey(fromIp, fromPort, SliceHeader->uPacketNum);
                 {
-                    lock_guard<mutex> lk(m_recvMapLock);
+                    std::lock_guard<std::mutex> lk(m_recvMapLock);
                     m_recvMap[PacketKey].insert(std::make_pair(SliceHeader->uSliceCurrIndex, UdpSliceNode));
 
                     if (m_recvMap[PacketKey].size() != SliceHeader->uSliceTotalNum)
                         continue;
 
-                    //
+                    
+
                     tmp_slice_map = m_recvMap[PacketKey];
                 }
                 g_daily_logger->debug("Slice Together: tmp_slice_map.size() = {}", tmp_slice_map.size());
@@ -962,13 +995,14 @@ void UdpThreadPool::Recv()
                 ITR_MAP_PACKETDATA tit;
                 T_PACKETNODE packetNode;
                 {
-                    lock_guard<mutex> lock(m_packetMapLock);
+                    std::lock_guard<std::mutex> lock(m_packetMapLock);
                     tit = m_packetMap.find(PacketKey);
                     if (tit == m_packetMap.end()) {
                         g_daily_logger->error("ERROR: PacketKey({}, {}, {}) m_packetMap not exist!", fromIp.c_str(), fromPort, SliceHeader->uPacketNum);
 
-                        //
-                        lock_guard<mutex> lk(m_recvMapLock);
+                        
+
+                        std::lock_guard<std::mutex> lk(m_recvMapLock);
                         m_recvMap.erase(PacketKey);
 
                         continue;
@@ -982,13 +1016,15 @@ void UdpThreadPool::Recv()
 
                 T_PUDPHEADER packetHeader = &(packetNode._udpheader);
 
-                //
+                
+
                 uiCrc = crc32buf((char *)udpDataBuf.c_str(), packetHeader->uBufLen);
                 if (uiCrc != packetHeader->uDataBufCrc) {
                     g_daily_logger->info("UdpThreadPool::Recv() crc wrong, id = {}", packetHeader->uPacketNum);
                 }
                 else {
-                    //
+                    
+
                     packetHeader->PacketType = UDP_ACK_PAKTYPE;
 
                     int sendlen = sendto(this->m_listenFd, (const char *)packetHeader, UdpHeaderSize, 0, (struct sockaddr*)&(t.fromAddr), fromLen);
@@ -1005,7 +1041,8 @@ void UdpThreadPool::Recv()
                     else
                         g_daily_logger->debug("UdpThreadPool::Recv() send ack pack (PacketNum = {})", packetHeader->uPacketNum);
 
-                    //
+                    
+
                 RETRY2:
                     bret = udprecvhandler->put(fromIp.c_str(), fromPort, udpDataBuf.c_str(), packetHeader->uBufLen);
                     if (bret == false) {
@@ -1020,14 +1057,16 @@ void UdpThreadPool::Recv()
                     print_test_data(fromIp.c_str(), fromPort, packetHeader->uPacketNum, udpDataBuf.c_str(), packetHeader->uBufLen);
                 }
 
-                //
+                
+
                 {
-                    lock_guard<mutex> lock(m_packetMapLock);
+                    std::lock_guard<std::mutex> lock(m_packetMapLock);
                     m_packetMap.erase(PacketKey);
                 }
 
-                //
-                lock_guard<mutex> lk(m_recvMapLock);
+                
+
+                std::lock_guard<std::mutex> lk(m_recvMapLock);
                 m_recvMap.erase(PacketKey);
             }
         }
@@ -1042,12 +1081,13 @@ void UdpThreadPool::CleanExpiredCache()
     list<T_PACKETKEY> pkeylist;
 
     {
-        lock_guard<mutex> lock(m_packetMapLock);
+        std::lock_guard<std::mutex> lock(m_packetMapLock);
         auto it = m_packetMap.begin();
         for (; it != m_packetMap.end();) {
             if (it->second.isTimeOut()) {
                 pkeylist.push_back(it->first);
-                //
+                
+
                 m_packetMap.erase(it++);
                 continue;
             }
@@ -1059,9 +1099,10 @@ void UdpThreadPool::CleanExpiredCache()
     if (pkeylist.size() == 0)
         return;
 
-    lock_guard<mutex> lk(m_recvMapLock);
+    std::lock_guard<std::mutex> lk(m_recvMapLock);
     for (auto &t : pkeylist) {
-        //
+        
+
         m_recvMap.erase(t);
     }
 
@@ -1074,7 +1115,8 @@ void UdpThreadPool::CheckExpired()
     while (!m_isstop) {
         num = 0;
         while (num < 1800 && !m_isstop) {
-            //
+            
+
             std::this_thread::sleep_for(std::chrono::seconds(1));
             ++num;
         }

@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -122,7 +122,7 @@ bool ConnectSocket(const CAddress& addrConnect, SOCKET& hSocketRet, int nTimeout
 
     hSocketRet = hSocket;
 
-	pingNode(addrConnect);
+	//pingNode(addrConnect);
 
     return false;
 }
@@ -330,6 +330,7 @@ void ThreadGetMyExternalIP(void* parg)
             // setAddrKnown automatically filters any duplicate sends.
             CAddress addr(addrLocalHost);
             addr.nTime = GetAdjustedTime();
+            CRITICAL_BLOCK(cs_main)
             CRITICAL_BLOCK(cs_vNodes)
                 BOOST_FOREACH(CNode* pnode, vNodes)
                     pnode->PushAddress(addr);
@@ -427,6 +428,7 @@ void AbandonRequests(void (*fn)(void*, CDataStream&), void* param1)
 {
     // If the dialog might get closed before the reply comes back,
     // call this in the destructor so it doesn't get called after it's deleted.
+    CRITICAL_BLOCK(cs_main)
     CRITICAL_BLOCK(cs_vNodes)
     {
         BOOST_FOREACH(CNode* pnode, vNodes)
@@ -465,6 +467,7 @@ bool AnySubscribed(unsigned int nChannel)
 {
     if (pnodeLocalHost->IsSubscribed(nChannel))
         return true;
+    CRITICAL_BLOCK(cs_main)
     CRITICAL_BLOCK(cs_vNodes)
         BOOST_FOREACH(CNode* pnode, vNodes)
             if (pnode->IsSubscribed(nChannel))
@@ -487,6 +490,7 @@ void CNode::Subscribe(unsigned int nChannel, unsigned int nHops)
     if (!AnySubscribed(nChannel))
     {
         // Relay subscribe
+        CRITICAL_BLOCK(cs_main)
         CRITICAL_BLOCK(cs_vNodes)
             BOOST_FOREACH(CNode* pnode, vNodes)
                 if (pnode != this)
@@ -509,6 +513,7 @@ void CNode::CancelSubscribe(unsigned int nChannel)
     if (!AnySubscribed(nChannel))
     {
         // Relay subscription cancel
+        CRITICAL_BLOCK(cs_main)
         CRITICAL_BLOCK(cs_vNodes)
             BOOST_FOREACH(CNode* pnode, vNodes)
                 if (pnode != this)
@@ -526,6 +531,7 @@ void CNode::CancelSubscribe(unsigned int nChannel)
 
 CNode* FindNode(unsigned int ip)
 {
+    CRITICAL_BLOCK(cs_main)
     CRITICAL_BLOCK(cs_vNodes)
     {
         BOOST_FOREACH(CNode* pnode, vNodes)
@@ -537,6 +543,7 @@ CNode* FindNode(unsigned int ip)
 
 CNode* FindNode(CAddress addr)
 {
+    CRITICAL_BLOCK(cs_main)
     CRITICAL_BLOCK(cs_vNodes)
     {
         BOOST_FOREACH(CNode* pnode, vNodes)
@@ -585,6 +592,7 @@ CNode* ConnectNode(CAddress addrConnect, int64 nTimeout)
             pnode->AddRef(nTimeout);
         else
             pnode->AddRef();
+        CRITICAL_BLOCK(cs_main)
         CRITICAL_BLOCK(cs_vNodes)
             vNodes.push_back(pnode);
 
@@ -663,6 +671,7 @@ void ThreadSocketHandler2(void* parg)
         //
         // Disconnect nodes
         //
+        CRITICAL_BLOCK(cs_main)
         CRITICAL_BLOCK(cs_vNodes)
         {
             // Disconnect unused nodes
@@ -728,6 +737,7 @@ void ThreadSocketHandler2(void* parg)
         // Service each socket
         //
         vector<CNode*> vNodesCopy;
+        CRITICAL_BLOCK(cs_main)
         CRITICAL_BLOCK(cs_vNodes)
         {
             vNodesCopy = vNodes;
@@ -768,6 +778,7 @@ void ThreadSocketHandler2(void* parg)
                 }
             }
         }
+        CRITICAL_BLOCK(cs_main)
         CRITICAL_BLOCK(cs_vNodes)
         {
             BOOST_FOREACH(CNode* pnode, vNodesCopy)
@@ -1065,6 +1076,7 @@ void ThreadOpenConnections2(void* parg)
         loop
         {
             int nOutbound = 0;
+            CRITICAL_BLOCK(cs_main)
             CRITICAL_BLOCK(cs_vNodes)
                 BOOST_FOREACH(CNode* pnode, vNodes)
                     if (!pnode->fInbound)
@@ -1112,6 +1124,7 @@ void ThreadOpenConnections2(void* parg)
         // Only connect to one address per a.b.?.? range.
         // Do this here so we don't have to critsect vNodes inside mapAddresses critsect.
         set<unsigned int> setConnected;
+        CRITICAL_BLOCK(cs_main)
         CRITICAL_BLOCK(cs_vNodes)
             BOOST_FOREACH(CNode* pnode, vNodes)
                 setConnected.insert(pnode->addr.ip & 0x0000ffff);
@@ -1231,6 +1244,7 @@ void ThreadMessageHandler2(void* parg)
     while (!fShutdown)
     {
         vector<CNode*> vNodesCopy;
+        CRITICAL_BLOCK(cs_main)
         CRITICAL_BLOCK(cs_vNodes)
         {
             vNodesCopy = vNodes;
@@ -1257,6 +1271,7 @@ void ThreadMessageHandler2(void* parg)
                 return;
         }
 
+        CRITICAL_BLOCK(cs_main)
         CRITICAL_BLOCK(cs_vNodes)
         {
             BOOST_FOREACH(CNode* pnode, vNodesCopy)
@@ -1413,7 +1428,8 @@ void StartNode(void* parg)
 #endif
     printf("addrLocalHost = %s\n", addrLocalHost.ToString().c_str());
 
-	//
+	
+
     //if (fUseProxy || mapArgs.count("-connect") || fNoListen)
     //{
     //    // Proxies can't take incoming connections
@@ -1434,26 +1450,31 @@ void StartNode(void* parg)
         MapPort(fUseUPnP);
 
     // Get addresses from IRC and advertise ours
-	//
+	
+
     //if (!CreateThread(ThreadIRCSeed, NULL))
         //printf("Error: CreateThread(ThreadIRCSeed) failed\n");
 
     // Send and receive from sockets, accept connections
-    //
+    
+
     //CreateThread(ThreadSocketHandler, NULL);
 
     // Initiate outbound connections
-	//
+	
+
     //if (!CreateThread(ThreadOpenConnections, NULL))
         //printf("Error: CreateThread(ThreadOpenConnections) failed\n");
 
     // Process messages
-    //
+    
+
     //if (!CreateThread(ThreadMessageHandler, NULL))
     //    printf("Error: CreateThread(ThreadMessageHandler) failed\n");
 
     // Generate coins in the background
-    //
+    
+
     //GenerateBitcoins(fGenerateBitcoins, pwalletMain);
 }
 
@@ -1476,7 +1497,7 @@ bool StopNode(bool isStopRPC)
     if (vnThreadsRunning[0] > 0) printf("ThreadSocketHandler still running\n");
     if (vnThreadsRunning[1] > 0) printf("ThreadOpenConnections still running\n");
     if (vnThreadsRunning[2] > 0) printf("ThreadMessageHandler still running\n");
-    if (vnThreadsRunning[3] > 0) printf("ThreadLedgecoinMiner still running\n");
+    if (vnThreadsRunning[3] > 0) printf("ThreadLedgercoinMiner still running\n");
     if (vnThreadsRunning[4] > 0) printf("ThreadRPCServer still running\n");
     if (fHaveUPnP && vnThreadsRunning[5] > 0) printf("ThreadMapPort still running\n");
     while (vnThreadsRunning[2] > 0 || (isStopRPC && vnThreadsRunning[4] > 0))
@@ -1504,7 +1525,7 @@ public:
 
 #ifdef __WXMSW__
         // Shutdown Windows Sockets
-        WSACleanup();
+        //WSACleanup();
 #endif
     }
 }

@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -74,11 +74,12 @@ private:
     void exit();
     void showUsages();
     void showNeighborNode();
+    void showMQBroker();
     void showHyperChainSpace();
-    void showUnconfirmedBlock();
     void showHyperChainSpaceMore(const list<string> &commlist);
     void showLocalData();
     void downloadHyperBlock(const list<string> &commlist);
+    void downloadBlockHeader(const list<string> &commlist);
     void searchLocalHyperBlock(const list<string> &commlist);
     void showInnerDataStruct();
     void resolveAppData(const list<string> &paralist);

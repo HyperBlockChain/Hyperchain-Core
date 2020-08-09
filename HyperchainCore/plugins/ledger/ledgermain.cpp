@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -57,11 +57,13 @@ static map<uint256, CTransaction> mapTransactions;
 CCriticalSection cs_mapTransactions;
 unsigned int nTransactionsUpdated = 0;
 
-//
+
+
 map<COutPoint, CInPoint> mapNextTx;
 
 map<uint256, CBlockIndex*> mapBlockIndex;
-//
+
+
 uint256 hashGenesisBlock;
 
 //static CBigNum bnProofOfWorkLimit(~uint256(0) >> 32);
@@ -72,8 +74,10 @@ CBlockIndex* pindexGenesisBlock = NULL;
 int nBestHeight = -1;
 uint256 hashBestChain = 0;
 
-//
-//
+
+
+
+
 T_LOCALBLOCKADDRESS addrMaxChain;
 
 CBlockIndex* pindexBest = NULL;
@@ -538,9 +542,11 @@ int CMerkleTx::GetDepthInMainChain(int& nHeightRet) const
             return 0;
         fMerkleVerified = true;
     }
-    //
+    
+
     if (pindex->addr.hid == g_cryptoToken.GetHID()) {
-        //
+        
+
         return COINBASE_MATURITY + 1;
     }
     return pindexBest->Height() - pindex->Height() + 1;
@@ -551,7 +557,8 @@ int CMerkleTx::GetBlocksToMaturity() const
 {
     if (!IsCoinBase())
         return 0;
-    //
+    
+
     //return max(0, (COINBASE_MATURITY + 20) - GetDepthInMainChain());
     return max(0, (COINBASE_MATURITY + 1) - GetDepthInMainChain());
 }
@@ -605,11 +612,13 @@ bool CWalletTx::AcceptWalletTransaction()
 
 int CTxIndex::GetDepthInMainChain() const
 {
-    //
+    
+
     CBlock block;
     if (!block.ReadFromDisk(pos.addr, false))
         return 0;
-    //
+    
+
     map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(block.GetHash());
     if (mi == mapBlockIndex.end())
         return 0;
@@ -634,14 +643,16 @@ bool CBlock::ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions)
         return true;
     }
 
-    //
+    
+
     CHyperChainSpace *hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
     uint256 h = pindex->GetBlockHash();
     T_SHA256 t(h.begin());
 
         string payload;
         if (!hyperchainspace->GetLocalBlockPayload(pindex->addr, payload)) {
-            //
+            
+
             RSyncRemotePullHyperBlock(pindex->addr.hid);
             return ERROR_FL("block(%s) isn't found in my local storage", pindex->addr.tostring().c_str());
         }
@@ -794,7 +805,8 @@ bool CTransaction::ConnectInputs(CTxDB& txdb, map<uint256, CTxIndex>& mapTestPoo
                 return ERROR_FL("%s prevout.n out of range %d %d %d prev tx %s\n%s", GetHash().ToString().substr(0, 10).c_str(), prevout.n, txPrev.vout.size(), txindex.vSpent.size(), prevout.hash.ToString().substr(0, 10).c_str(), txPrev.ToString().c_str());
 
             // If prev is coinbase, check that it's matured
-            //
+            
+
             if (txPrev.IsCoinBase())
                 for (CBlockIndex* pindex = pindexBlock; pindex && pindexBlock->Height() - pindex->Height() < COINBASE_MATURITY; pindex = pindex->pprev)
                     if (pindex->addr == txindex.pos.addr && pindex->addr.hid != g_cryptoToken.GetHID())
@@ -938,7 +950,8 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
             return false;
     }
     // Write queued txindex changes
-    //
+    
+
     for (map<uint256, CTxIndex>::iterator mi = mapQueuedChanges.begin(); mi != mapQueuedChanges.end(); ++mi)
     {
         if (!txdb.UpdateTxIndex((*mi).first, (*mi).second))
@@ -952,7 +965,8 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     // The memory index structure will be changed after the db commits.
     if (pindex->pprev)
     {
-        //
+        
+
         CBlockIndex* pfirstSibling = pindex;
         while(pfirstSibling->pprevSibling) {
             pfirstSibling = pfirstSibling->pprevSibling;
@@ -1071,7 +1085,8 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
 
     txdb.TxnBegin();
     if (pindexGenesisBlock == NULL && hash == hashGenesisBlock) {
-        //
+        
+
         ConnectBlock(txdb, pindexNew);
         txdb.WriteHashBestChain(hash);
         if (!txdb.TxnCommit())
@@ -1084,7 +1099,8 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
             txdb.TxnAbort();
             return ERROR_FL("ConnectBlock failed");
         }
-        //
+        
+
         CBlockIndex* p = pindexNew->pprev;
         while (p->pprevSibling) {
             p = p->pprevSibling;
@@ -1105,7 +1121,8 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
             tx.RemoveFromMemoryPool();
     }
     else if (pindexNew->pprevSibling && *(pindexNew->pprevSibling->phashBlock) == hashBestChain) {
-        //
+        
+
         if (!ConnectBlock(txdb, pindexNew) || !txdb.WriteHashBestChain(hash)) {
             txdb.TxnAbort();
             return ERROR_FL("ConnectBlock failed");
@@ -1160,10 +1177,12 @@ bool CBlock::UpdateToBlockIndex(const T_LOCALBLOCKADDRESS& addr)
     //// issue here: it doesn't know the version
     unsigned int nTxPos = ::GetSerializeSize(CBlock(), SER_DISK) - 1 + GetSizeOfCompactSize(vtx.size());
 
-    //
+    
+
     BOOST_FOREACH(CTransaction& tx, vtx)
     {
-        //
+        
+
         CTxIndex txindex(CDiskTxPos(addr, nTxPos), tx.vout.size());
         nTxPos += ::GetSerializeSize(tx, SER_DISK);
 
@@ -1200,7 +1219,8 @@ bool CBlock::AddToBlockIndex(const T_LOCALBLOCKADDRESS& addr, CBlockIndex* prevS
     if (miPrev != mapBlockIndex.end())
     {
         pindexNew->pprev = (*miPrev).second;
-        //
+        
+
         //pindexNew->Height() = pindexNew->pprev->Height() + 1;
     }
 
@@ -1248,7 +1268,8 @@ bool CBlock::AddToBlockIndex(const T_LOCALBLOCKADDRESS& addr)
     if (miPrev != mapBlockIndex.end())
     {
         pindexNew->pprev = (*miPrev).second;
-        //
+        
+
         //pindexNew->Height() = pindexNew->pprev->Height() + 1;
     }
     pindexNew->bnChainWork = (pindexNew->pprev ? pindexNew->pprev->bnChainWork : 0) + pindexNew->GetBlockWork();
@@ -1282,7 +1303,8 @@ bool CBlock::AddToBlockIndex(const T_LOCALBLOCKADDRESS& addr)
 }
 */
 
-//
+
+
 /*
 bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
 {
@@ -1339,13 +1361,14 @@ bool CBlock::CheckBlock() const
     if (vtx.empty() || vtx.size() > MAX_BLOCK_SIZE || ::GetSerializeSize(*this, SER_NETWORK) > MAX_BLOCK_SIZE)
         return ERROR_FL("size limits failed");
 
-   
+
     // Check timestamp
     if (GetBlockTime() > GetAdjustedTime() + 2 * 60 * 60)
         return ERROR_FL("block timestamp too far in the future");
 
     // First transaction must be coinbase, the rest must not be
-    //
+    
+
     //if (vtx.empty() || !vtx[0].IsCoinBase())
     //    return ERROR_FL("first tx is not coinbase");
     //for (int i = 1; i < vtx.size(); i++)
@@ -1368,7 +1391,8 @@ bool CBlock::CheckBlock() const
     return true;
 }
 
-//
+
+
 bool CBlock::CheckTrans()
 {
     uint256 hash = GetHash();
@@ -1380,7 +1404,8 @@ bool CBlock::CheckTrans()
             if (!txin.IsFinal())
                 return ERROR_FL("contains a non-final transaction");
     }
-    //
+    
+
     //if (!CheckDiskSpace(::GetSerializeSize(*this, SER_DISK)))
     //    return ERROR_FL("out of disk space");
     return true;
@@ -1403,7 +1428,8 @@ bool CBlock::AcceptBlock(const T_LOCALBLOCKADDRESS& addr, const CBlock *prevSibl
     // Check for duplicate
     uint256 hash = GetHash();
    	if (mapBlockIndex.count(hash)) {
-        //
+        
+
         CBlockIndex* pIndex = mapBlockIndex[hash];
         if (pIndex->addr.isValid()) {
             if (addr == pIndex->addr) {
@@ -1418,7 +1444,8 @@ bool CBlock::AcceptBlock(const T_LOCALBLOCKADDRESS& addr, const CBlock *prevSibl
                 return ERROR_FL("UpdateToBlockIndex failed");
             }
 
-            //
+            
+
             CBlock blk;
             if (!blk.ReadFromDisk(addr)) {
                 RSyncGetBlock(addr);
@@ -1446,7 +1473,8 @@ bool CBlock::AcceptBlock(const T_LOCALBLOCKADDRESS& addr, const CBlock *prevSibl
             return ERROR_FL("contains a non-final transaction");
 
     // Check that the block chain matches the known block chain up to a checkpoint
-    //
+    
+
     //if (!fTestNet)
     //    if ((nHeight ==  11111 && hash != uint256("0x0000000069e244f73d78e8fd29ba2fd2ed618bd6fa2ee92559f542fdb26e7c1d")) ||
     //        (nHeight ==  33333 && hash != uint256("0x000000002dd5588a74784eaa7ab0507a18ad16a236e7b1ce69f00d7ddfb5d0a6")) ||
@@ -1461,7 +1489,8 @@ bool CBlock::AcceptBlock(const T_LOCALBLOCKADDRESS& addr, const CBlock *prevSibl
 
     // Write block to history file
 
-    //
+    
+
     //if (!CheckDiskSpace(::GetSerializeSize(*this, SER_DISK)))
     //    return ERROR_FL("AcceptBlock() : out of disk space");
     //unsigned int nFile = -1;
@@ -1484,7 +1513,8 @@ bool CBlock::AcceptBlock(const T_LOCALBLOCKADDRESS& addr, const CBlock *prevSibl
         return ERROR_FL("AddToBlockIndex failed");
 
     // Relay inventory, but don't relay old inventory during initial block download
-    //
+    
+
     //if (hashBestChain == hash)
     //    CRITICAL_BLOCK(cs_vNodes)
     //    BOOST_FOREACH(CNode* pnode, vNodes)
@@ -1523,7 +1553,8 @@ bool CBlock::AcceptBlock()
             return error("AcceptBlock() : contains a non-final transaction");
 
     // Check that the block chain matches the known block chain up to a checkpoint
-    //
+    
+
     //if (!fTestNet)
     //    if ((nHeight ==  11111 && hash != uint256("0x0000000069e244f73d78e8fd29ba2fd2ed618bd6fa2ee92559f542fdb26e7c1d")) ||
     //        (nHeight ==  33333 && hash != uint256("0x000000002dd5588a74784eaa7ab0507a18ad16a236e7b1ce69f00d7ddfb5d0a6")) ||
@@ -1559,7 +1590,8 @@ bool CBlock::AcceptBlock()
 
 bool static ProcessBlock(CNode* pfrom, CBlock* pblock)
 {
-    //
+    
+
     return true;
     /*
     // Check for duplicate
@@ -1691,10 +1723,12 @@ string GetGenesisBlock(string& payload)
     return datastream.str();
 }
 
-//
+
+
 void AddGenesisBlockToIndex()
 {
-    //
+    
+
     //CKey genesiskey;
     //genesiskey.MakeNewKey();
     //g_cryptoToken.MineGenesisBlock(genesiskey);
@@ -1706,7 +1740,8 @@ void AddGenesisBlockToIndex()
     uint256 hashGenesis = genesis.GetHash();
     assert(hashGenesis == g_cryptoToken.GetHashGenesisBlock());
 
-    //
+    
+
     T_LOCALBLOCKADDRESS addr;
     addr.hid = g_cryptoToken.GetHID();
     addr.chainnum = g_cryptoToken.GetChainNum();
@@ -1790,10 +1825,8 @@ void PrintBlockTree()
         // print item
         CBlock block;
         block.ReadFromDisk(pindex);
-        printf("%d (%u,%u) %s  %s  tx %d",
+        printf("%d  %s  %s  tx %d",
             pindex->Height(),
-            pindex->nFile,
-            pindex->nBlockPos,
             block.GetHash().ToString().substr(0, 20).c_str(),
             DateTimeStrFormat("%x %H:%M:%S", block.GetBlockTime()).c_str(),
             block.vtx.size());
@@ -2037,7 +2070,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                 pindexOnChained = pindexOnChained->pprev;
             }
 
-            printf("PushGetBlocks: getblocks %s to: %s\n", 
+            printf("PushGetBlocks: getblocks %s to: %s\n",
                 (pindexOnChained ? pindexOnChained->GetBlockHash().ToPreViewString().c_str() : "null"),
                 pfrom->nodeid.c_str());
             pfrom->PushGetBlocks(pindexOnChained, uint256(0));
@@ -2160,7 +2193,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             }
 
             if (fDebug)
-                printf("  got inventory: %s  %s, askfor: %s pushPutBlocks: %s\n", inv.ToString().c_str(), 
+                printf("  got inventory: %s  %s, askfor: %s pushPutBlocks: %s\n", inv.ToString().c_str(),
                     fAlreadyHave ? "have" : "new",
                     fAskFor ? "yes" : "no",
                     fPushGetBlocks ? "yes" : "no");
@@ -2838,12 +2871,15 @@ unsigned int static ScanHash_CryptoPP(char* pmidstate, char* pdata, char* phash1
         SHA256Transform(phash1, pdata, pmidstate);
         SHA256Transform(phash, phash1, pSHA256InitState);
 
-        //
-        //
+        
+
+        
+
         if (((unsigned short*)phash)[14] == 0)
             return nNonce;
 
-        //
+        
+
         if ((nNonce & 0xffff) == 0)
         {
             nHashesDone = 0xffff + 1;
@@ -2852,7 +2888,8 @@ unsigned int static ScanHash_CryptoPP(char* pmidstate, char* pdata, char* phash1
     }
 }
 
-//
+
+
 class COrphan
 {
 public:
@@ -2884,7 +2921,8 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
     if (!pblock.get())
         return NULL;
 
-    //
+    
+
     // Create coinbase tx
     //CTransaction txNew;
     //txNew.vin.resize(1);
@@ -2902,7 +2940,8 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
     {
         CTxDB txdb("r");
 
-        //
+        
+
         list<COrphan> vOrphan;          // list memory doesn't move
         map<uint256, vector<COrphan*> > mapDependers;
         multimap<double, CTransaction*> mapPriority;
@@ -2916,12 +2955,14 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             double dPriority = 0;
             BOOST_FOREACH(const CTxIn& txin, tx.vin)
             {
-                //
+                
+
                 CTransaction txPrev;
                 CTxIndex txindex;
                 if (!txPrev.ReadFromDisk(txdb, txin.prevout, txindex))
                 {
-                    //
+                    
+
                     if (!porphan)
                     {
                         // Use list for automatic deletion
@@ -2935,7 +2976,8 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
                 int64 nValueIn = txPrev.vout[txin.prevout.n].nValue;
 
                 // Read block header
-                //
+                
+
                 int nConf = txindex.GetDepthInMainChain();
 
                 dPriority += (double)nValueIn * nConf;
@@ -2945,13 +2987,15 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             }
 
             // Priority is sum(valuein * age) / txsize
-            //
+            
+
             dPriority /= ::GetSerializeSize(tx, SER_NETWORK);
 
             if (porphan)
                 porphan->dPriority = dPriority;
             else
-                mapPriority.insert(make_pair(-dPriority, &(*mi).second)); //
+                mapPriority.insert(make_pair(-dPriority, &(*mi).second)); 
+
 
             if (fDebug && GetBoolArg("-printpriority"))
             {
@@ -2962,13 +3006,15 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             }
         }
 
-        //
+        
+
         map<uint256, CTxIndex> mapTestPool;
         uint64 nBlockSize = 1000;
         int nBlockSigOps = 100;
         while (!mapPriority.empty())
         {
-            //
+            
+
             double dPriority = -(*mapPriority.begin()).first;
             CTransaction& tx = *(*mapPriority.begin()).second;
             mapPriority.erase(mapPriority.begin());
@@ -2981,12 +3027,15 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             if (nBlockSigOps + nTxSigOps >= MAX_BLOCK_SIGOPS)
                 continue;
 
-            //
+            
+
             bool fAllowFree = (nBlockSize + nTxSize < 4000 || CTransaction::AllowFree(dPriority));
             int64 nMinFee = tx.GetMinFee(nBlockSize, fAllowFree, true);
 
-            //
-            //
+            
+
+            
+
             map<uint256, CTxIndex> mapTestPoolTmp(mapTestPool);
             if (!tx.ConnectInputs(txdb, mapTestPoolTmp, CDiskTxPos(1), pindexPrev, nFees, false, true, nMinFee))
                 continue;
@@ -2997,7 +3046,8 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             nBlockSize += nTxSize;
             nBlockSigOps += nTxSigOps;
 
-            //
+            
+
             uint256 hash = tx.GetHash();
             if (mapDependers.count(hash))
             {
@@ -3013,11 +3063,13 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
             }
         }
     }
-    //
+    
+
     //pblock->vtx[0].vout[0].nValue = GetBlockValue(pindexPrev->Height() + 1, nFees);
 
     if (pblock->vtx.size() == 0) {
-        //
+        
+
         return nullptr;
     }
     // Fill in header
@@ -3054,7 +3106,8 @@ std::shared_ptr<CBlock> CreateInitBlock(uint64 amount, const CBitcoinAddress & a
     spblock->hashMerkleRoot = spblock->BuildMerkleTree();
     spblock->nTime = max(pindexPrev->GetMedianTimePast() + 1, GetAdjustedTime());
 
-    //
+    
+
     unsigned int nExtraNonce = 0;
     IncrementExtraNonce(spblock.get(), nExtraNonce);
     return spblock;
@@ -3062,7 +3115,8 @@ std::shared_ptr<CBlock> CreateInitBlock(uint64 amount, const CBitcoinAddress & a
 
 bool CommitToConsensus(CBlock* pblock, string& requestid, string& errmsg)
 {
-    //
+    
+
     ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
     if (consensuseng) {
         CDataStream datastream(SER_BUDDYCONSENSUS);
@@ -3075,7 +3129,7 @@ bool CommitToConsensus(CBlock* pblock, string& requestid, string& errmsg)
 
         if (consensuseng->AddNewBlockEx(T_APPTYPE(APPTYPE::ledger, g_cryptoToken.GetHID(), g_cryptoToken.GetChainNum(), g_cryptoToken.GetLocalID()),
             datastream.str(), payload, requestid)) {
-            printf("Add a Ledge block to consensus layer,requestid: %s\n", requestid.c_str());
+            printf("Add a Ledger block to consensus layer,requestid: %s\n", requestid.c_str());
         }
         return true;
     }
@@ -3088,7 +3142,8 @@ bool CommitToConsensus(CBlock* pblock, string& requestid, string& errmsg)
 
 bool CommitGenesisToConsensus(CBlock *pblock, string &requestid, string &errmsg)
 {
-    //
+    
+
     ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
     if (consensuseng) {
         CDataStream datastream(SER_BUDDYCONSENSUS);
@@ -3100,7 +3155,7 @@ bool CommitGenesisToConsensus(CBlock *pblock, string &requestid, string &errmsg)
         datastream << pblock->hashMerkleRoot;
 
         if (consensuseng->AddNewBlockEx(T_APPTYPE(APPTYPE::ledger, 0, 0, 0), datastream.str(), payload, requestid)) {
-            printf("Add a Ledge block to consensus layer,requestid: %s\n", requestid.c_str());
+            printf("Add a Ledger block to consensus layer,requestid: %s\n", requestid.c_str());
         }
         return true;
     }
@@ -3112,7 +3167,8 @@ bool CommitGenesisToConsensus(CBlock *pblock, string &requestid, string &errmsg)
 
 void IncrementExtraNonce(CBlock* pblock, unsigned int& nExtraNonce)
 {
-    //
+    
+
     static uint256 hashPrevBlock;
     if (hashPrevBlock != pblock->hashPrevBlock)
     {

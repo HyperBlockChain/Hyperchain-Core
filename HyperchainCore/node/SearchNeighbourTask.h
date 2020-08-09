@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -61,4 +61,27 @@ private:
     CUInt128 _toNodeId; // ∑¢ÀÕ∂‘œÛ
 };
 
+class ActiveNodeTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::ACTIVE_NODE>
+{
+public:
+    using ITask::ITask;
 
+    void exec() override {};
+    void execRespond() override
+    {
+        NodeUPKeepThreadPool* nodeUpkeep = Singleton<NodeUPKeepThreadPool>::instance();
+        NodeManager *nodemanager = Singleton<NodeManager>::getInstance();
+
+        uint32_t port = 0;
+
+        memcpy(&port, _payload, sizeof(uint32_t));
+        string ip(_payload + sizeof(uint32_t), _payloadlen - sizeof(uint32_t));
+        nodemanager->updateNode(_sentnodeid, ip, port);
+
+        nodemanager->EnableNodeActive(_sentnodeid, true);   
+
+        nodeUpkeep->RemoveNodeFromPingList(_sentnodeid);    
+
+    };
+private:
+};

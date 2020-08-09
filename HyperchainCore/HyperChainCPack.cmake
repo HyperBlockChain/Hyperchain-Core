@@ -23,8 +23,9 @@
 #Installation package setting
 #
 
-set(APPLICATION_SHORTNAME "hyperchain")
-set( APPLICATION_DOMAIN   "hyperchain.com" )
+set(APPLICATION_SHORTNAME "Paralism-Lite")
+#set(APPLICATION_SHORTNAME "Hyperchain-Lite")
+set( APPLICATION_DOMAIN   "hyperchain.net" )
 
 include( VERSION.cmake )
 
@@ -46,10 +47,11 @@ set( CPACK_PACKAGE_VENDOR  ${APPLICATION_SHORTNAME} )   				# Package vendor nam
 
 set( CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}/logo.ico")
 
-if(UNIX)
-set( CPACK_PACKAGING_INSTALL_PREFIX "/var/hc${CPACK_PACKAGE_VERSION}")
-set( CPACK_GENERATOR "RPM")
-endif()
+#if(UNIX)
+#set( CPACK_PACKAGING_INSTALL_PREFIX "/var/hc${CPACK_PACKAGE_VERSION}")
+#Should use -G to specify the generator type
+#set( CPACK_GENERATOR "RPM")
+#endif()
 
 #already define in CMakeLists.txt
 set(CORECOMPONET "HyperChain")
@@ -78,7 +80,7 @@ set(Paralism_Core_Desc "1.Hyperchain core protocol stack.\n
 	2.Application Program Interface:\n
 		Command line tool, RESTful API and RPC interface
 	3.System Modules:\n
-		Content Data Proof of Existence, Crypto Currency, Token and Biz Chain for User Defined Data"
+		Content data proof of existence, Crypto currency, Token and Biz chain for user defined data"
 		
   zh_CN "1、超块链核心协议栈
   2、应用层接口：
@@ -95,7 +97,7 @@ set(Paralism_Core_Desc "1.Hyperchain core protocol stack.\n
 set(Paralism_GUI_Desc "GUI for Paralism Core"
 				zh_CN "Paralism客户端图形界面")
 
-cpack_add_component(${CORECOMPONET}
+cpack_add_component(${CORECOMPONET} FORCED_INSTALLATION
     DISPLAY_NAME "Paralism Core"
     DESCRIPTION ${Paralism_Core_Desc}
 	INSTALL_TYPES Full
@@ -117,7 +119,16 @@ cpack_ifw_configure_component(${GUICOMPONET}
 cpack_ifw_configure_component(${CORECOMPONET}
     SCRIPT "${CMAKE_SOURCE_DIR}/installscript.qs"
 	)
+	
+cpack_ifw_configure_component(${CORECOMPONET}
+    USER_INTERFACES "${CMAKE_SOURCE_DIR}/targetselectwidget.ui"
+	)
+	
+cpack_ifw_configure_component(${GUICOMPONET}
+    SCRIPT "${CMAKE_SOURCE_DIR}/installscript-gui.qs"
+	)	
 
+	 
 #cpack_ifw_configure_component(${CORECOMPONET}
 #	LICENSES "The Hyperchain Company MIT" "${CMAKE_SOURCE_DIR}/LICENSE"
 #	)
@@ -139,13 +150,22 @@ if(WIN32)
 elseif(APPLE)
 	install(DIRECTORY dependencies/release/apple/ DESTINATION bin COMPONENT ${CORECOMPONET})
 elseif(UNIX)
-	install(DIRECTORY dependencies/release/linux/ DESTINATION bin 
+	install(DIRECTORY dependencies/release/linux/core/ DESTINATION bin 
 		FILE_PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE 
 		DIRECTORY_PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE OWNER_WRITE GROUP_WRITE WORLD_WRITE
 		COMPONENT ${CORECOMPONET}
 		PATTERN "resources/*" PERMISSIONS OWNER_READ GROUP_READ WORLD_READ 
 		PATTERN "translations/*" PERMISSIONS OWNER_READ GROUP_READ WORLD_READ 
 		PATTERN "qt.conf" PERMISSIONS OWNER_READ GROUP_READ WORLD_READ )
+	install(DIRECTORY dependencies/release/linux/gui/ DESTINATION gui 
+		FILE_PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE 
+		DIRECTORY_PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE OWNER_WRITE GROUP_WRITE WORLD_WRITE
+		COMPONENT ${GUICOMPONET}
+		PATTERN "resources/*" PERMISSIONS OWNER_READ GROUP_READ WORLD_READ 
+		PATTERN "translations/*" PERMISSIONS OWNER_READ GROUP_READ WORLD_READ
+		PATTERN "plugins/*" PERMISSIONS OWNER_READ GROUP_READ WORLD_READ
+		PATTERN "qt.conf" PERMISSIONS OWNER_READ GROUP_READ WORLD_READ )
+		
 	install(FILES logo.ico DESTINATION bin PERMISSIONS OWNER_READ GROUP_READ WORLD_READ COMPONENT ${CORECOMPONET})
 endif()
 

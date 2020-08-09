@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -21,102 +21,114 @@ DEALINGS IN THE SOFTWARE.
 */
 #include "newLog.h"
 #include "HyperChainSpace.h"
-#include "node/TaskThreadPool.h"
 #include "node/Singleton.h"
 #include "hyperblockTask.hpp"
 #include "headerhashTask.hpp"
+#include "blockheaderTask.hpp"
 #include "PullChainSpaceTask.hpp"
 #include "ApplicationChainTask.hpp"
 #include "db/HyperchainDB.h"
 #include "db/dbmgr.h"
 #include "consensus/buddyinfo.h"
+#include "AppPlugins.h"
 #include <algorithm>
 #include <thread>
 
 #include <boost/archive/binary_iarchive.hpp>
 #include <boost/archive/binary_oarchive.hpp>
 
-#define ATMOSTHYPERBLOCKINMEMORY 5
-
 CHyperChainSpace::CHyperChainSpace(string nodeid)
 {
     _isstop = false;
     sync_hid = 0;
+    sync_time = system_clock::now();
+    sync_header_hid = 0;
+    sync_header_time = system_clock::now();
+    sync_header_furcated = false;
+    sync_header_ready = false;
+    uiGlobalMaxBlockNum = 0;
     uiMaxBlockNum = 0;
+    uiMaxHeaderID = 0;
     m_mynodeid = nodeid;
-    m_localHIDReady = false;
+    m_FullNode = false;
+    m_ChainspaceReady = false;
+    m_localHeaderReady = false;
     m_LatestBlockReady = false;
+
+    if (mapHCArgs.count("-fullnode"))
+        m_FullNode = true;
+
 }
 
+void CHyperChainSpace::startMQHandler()
+{
+    std::function<void(void*, zmsg*)> fwrk =
+        std::bind(&CHyperChainSpace::DispatchService, this, std::placeholders::_1, std::placeholders::_2);
+
+    _msghandler.registerWorker(HYPERCHAINSPACE_SERVICE, fwrk);
+    _msghandler.registerTaskWorker(HYPERCHAINSPACE_T_SERVICE);
+
+    
+
+    _msghandler.registerTimer(30 * 1000, std::bind(&CHyperChainSpace::PullChainSpace, this));
+    _msghandler.registerTimer(20 * 1000, std::bind(&CHyperChainSpace::PullHyperBlock, this));
+    _msghandler.registerTimer(1800 * 1000, std::bind(&CHyperChainSpace::CollatingChainSpace, this));
+
+    _hyperblock_pub = new zmq::socket_t(*g_inproc_context, ZMQ_PUB);
+    _hyperblock_pub->bind(HYPERBLOCK_PUB_SERVICE);
+
+    _msghandler.registerTaskType<PullChainSpaceTask>(TASKTYPE::HYPER_CHAIN_SPACE_PULL);
+    _msghandler.registerTaskType<PullChainSpaceRspTask>(TASKTYPE::HYPER_CHAIN_SPACE_PULL_RSP);
+    _msghandler.registerTaskType<GetHyperBlockByNoReqTask>(TASKTYPE::GET_HYPERBLOCK_BY_NO_REQ);
+    _msghandler.registerTaskType<GetHyperBlockByPreHashReqTask>(TASKTYPE::GET_HYPERBLOCK_BY_PREHASH_REQ);
+    _msghandler.registerTaskType<GetHeaderHashByNoReqTask>(TASKTYPE::GET_HEADERHASH_BY_NO_REQ);
+    _msghandler.registerTaskType<GetHeaderHashByNoRspTask>(TASKTYPE::GET_HEADERHASH_BY_NO_RSP);
+    _msghandler.registerTaskType<GetBlockHeaderReqTask>(TASKTYPE::GET_BLOCKHEADER_REQ);
+    _msghandler.registerTaskType<GetBlockHeaderRspTask>(TASKTYPE::GET_BLOCKHEADER_RSP);
+    _msghandler.registerTaskType<BoardcastHyperBlockTask>(TASKTYPE::BOARDCAST_HYPER_BLOCK);
+    _msghandler.registerTaskType<NoHyperBlockRspTask>(TASKTYPE::NO_HYPERBLOCK_RSP);
+    _msghandler.registerTaskType<NoBlockHeaderRspTask>(TASKTYPE::NO_BLOCKHEADER_RSP);
+
+    _msghandler.start();
+    cout << "CHyperChainSpace MQID: " << MQID() << endl;
+}
 
 void CHyperChainSpace::GetHyperBlockHealthInfo(map<uint64, uint32> &out_BlockHealthInfo)
 {
-    lock_guard<mutex> locker(m_datalock);
-    if (m_Chainspace.empty())
-        return;
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        if (m_Chainspace.empty())
+            return;
 
-    out_BlockHealthInfo.clear();
-    for (auto & elem : m_Chainspace) {
-        out_BlockHealthInfo[elem.first] = elem.second.size();
-    }
-    return;
-}
-
-void CHyperChainSpace::GetUnconfirmedBlockMapShow(map<uint64, string>& out_UnconfirmedBlockMap)
-{
-    out_UnconfirmedBlockMap.clear();
-
-    CAutoMutexLock muxAuto(m_MuxUnconfirmedBlockMap);
-    if (m_UnconfirmedBlockMap.empty())
-        return;
-
-    char HyperblockHash[FILESIZEL] = { 0 };
-    ITR_MAP_T_UNCONFIRMEDBLOCK it = m_UnconfirmedBlockMap.begin();
-    for (; it != m_UnconfirmedBlockMap.end(); it++) {
-        LIST_T_HYPERBLOCK blocklist = it->second;
-        ITR_LIST_T_HYPERBLOCK hit = blocklist.begin();
-        string msg;
-        for (; hit != blocklist.end(); hit++) {
-            CCommonStruct::Hash256ToStr(HyperblockHash, hit->GetHashSelf());
-            msg += HyperblockHash;
-            msg += ";";
+        out_BlockHealthInfo.clear();
+        for (auto& elem : m_Chainspace) {
+            out_BlockHealthInfo[elem.first] = elem.second.size();
         }
-        out_UnconfirmedBlockMap[it->first] = msg;
+        return;
     }
-}
-
-void CHyperChainSpace::GetHyperChainData(map<uint64, set<string>>& out_HyperChainData)
-{
-    lock_guard<mutex> locker(m_datalock);
-    out_HyperChainData.clear();
-    out_HyperChainData = m_Chainspace;
-}
-
-void CHyperChainSpace::GetHyperChainShow(map<string, string>& out_HyperChainShow)
-{
-    lock_guard<mutex> locker(m_showlock);
-    out_HyperChainShow.clear();
-    out_HyperChainShow = m_chainspaceshow;
-}
-
-void CHyperChainSpace::GetLocalChainShow(vector<string> & out_LocalChainShow)
-{
-    lock_guard<mutex> locker(m_listlock);
-    out_LocalChainShow.clear();
-    out_LocalChainShow = m_localHIDsection;
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetHyperBlockHealthInfo, &out_BlockHealthInfo);
+        if (rspmsg) {
+            delete rspmsg;
+        }
+    }
 }
 
 uint64 CHyperChainSpace::GetGlobalLatestHyperBlockNo()
 {
-    lock_guard<mutex> locker(m_datalock);
-    if (m_Chainspace.empty())
-        return 0;
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        return uiGlobalMaxBlockNum;
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetGlobalLatestHyperBlockNo);
 
-    map<uint64, set<string>>::reverse_iterator it = m_Chainspace.rbegin();
-    if (it == m_Chainspace.rend())
-        return 0;
+        uint64 hid = 0;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, hid);
+            delete rspmsg;
+        }
 
-    return it->first;
+        return hid;
+    }
 }
 
 void getPayloads(T_HYPERBLOCK& h, const T_APPTYPE& app, vector<T_PAYLOADADDR>& vecPayload)
@@ -139,45 +151,53 @@ void getPayloads(T_HYPERBLOCK& h, const T_APPTYPE& app, vector<T_PAYLOADADDR>& v
 
 bool CHyperChainSpace::GetLocalBlocksByHID(uint64 globalHID, const T_APPTYPE& app, T_SHA256& hhash, vector<T_PAYLOADADDR>& vecPA)
 {
-    T_HYPERBLOCK h;
-    if (!getHyperBlockFromDB(globalHID, h)) {
-        return false;
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        T_HYPERBLOCK h;
+        if (!getHyperBlock(globalHID, h)) {
+            return false;
+        }
+        hhash = h.GetHashSelf();
+        getPayloads(h, app, vecPA);
+        return true;
     }
-    hhash = h.GetHashSelf();
-    getPayloads(h, app, vecPA);
-    return true;
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetLocalBlocksByHID, globalHID, &app, &hhash, &vecPA);
 
+        bool ret = false;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, ret);
+            delete rspmsg;
+        }
+
+        return ret;
+    }
 }
 
-bool CHyperChainSpace::GetLocalBlocksByHID(uint64 globalHID, const T_APPTYPE& app, vector<T_PAYLOADADDR>& vecPA)
-{
-    T_SHA256 hhash;
-    return GetLocalBlocksByHID(globalHID, app, hhash, vecPA);
-}
+//bool CHyperChainSpace::GetLocalBlocksByHID(uint64 globalHID, const T_APPTYPE& app, vector<T_PAYLOADADDR>& vecPA)
+//{
+//    T_SHA256 hhash;
+//    return GetLocalBlocksByHID(globalHID, app, hhash, vecPA);
+//}
 
-void CHyperChainSpace::PullAppDataThread(const T_LOCALBLOCKADDRESS& low_addr,
-                                        const T_LOCALBLOCKADDRESS& high_addr, const T_APPTYPE& app)
-{
-    TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-    taskpool->put(make_shared<ApplicationChainTask>(low_addr, high_addr, app));
-}
 
-//
+
 void CHyperChainSpace::GetAppBlocksByAddr(const T_LOCALBLOCKADDRESS& low_addr, const T_LOCALBLOCKADDRESS& high_addr, const T_APPTYPE& app)
 {
-    //
-    if (m_threadPullAppBlocks && m_threadPullAppBlocks->joinable()) {
-        //already pulled
-        m_threadPullAppBlocks->join();
-    }
-    m_threadPullAppBlocks.reset(new std::thread(&CHyperChainSpace::PullAppDataThread, this, low_addr, high_addr, app));
+    
+
+    //if (m_threadPullAppBlocks && m_threadPullAppBlocks->joinable()) {
+    //    //already pulled
+    //    m_threadPullAppBlocks->join();
+    //}
+    //m_threadPullAppBlocks.reset(new std::thread(&CHyperChainSpace::PullAppDataThread, this, low_addr, high_addr, app));
 }
 
 
 int CHyperChainSpace::GetRemoteLocalBlockByAddr(const T_LOCALBLOCKADDRESS& addr)
 {
     if (!m_localHID.count(addr.hid)) {
-        //
+        
+
         return GetRemoteHyperBlockByID(addr.hid);
     }
     return 0;
@@ -185,14 +205,75 @@ int CHyperChainSpace::GetRemoteLocalBlockByAddr(const T_LOCALBLOCKADDRESS& addr)
 
 int CHyperChainSpace::GetRemoteHyperBlockByID(uint64 globalHID, const string& nodeid)
 {
-    PullHyperDataByHID(globalHID, nodeid);
-    return 0;
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        PullHyperDataByHID(globalHID, nodeid);
+        return 0;
+    }
+    else {
+        MQRequestNoWaitResult(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetRemoteHyperBlockByIDFromNode, globalHID, nodeid);
+        return 0;
+    }
+}
+
+int CHyperChainSpace::GetRemoteBlockHeader(uint64 startHID, uint16 range, string nodeid)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        PullBlockHeaderData(startHID, range, nodeid);
+        return 0;
+    }
+    else {
+        MQRequestNoWaitResult(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetRemoteBlockHeaderFromNode, startHID, range, nodeid);
+        return 0;
+    }
 }
 
 int CHyperChainSpace::GetRemoteHyperBlockByID(uint64 globalHID)
 {
-    int i;
-    lock_guard<mutex> locker(m_datalock);
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        if (m_Chainspace.empty())
+            return -1;
+
+        map<uint64, set<string>>::iterator it = m_Chainspace.find(globalHID);
+        if (it == m_Chainspace.end())
+            return -1;
+
+        
+
+        std::set<CUInt128> ActiveNodes;
+        NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+        nodemgr->GetAllNodes(ActiveNodes);
+        if (ActiveNodes.empty())
+            return -1;
+
+        int i;
+        set<string> nodeset = it->second;
+        set<string>::iterator iter = nodeset.begin();
+        for (i = 0; (i < 3) && (iter != nodeset.end()); iter++) {
+            
+
+            if (ActiveNodes.count(CUInt128(*iter))) {
+                PullHyperDataByHID(globalHID, *iter);
+                i++;
+            }
+        }
+
+        return i;
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetRemoteHyperBlockByID, globalHID);
+
+        int ret = -1;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, ret);
+            delete rspmsg;
+        }
+
+        return ret;
+    }
+}
+
+int CHyperChainSpace::GetRemoteHyperBlockByPreHash(uint64 globalHID, T_SHA256 prehash)
+{
     if (m_Chainspace.empty())
         return -1;
 
@@ -200,42 +281,22 @@ int CHyperChainSpace::GetRemoteHyperBlockByID(uint64 globalHID)
     if (it == m_Chainspace.end())
         return -1;
 
-    //
-    {
-        CAutoMutexLock muxAuto1(m_MuxUnconfirmedBlockMap);
-        if (!m_UnconfirmedBlockMap.empty()) {
-            ITR_MAP_T_UNCONFIRMEDBLOCK bit = m_UnconfirmedBlockMap.find(globalHID);
-            if (bit != m_UnconfirmedBlockMap.end()) {
-                LIST_T_HYPERBLOCK blocklist = bit->second;
-                /*ITR_LIST_T_HYPERBLOCK hit = blocklist.begin();
-                for (; hit != blocklist.end(); hit++) {
-                    CheckDependency(*hit);
-                }*/
+    
 
-                return blocklist.size();
-            }
-        }
-    }
-
-    set<string> sendnodeset;
-    CAutoMutexLock muxAuto(m_MuxReqBlockNodes);
-    map<uint64, set<string>>::iterator ir = m_ReqBlockNodes.find(globalHID);
-    if (ir != m_ReqBlockNodes.end()) {
-        sendnodeset = ir->second;
-    }
-
-    set<string> nodeset = it->second;
+    std::set<CUInt128> ActiveNodes;
     NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+    nodemgr->GetAllNodes(ActiveNodes);
+    if (ActiveNodes.empty())
+        return -1;
+
+    int i;
+    set<string> nodeset = it->second;
     set<string>::iterator iter = nodeset.begin();
     for (i = 0; (i < 3) && (iter != nodeset.end()); iter++) {
-        ////
-        //if (!sendnodeset.empty() && sendnodeset.count(*iter))
-        //    continue;
+        
 
-        //
-        if (nodemgr->GetKBuckets()->IsNodeInKBuckets(CUInt128(*iter))) {
-            PullHyperDataByHID(globalHID, *iter);
-            m_ReqBlockNodes[globalHID].insert(*iter);
+        if (ActiveNodes.count(CUInt128(*iter))) {
+            PullHyperDataByPreHash(globalHID, prehash, *iter);
             i++;
         }
     }
@@ -245,68 +306,118 @@ int CHyperChainSpace::GetRemoteHyperBlockByID(uint64 globalHID)
 
 bool CHyperChainSpace::GetHyperBlockHeaderHash(uint64 hid, T_SHA256 &headerhash)
 {
-    CAutoMutexLock muxAuto(m_MuxHeaderHashMap);
-    if (!m_HeaderHashMap.empty()) {
-        map<uint64, T_SHA256>::iterator it = m_HeaderHashMap.find(hid);
-        if (it != m_HeaderHashMap.end()) {
-            headerhash = it->second;
-            return true;
-        }
+    if (m_HeaderHashMap.count(hid)) {
+        headerhash = m_HeaderHashMap[hid];
+        return true;
     }
 
-    T_HYPERBLOCK preHyperBlock;
+    /*T_HYPERBLOCK preHyperBlock;
     if (CHyperchainDB::getHyperBlock(preHyperBlock, hid)) {
         headerhash = preHyperBlock.calculateHeaderHashSelf();
         m_HeaderHashMap[hid] = headerhash;
+        if (hid > uiMaxHeaderID)
+            uiMaxHeaderID = hid;
         return true;
-    }
+    }*/
 
     return false;
 }
 
-CHECK_RESULT CHyperChainSpace::CheckDependency(const T_HYPERBLOCK &hyperblock)
+void CHyperChainSpace::GetHyperBlockHeaderHash(uint64 id, uint16 range, vector<T_SHA256> &vecheaderhash)
+{
+    for (uint64 hid = id; hid < id + range; hid++) {
+        if (m_HeaderHashMap.count(hid)) {
+            vecheaderhash.push_back(m_HeaderHashMap[hid]);
+            continue;
+        }
+
+        /*T_HYPERBLOCK preHyperBlock;
+        if (CHyperchainDB::getHyperBlock(preHyperBlock, hid)) {
+            T_SHA256 headerhash = preHyperBlock.calculateHeaderHashSelf();
+            m_HeaderHashMap[hid] = headerhash;
+            vecheaderhash.push_back(headerhash);
+            if (hid > uiMaxHeaderID)
+                uiMaxHeaderID = hid;
+        }*/
+    }
+}
+
+void CHyperChainSpace::PutHyperBlockHeaderHash(uint64 hid, T_SHA256 headerhash)
+{
+    m_HeaderHashMap[hid] = headerhash;
+}
+
+void CHyperChainSpace::SaveHyperblock(const T_HYPERBLOCK &hyperblock)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        T_SHA256 hash = hyperblock.GetHashSelf();
+
+        if (m_db->isBlockExistedbyHash(hash))
+            return;
+
+        //DBmgr::Transaction t = m_db->beginTran();
+
+        auto subItr = hyperblock.GetChildChains().begin();
+        uint16 chainnum = 0;
+        for (; subItr != hyperblock.GetChildChains().end(); subItr++) {
+            chainnum++;
+            auto ssubItr = (*subItr).begin();
+            for (; ssubItr != (*subItr).end(); ssubItr++) {
+                m_db->SaveLocalblock(*ssubItr, hyperblock.GetID(), chainnum, hash);
+            }
+        }
+
+        m_db->SaveHyperblock(hyperblock);
+        //t.set_trans_succ();
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::SaveHyperblock, &hyperblock);
+        if (rspmsg) {
+            delete rspmsg;
+        }
+    }
+}
+
+
+CHECK_RESULT CHyperChainSpace::CheckDependency(const T_HYPERBLOCK &hyperblock, string nodeid)
 {
     uint64_t blockid = hyperblock.GetID();
-    if (blockid == 0)
+    T_SHA256 blockheaderhash = hyperblock.calculateHeaderHashSelf();
+
+    if (blockid == 0 || blockid == -1)
         return CHECK_RESULT::INVALID_DATA;
 
-    bool incompatible = false;
-    T_SHA256 PreHeaderHash;
-    uint64_t preblockid = blockid - 1;
-    if (GetHyperBlockHeaderHash(preblockid, PreHeaderHash)) {
-        if (PreHeaderHash == hyperblock.GetPreHeaderHash())
+    
+
+    if (pro_ver == ProtocolVer::NET::INFORMAL_NET && blockid < INFORMALNET_GENESISBLOCKID) {
+        return CHECK_RESULT::VALID_DATA;
+    }
+
+    SaveHyperblock(hyperblock);
+
+    T_HYPERBLOCKHEADER header = hyperblock.GetHeader();
+    PutHyperBlockHeader(header, nodeid);
+
+    T_SHA256 headerhash;
+    if (GetHyperBlockHeaderHash(blockid, headerhash)) {
+        if (headerhash == blockheaderhash)
             return CHECK_RESULT::VALID_DATA;
 
-        //
-        //
+        
+
+        
+
         char HeaderHash[FILESIZEL] = { 0 };
-        CCommonStruct::Hash256ToStr(HeaderHash, PreHeaderHash);
-        g_consensus_console_logger->info("I have hyper block: [{}] headerhash: [{}] in hash cache", preblockid, HeaderHash);
+        CCommonStruct::Hash256ToStr(HeaderHash, headerhash);
+        g_daily_logger->info("I have hyper block: [{}] headerhash: [{}] in hash cache", blockid, HeaderHash);
 
         char pHeaderHash[FILESIZEL] = { 0 };
-        CCommonStruct::Hash256ToStr(pHeaderHash, hyperblock.GetPreHeaderHash());
-        g_consensus_console_logger->info("hyper block: [{}] preheaderhash: [{}] incompatible", hyperblock.GetID(), pHeaderHash);
-
-        incompatible = true;
+        CCommonStruct::Hash256ToStr(pHeaderHash, blockheaderhash);
+        g_daily_logger->info("hyper block: [{}] headerhash: [{}] incompatible", blockid, pHeaderHash);
     }
-    //else {
-    //    uint64 localHID = GetLocalLatestHID();
-    //    uint64 globalHID = GetGlobalLatestHyperBlockNo();
 
-    //    if (localHID == -1 || localHID == 0) {
-    //        //
-    //        incompatible = false;
-    //    }
-    //    else {
-    //        if ((globalHID < MATURITY_SIZE) || (localHID > globalHID - MATURITY_SIZE)) {
-    //            //
-    //            incompatible = true;
-    //        }
-    //    }     
-    //}
+    //
 
-
-    ////
     //if (isInUnconfirmedCache(blockid, hyperblock.GetHashSelf())) {
     //    if (incompatible)
     //        return CHECK_RESULT::INCOMPATIBLE_DATA;
@@ -314,27 +425,18 @@ CHECK_RESULT CHyperChainSpace::CheckDependency(const T_HYPERBLOCK &hyperblock)
     //    return CHECK_RESULT::UNCONFIRMED_DATA;
     //}
 
-    if (incompatible) {
-        //
-        PutUnconfirmedCache(hyperblock);
-        return CHECK_RESULT::INCOMPATIBLE_DATA;
+    
+
+    auto ir = m_SingleHeaderMap.find(blockheaderhash);
+    if (ir != m_SingleHeaderMap.end()) {
+        return CHECK_RESULT::UNCONFIRMED_DATA;
     }
 
-    //
-    int ret = GetRemoteHyperBlockHeaderHash(preblockid);
-    if (ret < 0)
-        return CHECK_RESULT::INVALID_DATA;
-
-    //
-    PutUnconfirmedCache(hyperblock);
-
-    return CHECK_RESULT::UNCONFIRMED_DATA;
+    return CHECK_RESULT::INCOMPATIBLE_DATA;
 }
 
 int CHyperChainSpace::GetRemoteHyperBlockHeaderHash(uint64 globalHID)
 {
-    int i;
-    lock_guard<mutex> locker(m_datalock);
     if (m_Chainspace.empty())
         return -1;
 
@@ -342,14 +444,22 @@ int CHyperChainSpace::GetRemoteHyperBlockHeaderHash(uint64 globalHID)
     if (it == m_Chainspace.end())
         return -1;
 
-    set<string> nodeset = it->second;
-    NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+    
 
-    CAutoMutexLock muxAuto(m_MuxReqHeaderHashNodes);
+    std::set<CUInt128> ActiveNodes;
+    NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+    nodemgr->GetAllNodes(ActiveNodes);
+    if (ActiveNodes.empty())
+        return -1;
+
+    int i;
+    set<string> nodeset = it->second;
+
     set<string>::iterator iter = nodeset.begin();
     for (i = 0; (i < 3) && (iter != nodeset.end()); iter++) {
-        //
-        if (nodemgr->GetKBuckets()->IsNodeInKBuckets(CUInt128(*iter))) {
+        
+
+        if (ActiveNodes.count(CUInt128(*iter))) {
             PullHeaderHashByHID(globalHID, *iter);
             m_ReqHeaderHashNodes[globalHID].insert(*iter);
             i++;
@@ -359,9 +469,44 @@ int CHyperChainSpace::GetRemoteHyperBlockHeaderHash(uint64 globalHID)
     return i;
 }
 
+int CHyperChainSpace::GetRemoteBlockHeader(uint64 startHID, uint16 range)
+{
+    
+
+    std::set<CUInt128> ActiveNodes;
+    NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+    nodemgr->GetAllNodes(ActiveNodes);
+    if (ActiveNodes.empty())
+        return -1;
+
+    int i = 0;
+    for (auto& node : ActiveNodes) {
+        
+
+        string nodeid = node.ToHexString();
+
+        auto ir = m_chainspaceheader.find(nodeid);
+        if (ir == m_chainspaceheader.end())
+            continue;
+
+        if (ir->second < startHID)
+            continue;
+
+        PullBlockHeaderData(startHID, range, nodeid);
+        g_daily_logger->info("Pull Block Header, startid:[{}] range:[{}] from:[{}]", startHID, range, nodeid);
+
+        i++;
+
+        if (i == 3)
+            break;
+    }
+
+    return i;
+}
+
+
 bool CHyperChainSpace::isInUnconfirmedCache(uint64 hid, T_SHA256 blockhash)
 {
-    CAutoMutexLock muxAuto(m_MuxUnconfirmedBlockMap);
     if (m_UnconfirmedBlockMap.empty())
         return false;
 
@@ -376,7 +521,7 @@ bool CHyperChainSpace::isInUnconfirmedCache(uint64 hid, T_SHA256 blockhash)
     ITR_LIST_T_HYPERBLOCK iter = blocklist.begin();
     for (; iter != blocklist.end(); iter++) {
         if (blockhash == iter->GetHashSelf()) {
-            g_consensus_console_logger->info("hyper block: [{}] hash: [{}] in unconfirmed block cache", hid, HyperblockHash);
+            g_daily_logger->info("hyper block: [{}] hash: [{}] in unconfirmed block cache", hid, HyperblockHash);
             return true;
         }
     }
@@ -386,7 +531,6 @@ bool CHyperChainSpace::isInUnconfirmedCache(uint64 hid, T_SHA256 blockhash)
 
 void CHyperChainSpace::RehandleUnconfirmedBlock(uint64 hid, T_SHA256 headerhash)
 {
-    CAutoMutexLock muxAuto(m_MuxUnconfirmedBlockMap);
     if (m_UnconfirmedBlockMap.empty())
         return;
 
@@ -407,34 +551,11 @@ void CHyperChainSpace::RehandleUnconfirmedBlock(uint64 hid, T_SHA256 headerhash)
     }
 
     if (found) {
-        //
+        
+
         m_UnconfirmedBlockMap.erase(it);
-        muxAuto.unlock();
         updateHyperBlockCache(hyperblock);
     }
-
-    return;
-}
-
-void CHyperChainSpace::PutUnconfirmedCache(const T_HYPERBLOCK &hyperblock)
-{
-    uint64_t hid = hyperblock.GetID();
-
-    CAutoMutexLock muxAuto(m_MuxUnconfirmedBlockMap);
-    ITR_MAP_T_UNCONFIRMEDBLOCK it = m_UnconfirmedBlockMap.find(hid);
-    if (it == m_UnconfirmedBlockMap.end()) {
-        m_UnconfirmedBlockMap[hid].push_back(std::move(hyperblock));
-        return;
-    }
-
-    LIST_T_HYPERBLOCK blocklist = it->second;
-    ITR_LIST_T_HYPERBLOCK iter = blocklist.begin();
-    for (; iter != blocklist.end(); iter++) {
-        if (hyperblock.GetHashSelf() == iter->GetHashSelf())
-            return;
-    }
-
-    blocklist.push_back(std::move(hyperblock));
 
     return;
 }
@@ -444,7 +565,6 @@ void CHyperChainSpace::PutHyperBlockHeaderHash(uint64 hid, T_SHA256 headerhash, 
     bool found = false;
     bool confirmed = false;
 
-    CAutoMutexLock muxAuto(m_MuxUnconfirmedHashMap);
     ITR_MAP_T_UNCONFIRMEDHEADERHASH it = m_UnconfirmedHashMap.find(hid);
     if (it == m_UnconfirmedHashMap.end()) {
         T_HEADERHASHINFO headerhashinfo(headerhash, from_nodeid);
@@ -467,17 +587,13 @@ void CHyperChainSpace::PutHyperBlockHeaderHash(uint64 hid, T_SHA256 headerhash, 
         headerhashlist.push_back(std::move(headerhashinfo));
     }
 
-    //
-    int vote = 0;
-    {
-        CAutoMutexLock muxAuto1(m_MuxReqHeaderHashNodes);
-        vote = m_ReqHeaderHashNodes[hid].size();
-    }
+    
+
+    int vote = m_ReqHeaderHashNodes[hid].size();
     int threshold = ceil(vote * 0.6);
     iter = headerhashlist.begin();
     for (; iter != headerhashlist.end(); iter++) {
         if (iter->GetVote() >= threshold) {
-            CAutoMutexLock muxAuto2(m_MuxHeaderHashMap);
             m_HeaderHashMap[hid] = headerhash;
             confirmed = true;
             break;
@@ -485,14 +601,14 @@ void CHyperChainSpace::PutHyperBlockHeaderHash(uint64 hid, T_SHA256 headerhash, 
     }
 
     if (confirmed == true) {
-        //
+        
+
         m_UnconfirmedHashMap.erase(it);
-        muxAuto.unlock();
 
         RehandleUnconfirmedBlock(hid, headerhash);
 
-        //
-        CAutoMutexLock muxAuto1(m_MuxReqHeaderHashNodes);
+        
+
         m_ReqHeaderHashNodes.erase(hid);
     }
 
@@ -502,23 +618,24 @@ void CHyperChainSpace::PutHyperBlockHeaderHash(uint64 hid, T_SHA256 headerhash, 
 void CHyperChainSpace::loadHyperBlockCache()
 {
     uint64 nHyperId = GetLocalLatestHID();
-
-    CAutoMutexLock muxAuto1(m_MuxHchainBlockList);
-    m_HchainBlockList.clear();
+    if (nHyperId == -1)
+        return;
 
     T_HYPERBLOCK hyperBlock;
     if (CHyperchainDB::getHyperBlock(hyperBlock, nHyperId)) {
         uiMaxBlockNum = hyperBlock.GetID();
         m_LatestHyperBlock = std::move(hyperBlock);
-        g_consensus_console_logger->info("loadHyperBlockCache, uiMaxBlockNum:{}", hyperBlock.GetID());
+        g_daily_logger->info("loadHyperBlockCache, uiMaxBlockNum:{}", hyperBlock.GetID());
     }
 }
 
 void CHyperChainSpace::loadHyperBlockIDCache()
 {
     int ret = m_db->getAllHyperblockNumInfo(m_localHID);
-    if (ret == 0)
-        m_localHIDReady = true;
+    if (ret != 0) {
+        g_daily_logger->error("loadHyperBlockIDCache failed!");
+        g_console_logger->error("loadHyperBlockIDCache failed!");
+    }
 }
 
 void CHyperChainSpace::loadHyperBlockHashCache()
@@ -533,9 +650,8 @@ int CHyperChainSpace::GenerateHIDSection()
     if (m_localHID.empty())
         return ret;
 
-    lock_guard<mutex> lk(m_listlock);
+    
 
-    //
     m_localHIDsection.clear();
 
     uint64 nstart = *(m_localHID.begin());
@@ -543,13 +659,17 @@ int CHyperChainSpace::GenerateHIDSection()
     string data;
 
     for (auto &li : m_localHID) {
-        //
-        //
-        //
+        
+
+        
+
+        
+
         if (li == nend || li - nend == 1)
             nend = li;
         else {
-            //
+            
+
             if (nstart == nend)
                 data = to_string(nstart);
             else
@@ -573,50 +693,120 @@ int CHyperChainSpace::GenerateHIDSection()
     return ret;
 }
 
+void CHyperChainSpace::NoHyperBlock(uint64 hid, string nodeid)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        if (m_Chainspace.empty())
+            return;
+
+        map<uint64, set<string>>::iterator it = m_Chainspace.find(hid);
+        if (it == m_Chainspace.end())
+            return;
+
+        set<string> nodeset = it->second;
+        nodeset.erase(nodeid);
+        if (nodeset.empty()) {
+            m_Chainspace.erase(it);
+
+            if (hid == uiGlobalMaxBlockNum)
+                uiGlobalMaxBlockNum--;
+        }
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::NoHyperBlock, hid, nodeid);
+        if (rspmsg) {
+            delete rspmsg;
+        }
+    }
+}
+
+void CHyperChainSpace::NoHyperBlockHeader(uint64 hid, string nodeid)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        if (m_chainspaceheader.empty())
+            return;
+
+        map<string, uint64>::iterator it = m_chainspaceheader.find(nodeid);
+        if (it == m_chainspaceheader.end())
+            return;
+
+        if (hid <= it->second)
+            it->second = hid--;
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::NoHyperBlockHeader, hid, nodeid);
+        if (rspmsg) {
+            delete rspmsg;
+        }
+    }
+}
+
+
 void CHyperChainSpace::AnalyzeChainSpaceData(string strbuf, string nodeid)
 {
-    if (strbuf.empty() || strbuf.length() <= 8)
-        return;
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        if (strbuf.empty() || strbuf.length() <= 8)
+            return;
 
-    //
-    string::size_type np = strbuf.find("HyperID=");
-    if (np == string::npos)
-        return;
+        
 
-    strbuf = strbuf.substr(np + 8);
+        string::size_type np = strbuf.find("BlockID=");
+        if (np == string::npos)
+            return;
 
-    {
-        lock_guard<mutex> locker(m_showlock);
+        string::size_type no = strbuf.find("HeaderID=");
+        if (no == string::npos)
+            return;
+
         m_chainspaceshow[nodeid] = strbuf;
-    }
 
-    vector<string> vecHID;
-    SplitString(strbuf, vecHID, ";");
+        string buf = strbuf.substr(no + 9);
+        m_chainspaceheader[nodeid] = stoull(buf);
 
-    vector<string>::iterator vit;
-    string::size_type ns = 0;
-    string strIDtoID;
-    uint64 nstart, nend, ID;
+        strbuf = strbuf.substr(np + 8, no - np - 8);
 
-    lock_guard<mutex> lk(m_datalock);
-    for (auto &sid : vecHID) {
-        strIDtoID = sid;
+        vector<string> vecHID;
+        SplitString(strbuf, vecHID, ";");
 
-        ns = strIDtoID.find("-");
-        if ((ns != string::npos) && (ns > 0)) {
-            nstart = stoull(strIDtoID.substr(0, ns));
-            nend = stoull(strIDtoID.substr(ns + 1, strIDtoID.length() - 1));
+        vector<string>::iterator vit;
+        string::size_type ns = 0;
+        string strIDtoID;
+        uint64 nstart, nend, ID;
 
-            for (ID = nstart; ID <= nend; ID++) {
+        m_ChainspaceReady = true;
+
+        for (auto &sid : vecHID) {
+            strIDtoID = sid;
+
+            ns = strIDtoID.find("-");
+            if ((ns != string::npos) && (ns > 0)) {
+                nstart = stoull(strIDtoID.substr(0, ns));
+                nend = stoull(strIDtoID.substr(ns + 1, strIDtoID.length() - 1));
+
+                for (ID = nstart; ID <= nend; ID++) {
+                    //if (!FindIDExistInChainIDList(ID))
+                    m_Chainspace[ID].insert(nodeid);
+                }
+
+            }
+            else {
+                ID = stoull(strIDtoID);
                 //if (!FindIDExistInChainIDList(ID))
                 m_Chainspace[ID].insert(nodeid);
             }
-
         }
-        else {
-            ID = stoull(strIDtoID);
-            //if (!FindIDExistInChainIDList(ID))
-            m_Chainspace[ID].insert(nodeid);
+
+        map<uint64, set<string>>::reverse_iterator it = m_Chainspace.rbegin();
+        if (it == m_Chainspace.rend())
+            return;
+
+        if (uiGlobalMaxBlockNum < it->first)
+            uiGlobalMaxBlockNum = it->first;
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::AnalyzeChainSpaceData, strbuf, nodeid);
+        if (rspmsg) {
+            delete rspmsg;
         }
     }
 }
@@ -634,21 +824,6 @@ void CHyperChainSpace::SplitString(const string& s, vector<std::string>& v, cons
     }
 }
 
-bool CHyperChainSpace::GetLocalHIDsection(string & mes)
-{
-    lock_guard<mutex> lk(m_listlock);
-    if (m_localHIDsection.empty())
-        return false;
-
-    mes += "HyperID=";
-    for (auto &li : m_localHIDsection) {
-        mes += li;
-        mes += ";";
-    }
-
-    return true;
-}
-
 bool CHyperChainSpace::GetLocalBlock(const T_LOCALBLOCKADDRESS& addr, T_LOCALBLOCK& localblock)
 {
     if (!m_db) {
@@ -663,165 +838,1542 @@ bool CHyperChainSpace::GetLocalBlock(const T_LOCALBLOCKADDRESS& addr, T_LOCALBLO
 
 bool CHyperChainSpace::GetLocalBlockPayload(const T_LOCALBLOCKADDRESS &addr, string &payload)
 {
-    if (!m_db) {
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        if (!m_db) {
+            return false;
+        }
+        T_LOCALBLOCK lb;
+        int ret = m_db->getLocalblock(lb, addr.hid, addr.id, addr.chainnum);
+        if (ret == 0) {
+            payload = std::forward<string>(lb.body.payload);
+            return true;
+        }
         return false;
     }
-    T_LOCALBLOCK lb;
-    int ret = m_db->getLocalblock(lb, addr.hid, addr.id, addr.chainnum);
-    if (ret == 0) {
-        payload = std::forward<string>(lb.body.payload);
-        return true;
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetLocalBlockPayload, &addr);
+
+        bool ret = false;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, ret, payload);
+            delete rspmsg;
+        }
+
+        return ret;
     }
-    return false;
 }
 
 void CHyperChainSpace::start(DBmgr* db)
 {
     m_db = db;
-    //
+    
+
     loadHyperBlockIDCache();
 
-    //
+    
+
     GenerateHIDSection();
 
-    //
+    
+
     loadHyperBlockCache();
 
-    //
-    loadHyperBlockHashCache();
+    
 
+    //loadHyperBlockHashCache();
 
-    m_threadpull.reset(new std::thread(&CHyperChainSpace::PullDataThread, this));
+    
+
+    m_db->getAllHeaderHashInfo(m_HeaderHashMap);
+    uiMaxHeaderID = m_HeaderHashMap.empty() ? 0 : m_HeaderHashMap.rbegin()->first;
+
+    
+
+    m_db->getAllHeaderIndex(m_HeaderIndexMap);
+
+    
+
+    m_db->getAllSingleHeaderInfo(m_SingleHeaderMap);
+
+    startMQHandler();
+
+    CheckLocalData();
+
+}
+
+void CHyperChainSpace::CheckLocalData()
+{
+    uint64 localHID = GetLocalLatestHID();
+    uint64 headerHID = GetHeaderHashCacheLatestHID();
+
+    if (localHID == -1)
+        return;
+
+    if (pro_ver == ProtocolVer::NET::INFORMAL_NET && headerHID < INFORMALNET_GENESISBLOCKID && localHID > INFORMALNET_GENESISBLOCKID) {
+        
+
+        for (uint64 i = INFORMALNET_GENESISBLOCKID; i <= localHID; i++) {
+            T_HYPERBLOCKHEADER header;
+            if (!m_db->getHyperblockshead(header, i)) {
+                PutHyperBlockHeader(header, "myself");
+            }
+        }
+    }
+}
+
+void CHyperChainSpace::PullHyperDataByPreHash(uint64 globalHID, T_SHA256 prehash, string nodeid)
+{
+    GetHyperBlockByPreHashReqTask task(globalHID, prehash, nodeid);
+    task.exec();
 }
 
 void CHyperChainSpace::PullHyperDataByHID(uint64 hid, string nodeid)
 {
-    TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-    taskpool->put(make_shared<GetHyperBlockByNoReqTask>(hid, nodeid));
+    GetHyperBlockByNoReqTask task(hid, nodeid);
+    task.exec();
 }
 
 void CHyperChainSpace::PullHeaderHashByHID(uint64 hid, string nodeid)
 {
-    TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-    taskpool->put(make_shared<GetHeaderHashByNoReqTask>(hid, nodeid));
+    GetHeaderHashByNoReqTask task(hid, nodeid);
+    task.exec();
 }
 
-void CHyperChainSpace::PullChainSpaceData()
+void CHyperChainSpace::PullBlockHeaderData(uint64 hid, uint16 range, string nodeid)
 {
-    TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-    taskpool->put(make_shared<PullChainSpaceTask>());
+    GetBlockHeaderReqTask task(hid, range, nodeid);
+    task.exec();
 }
 
-void CHyperChainSpace::SyncLatestHyperBlock()
+void CHyperChainSpace::PullChainSpace()
 {
-    uint64 localHID = GetLocalLatestHID();
-    uint64 globalHID = GetGlobalLatestHyperBlockNo();
-
-    if (globalHID <= localHID) {
-        m_LatestBlockReady = true;
+    if (_isstop) {
         return;
     }
 
-    m_LatestBlockReady = false;
+    PullChainSpaceTask task;
+    task.exec();
+}
+
+uint64 CHyperChainSpace::GetMaxBlockID()
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        return uiMaxBlockNum;
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetMaxBlockID);
+
+        uint64 nblockNo = 0;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, nblockNo);
+            delete rspmsg;
+        }
+
+        return nblockNo;
+    }
+}
+
+void CHyperChainSpace::GetLatestHyperBlockIDAndHash(uint64 &id, T_SHA256 &hash) {
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        id = m_LatestHyperBlock.GetID();
+        hash = m_LatestHyperBlock.GetHashSelf();
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetLatestHyperBlockIDAndHash);
+
+        if (rspmsg) {
+            MQMsgPop(rspmsg, id, hash);
+            delete rspmsg;
+        }
+    }
+}
+
+bool CHyperChainSpace::IsLatestHyperBlockReady()
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        return m_LatestBlockReady;
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::IsLatestHyperBlockReady);
+
+        bool ret = false;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, ret);
+            delete rspmsg;
+        }
+
+        return ret;
+    }
+}
+
+void CHyperChainSpace::GetLatestHyperBlock(T_HYPERBLOCK& hyperblock)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        hyperblock = m_LatestHyperBlock;
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetLatestHyperBlock, &hyperblock);
+        if (rspmsg) {
+            delete rspmsg;
+        }
+    }
+}
+
+void CHyperChainSpace::GetLocalHIDs(uint64 nStartHID, set<uint64>& setHID)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        auto iter = m_localHID.lower_bound(nStartHID);
+        for (; iter != m_localHID.end(); ++iter) {
+            setHID.insert(*iter);
+        }
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetLocalHIDs, nStartHID, &setHID);
+        if (rspmsg) {
+            delete rspmsg;
+        }
+    }
+}
+
+void CHyperChainSpace::GetHyperChainShow(map<string, string>& chainspaceshow)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        chainspaceshow = m_chainspaceshow;
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetHyperChainShow, &chainspaceshow);
+        if (rspmsg) {
+            delete rspmsg;
+        }
+    }
+}
+
+void CHyperChainSpace::GetHyperChainData(map<uint64, set<string>>& chainspacedata)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        chainspacedata = m_Chainspace;
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetHyperChainData, &chainspacedata);
+        if (rspmsg) {
+            delete rspmsg;
+        }
+    }
+}
+
+void CHyperChainSpace::GetLocalHIDsection(vector <string>& hidsection)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        hidsection = m_localHIDsection;
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetLocalHIDsection, &hidsection);
+        if (rspmsg) {
+            delete rspmsg;
+        }
+    }
+}
+
+size_t CHyperChainSpace::GetLocalChainIDSize()
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        return m_localHID.size();
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetLocalChainIDSize);
+
+        size_t idnums = 0;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, idnums);
+            delete rspmsg;
+        }
+
+        return idnums;
+    }
+}
+
+uint64 CHyperChainSpace::GetHeaderHashCacheLatestHID()
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        return uiMaxHeaderID;
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetHeaderHashCacheLatestHID);
+
+        uint64 hid = 0;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, hid);
+            delete rspmsg;
+        }
+
+        return hid;
+    }
+}
+
+void CHyperChainSpace::DispatchService(void *wrk, zmsg *msg)
+{
+    HCMQWrk *realwrk = reinterpret_cast<HCMQWrk*>(wrk);
+
+    string reply_who = msg->unwrap();
+    string u = msg->pop_front();
+
+    int service_t = 0;
+    memcpy(&service_t, u.c_str(), sizeof(service_t));
+
+    switch ((SERVICE)service_t) {
+    case SERVICE::GetMaxBlockID: {
+        uint64 nblockNo = GetMaxBlockID();
+        MQMsgPush(msg, nblockNo);
+        break;
+    }
+    case SERVICE::GetLatestHyperBlockIDAndHash: {
+        uint64 id = 0;
+        T_SHA256 hash;
+        GetLatestHyperBlockIDAndHash(id, hash);
+        MQMsgPush(msg, id, hash);
+        break;
+    }
+    case SERVICE::IsLatestHyperBlockReady: {
+        bool ret = IsLatestHyperBlockReady();
+        MQMsgPush(msg, ret);
+        break;
+    }
+    case SERVICE::GetLatestHyperBlock: {
+        T_HYPERBLOCK *pHyperblock = nullptr;
+        MQMsgPop(msg, pHyperblock);
+        GetLatestHyperBlock(*pHyperblock);
+        break;
+    }
+    case SERVICE::GetHyperBlockByID: {
+        uint64_t blockid;
+        T_HYPERBLOCK *pHyperblock = nullptr;
+        MQMsgPop(msg, blockid, pHyperblock);
+
+        bool ret = getHyperBlock(blockid, *pHyperblock);
+        MQMsgPush(msg, ret);
+        break;
+    }
+    case SERVICE::GetHyperBlockByHash: {
+        T_SHA256 hhash;
+        T_HYPERBLOCK *pHyperblock = nullptr;
+        MQMsgPop(msg, hhash, pHyperblock);
+
+        bool ret = getHyperBlock(hhash, *pHyperblock);
+        MQMsgPush(msg, ret);
+        break;
+    }
+    case SERVICE::GetHyperBlockByPreHash: {
+        T_SHA256 prehash;
+        T_HYPERBLOCK *pHyperblock = nullptr;
+        MQMsgPop(msg, prehash, pHyperblock);
+
+        bool ret = getHyperBlockByPreHash(prehash, *pHyperblock);
+        MQMsgPush(msg, ret);
+        break;
+    }
+    case SERVICE::GetLocalBlocksByHID: {
+        uint64_t blockid;
+        T_APPTYPE *pApp = nullptr;
+        T_SHA256 hhash;
+        vector<T_PAYLOADADDR> *pvecPA = nullptr;
+        MQMsgPop(msg, blockid, pApp, hhash, pvecPA);
+
+        bool ret = GetLocalBlocksByHID(blockid, *pApp, hhash, *pvecPA);
+        MQMsgPush(msg, ret);
+        break;
+    }
+    case SERVICE::GetLocalBlockPayload: {
+        T_LOCALBLOCKADDRESS *paddr = nullptr;
+        MQMsgPop(msg, paddr);
+
+        string payload;
+        bool ret = GetLocalBlockPayload(*paddr, payload);
+        MQMsgPush(msg, ret, payload);
+        break;
+    }
+    case SERVICE::GetLocalHIDs: {
+        uint64_t blockid;
+        set<uint64> *psetHID = nullptr;
+        MQMsgPop(msg, blockid, psetHID);
+        GetLocalHIDs(blockid, *psetHID);
+        break;
+    }
+
+    case SERVICE::AnalyzeChainSpaceData: {
+        string strbuf;
+        string nodeid;
+        MQMsgPop(msg, strbuf, nodeid);
+        AnalyzeChainSpaceData(strbuf, nodeid);
+        break;
+    }
+    case SERVICE::UpdateHyperBlockCache: {
+        T_HYPERBLOCK *pHyperblock = nullptr;
+        MQMsgPop(msg, pHyperblock);
+
+        bool ret = updateHyperBlockCache(*pHyperblock);
+        MQMsgPush(msg, ret);
+        break;
+    }
+    case SERVICE::GetMulticastNodes: {
+        vector<CUInt128> *pnodes;
+        MQMsgPop(msg, pnodes);
+        GetMulticastNodes(*pnodes);
+        break;
+    }
+    case SERVICE::NoHyperBlock: {
+        uint64_t blockid;
+        string nodeid;
+        MQMsgPop(msg, blockid, nodeid);
+        NoHyperBlock(blockid, nodeid);
+        break;
+    }
+    case SERVICE::PutHyperBlock: {
+        T_HYPERBLOCK *pHyperblock = nullptr;
+        string nodeid;
+        vector<CUInt128> *pnodes = nullptr;
+        MQMsgPop(msg, pHyperblock, nodeid, pnodes);
+        PutHyperBlock(*pHyperblock, nodeid, *pnodes);
+        break;
+    }
+    case SERVICE::SaveHyperblock: {
+        T_HYPERBLOCK *pHyperblock = nullptr;
+        MQMsgPop(msg, pHyperblock);
+        SaveHyperblock(*pHyperblock);
+        break;
+    }
+    case SERVICE::GetHyperChainShow: {
+        map<string, string> *pChainspaceShow = nullptr;
+        MQMsgPop(msg, pChainspaceShow);
+        GetHyperChainShow(*pChainspaceShow);
+        break;
+    }
+    case SERVICE::GetHyperChainData: {
+        map<uint64, set<string>> *pChainspaceData = nullptr;
+        MQMsgPop(msg, pChainspaceData);
+        GetHyperChainData(*pChainspaceData);
+        break;
+    }
+    case SERVICE::GetLocalHIDsection: {
+        vector <string> *pHidsection = nullptr;
+        MQMsgPop(msg, pHidsection);
+        GetLocalHIDsection(*pHidsection);
+        break;
+    }
+    case SERVICE::GetLocalChainIDSize: {
+        size_t idnums = GetLocalChainIDSize();
+        MQMsgPush(msg, idnums);
+        break;
+    }
+    case SERVICE::GetHyperBlockHealthInfo: {
+        map<uint64, uint32> *pBlockHealthInfo = nullptr;
+        MQMsgPop(msg, pBlockHealthInfo);
+        GetHyperBlockHealthInfo(*pBlockHealthInfo);
+        break;
+    }
+    case SERVICE::GetHeaderHashCacheLatestHID: {
+        uint64 hid = GetHeaderHashCacheLatestHID();
+        MQMsgPush(msg, hid);
+        break;
+    }
+    case SERVICE::GetGlobalLatestHyperBlockNo: {
+        uint64 hid = GetGlobalLatestHyperBlockNo();
+        MQMsgPush(msg, hid);
+        break;
+    }
+    case SERVICE::GetRemoteHyperBlockByID: {
+        uint64 blockid = 0;
+        MQMsgPop(msg, blockid);
+
+        int ret = GetRemoteHyperBlockByID(blockid);
+        MQMsgPush(msg, ret);
+        break;
+    }
+    case SERVICE::GetRemoteHyperBlockByIDFromNode: {
+        uint64 blockid = 0;
+        string nodeid;
+        MQMsgPop(msg, blockid, nodeid);
+
+        GetRemoteHyperBlockByID(blockid, nodeid);
+        return;
+    }
+    case SERVICE::GetRemoteBlockHeaderFromNode: {
+        uint64 blockid = 0;
+        uint16 range = 0;
+        string nodeid;
+        MQMsgPop(msg, blockid, range, nodeid);
+
+        GetRemoteBlockHeader(blockid, range, nodeid);
+        return;
+    }
+    case SERVICE::GetHyperBlockHeader: {
+        uint64 hid = 0;
+        uint16 range = 0;
+        vector<T_HYPERBLOCKHEADER> *pvecblockheader = nullptr;
+        MQMsgPop(msg, hid, range, pvecblockheader);
+
+        bool ret = GetHyperBlockHeader(hid, range, *pvecblockheader);
+        MQMsgPush(msg, ret);
+        break;
+    }
+    case SERVICE::PutHyperBlockHeader: {
+        T_HYPERBLOCKHEADER *phyperblockheader = nullptr;
+        string nodeid;
+        MQMsgPop(msg, phyperblockheader, nodeid);
+        PutHyperBlockHeader(*phyperblockheader, nodeid);
+        break;
+    }
+    case SERVICE::PutHyperBlockHeaderList: {
+        vector<T_HYPERBLOCKHEADER> *phyperblockheaders = nullptr;
+        string nodeid;
+        MQMsgPop(msg, phyperblockheaders, nodeid);
+        PutHyperBlockHeader(*phyperblockheaders, nodeid);
+        break;
+    }
+    case SERVICE::NoHyperBlockHeader: {
+        uint64_t blockid;
+        string nodeid;
+        MQMsgPop(msg, blockid, nodeid);
+        NoHyperBlockHeader(blockid, nodeid);
+        break;
+    }
+
+    default:
+        break;
+    }
+    realwrk->reply(reply_who, msg);
+}
+
+void CHyperChainSpace::SyncBlockHeaderData()
+{
+    if (!m_ChainspaceReady) {
+        return;
+    }
+
+    uint64 headerHID = GetHeaderHashCacheLatestHID();
+    uint64 globalHID = GetGlobalLatestHyperBlockNo();
+
+    if ((headerHID != -1 && headerHID >= globalHID)) {
+        m_localHeaderReady = true;
+        return;
+    }
+
+    if (m_db->isHeaderIndexExisted(globalHID)) {
+        m_localHeaderReady = true;
+        return;
+    }
+
+    m_localHeaderReady = false;
+
+    int ret = 0;
+    uint16 range = 0;
+    uint64 startHID = 0;
+    uint64 endHID = 0;
+    uint16 nums = 0;
+    uint16 once = 4;
+
+    if (headerHID == 0) {
+        
+
+        if (pro_ver == ProtocolVer::NET::INFORMAL_NET && startHID < INFORMALNET_GENESISBLOCKID) {
+            
+
+            startHID = INFORMALNET_GENESISBLOCKID - 1;
+        }
+
+        nums = globalHID - startHID;
+        startHID++;
+
+        do
+        {
+            range = nums > MATURITY_SIZE ? MATURITY_SIZE : nums;
+            ret = GetRemoteBlockHeader(startHID, range);
+            startHID += range;
+            nums -= range;
+            once--;
+        } while (nums > 0 && once > 0);
+
+        return;
+    }
+
+    if (sync_header_hid == 0 && headerHID > 0) {
+        sync_header_hid = headerHID;
+        ret = GetRemoteBlockHeader(sync_header_hid, 1);
+        if (ret <= 0) {
+            g_daily_logger->error("SyncBlockHeaderData failed! GetRemoteBlockHeader, hid: [{}]", sync_header_hid);
+            g_console_logger->error("SyncBlockHeaderData failed! GetRemoteBlockHeader, hid: [{}]", sync_header_hid);
+            return;
+        }
+
+        sync_header_time = system_clock::now();
+        sync_header_ready = false;
+        sync_header_furcated = false;
+        return;
+    }
+
+    if (!sync_header_ready) {
+        using seconds = std::chrono::duration<double, ratio<1>>;
+        system_clock::time_point curr = system_clock::now();
+        seconds timespan = std::chrono::duration_cast<seconds>(curr - sync_header_time);
+
+        if (timespan.count() < 3)
+            return;
+
+        
+
+        ret = GetRemoteBlockHeader(sync_header_hid, 1);
+        if (ret <= 0) {
+            g_daily_logger->error("SyncBlockHeaderData failed! GetRemoteBlockHeader, hid: [{}]", sync_header_hid);
+            g_console_logger->error("SyncBlockHeaderData failed! GetRemoteBlockHeader, hid: [{}]", sync_header_hid);
+            return;
+        }
+
+        sync_header_time = system_clock::now();
+        return;
+    }
+
+    
+
+    if (/*sync_header_ready && */sync_header_furcated) {
+        sync_header_hid = sync_header_hid > MATURITY_SIZE ? sync_header_hid - MATURITY_SIZE : 0;
+        if ((pro_ver == ProtocolVer::NET::SAND_BOX && sync_header_hid > 0) || (pro_ver == ProtocolVer::NET::INFORMAL_NET &&
+            sync_header_hid > INFORMALNET_GENESISBLOCKID)) {
+            ret = GetRemoteBlockHeader(sync_header_hid, 1);
+            if (ret <= 0) {
+                g_daily_logger->error("SyncBlockHeaderData failed! GetRemoteBlockHeader, hid: [{}]", sync_header_hid);
+                g_console_logger->error("SyncBlockHeaderData failed! GetRemoteBlockHeader, hid: [{}]", sync_header_hid);
+                return;
+            }
+
+            sync_header_time = system_clock::now();
+            sync_header_ready = false;
+            sync_header_furcated = false;
+            return;
+        }
+    }
+
+    bool furcated = false;
+    startHID = sync_header_hid;
+    endHID = globalHID;
+
+    if (sync_header_hid < headerHID) {
+        endHID = headerHID;
+        furcated = true;
+    }
+
+    sync_header_hid = 0;
+
+    if (pro_ver == ProtocolVer::NET::INFORMAL_NET && startHID < INFORMALNET_GENESISBLOCKID) {
+        
+
+        startHID = INFORMALNET_GENESISBLOCKID - 1;
+    }
+
+    nums = endHID - startHID;
+    startHID++;
+
+    if (furcated) {
+        do
+        {
+            range = nums > MATURITY_SIZE ? MATURITY_SIZE : nums;
+            GetRemoteBlockHeader(startHID, range);
+            startHID += range;
+            nums -= range;
+        } while (nums > 0);
+        return;
+    }
+
+    once = 4;
+    do
+    {
+        range = nums > MATURITY_SIZE ? MATURITY_SIZE : nums;
+        GetRemoteBlockHeader(startHID, range);
+        startHID += range;
+        nums -= range;
+        once--;
+    } while (nums > 0 && once > 0);
+}
+
+void CHyperChainSpace::SyncHyperBlockData()
+{
+    if ((!m_FullNode && !m_localHeaderReady) ||
+        (m_FullNode && !m_ChainspaceReady)) {
+        return;
+    }
+
+    uint64 headerHID = GetHeaderHashCacheLatestHID();
+    uint64 localHID = GetLocalLatestHID();
+    bool DataReady = true;
+
+    uint64 syncHID = headerHID;
+
+    if (m_FullNode) {
+        if (m_localHIDsection.size() > 1) {
+            DataReady = false;
+
+            string strIDtoID = m_localHIDsection[0];
+            string::size_type ns = strIDtoID.find("-");
+            if ((ns != string::npos) && (ns > 0)) {
+                syncHID = stoull(strIDtoID.substr(ns + 1, strIDtoID.length() - 1));
+            }
+            else {
+                syncHID = stoull(strIDtoID);
+            }
+
+            syncHID++;
+        }
+    }
+
+    if (DataReady && (headerHID == localHID)) {
+        m_LatestBlockReady = true;
+        return;
+    }
 
     using seconds = std::chrono::duration<double, ratio<1>>;
     system_clock::time_point curr = system_clock::now();
     seconds timespan = std::chrono::duration_cast<seconds>(curr - sync_time);
 
-    if ((sync_hid == globalHID) && timespan.count() < 3) {
-        //
+    if ((sync_hid == syncHID) && timespan.count() < 3) {
+        
+
         return;
     }
 
-    //
-    int ret = GetRemoteHyperBlockByID(globalHID);
-    if (ret > 0) {
-        sync_hid = globalHID;
-        sync_time = system_clock::now();
+    T_SHA256 prehash;
+    T_SHA256 headerhash;
+    if (!GetHyperBlockHeaderHash(syncHID, headerhash)) {
+        g_daily_logger->error("SyncHyperBlockData failed! GetHyperBlockHeaderHash, hid:[{}]", syncHID);
+        g_console_logger->error("SyncHyperBlockData failed! GetHyperBlockHeaderHash, hid:[{}]", syncHID);
+        return;
+    }
+
+    auto it = m_HeaderIndexMap.find(headerhash);
+    if (it == m_HeaderIndexMap.end()) {
+        char HeaderHash[FILESIZEL] = { 0 };
+        CCommonStruct::Hash256ToStr(HeaderHash, headerhash);
+        g_daily_logger->error("SyncHyperBlockData failed! Can't find headerhash: [{}]", HeaderHash);
+        g_console_logger->error("SyncHyperBlockData failed! Can't find headerhash: [{}]", HeaderHash);
+        return;
+    }
+
+    prehash = it->second.prehash;
+
+    int ret = GetRemoteHyperBlockByPreHash(syncHID, prehash);
+    if (ret <= 0) {
+        char PreHash[FILESIZEL] = { 0 };
+        CCommonStruct::Hash256ToStr(PreHash, prehash);
+        g_daily_logger->error("SyncHyperBlockData failed! GetRemoteHyperBlockByPreHash, hid: {}, prehash: [{}]", syncHID, PreHash);
+        g_console_logger->error("SyncHyperBlockData failed! GetRemoteHyperBlockByPreHash, hid: {}, prehash: [{}]", syncHID, PreHash);
+        return;
+    }
+
+    sync_hid = syncHID;
+    sync_time = system_clock::now();
+}
+
+void CHyperChainSpace::PullHyperBlock()
+{
+    if (_isstop) {
+        return;
+    }
+
+    SyncBlockHeaderData();
+    SyncHyperBlockData();
+}
+
+void CHyperChainSpace::CollatingChainSpace()
+{
+    if (_isstop) {
+        return;
+    }
+
+    CollatingChainSpaceDate();
+}
+
+
+
+void CHyperChainSpace::GetMulticastNodes(vector<CUInt128> &nodes)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        nodes = m_MulticastNodes;
+        m_MulticastNodes.clear();
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetMulticastNodes, &nodes);
+        if (rspmsg) {
+            delete rspmsg;
+        }
     }
 }
 
-void CHyperChainSpace::PullDataThread()
+void CHyperChainSpace::PutHyperBlock(T_HYPERBLOCK &hyperblock, string from_nodeid, vector<CUInt128> &multicastnodes)
 {
-    std::function<void(int)> sleepfn = [this](int sleepseconds) {
-        int i = 0;
-        int maxtimes = sleepseconds * 1000 / 200;
-        while (i++ < maxtimes) {
-            if (_isstop) {
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        uint64 blockid = hyperblock.GetID();
+
+        if (0 == from_nodeid.compare("myself")) {
+            
+
+            if (uiMaxBlockNum > blockid) {
+                g_daily_logger->warn("Create invalid hyper block: [{}] for block id check failed, Current MaxBlockID: [{}]", blockid, uiMaxBlockNum);
+                g_console_logger->warn("Create invalid hyper block: [{}] for block id check failed, Current MaxBlockID: [{}]", blockid, uiMaxBlockNum);
+                return;
+            }
+
+            m_MulticastNodes = multicastnodes;
+        }
+
+        
+
+        CHECK_RESULT ret = CheckDependency(hyperblock, from_nodeid);
+        if (CHECK_RESULT::VALID_DATA == ret) {
+            
+
+            updateHyperBlockCache(hyperblock);
+            return;
+        }
+
+        if (0 == from_nodeid.compare("myself")) {
+            g_daily_logger->warn("Create invalid hyper block: {} for dependency check failed", blockid);
+            g_console_logger->warn("Create invalid hyper block: {} for dependency check failed", blockid);
+            return;
+        }
+
+        if (CHECK_RESULT::INVALID_DATA == ret) {
+            g_daily_logger->warn("Received invalid hyper block: {} for dependency check failed", blockid);
+            g_console_logger->warn("Received invalid hyper block: {} for dependency check failed", blockid);
+            return;
+        }
+
+        if (CHECK_RESULT::UNCONFIRMED_DATA == ret) {
+            g_console_logger->warn("Received hyper block: {} for dependency check failed", blockid);
+
+            uint64 startid = blockid > MATURITY_SIZE ? blockid - MATURITY_SIZE : 0;
+            if (pro_ver == ProtocolVer::NET::INFORMAL_NET && startid < INFORMALNET_GENESISBLOCKID) {
+                
+
+                startid = INFORMALNET_GENESISBLOCKID;
+            }
+
+            uint16 range = blockid - startid;
+            PullBlockHeaderData(startid + 1, range, from_nodeid);
+            g_daily_logger->warn("Pull Block Header, startid:[{}] range:[{}] from:[{}] for dependency check", startid, range, from_nodeid);
+            g_console_logger->warn("Pull Block Header, startid:[{}] range:[{}] from:[{}] for dependency check", startid, range, from_nodeid);
+        }
+    }
+    else {
+        //MQRequestNoWaitResult(HYPERCHAINSPACE_SERVICE, (int)SERVICE::PutHyperBlock, &hyperblock, from_nodeid, &multicastnodes);
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::PutHyperBlock, &hyperblock, from_nodeid, &multicastnodes);
+        if (rspmsg) {
+            delete rspmsg;
+        }
+    }
+}
+
+bool CHyperChainSpace::GetHyperBlockHeader(uint64 hid, uint16 range, vector<T_HYPERBLOCKHEADER>& vecblockheader)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        if (!m_db) {
+            return false;
+        }
+
+        vector<T_SHA256> vecheaderhash;
+        GetHyperBlockHeaderHash(hid, range, vecheaderhash);
+
+        map<T_SHA256, T_HYPERBLOCKHEADER> mapblockheader;
+        m_db->getHeadersByID(mapblockheader, hid, range + hid);
+
+        for (auto &headerhash : vecheaderhash) {
+            if (mapblockheader.count(headerhash))
+                vecblockheader.push_back(mapblockheader[headerhash]);
+        }
+
+        return vecblockheader.size() > 0;
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetHyperBlockHeader, hid, range, &vecblockheader);
+
+        bool ret = false;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, ret);
+            delete rspmsg;
+        }
+
+        return ret;
+    }
+}
+
+
+
+
+
+
+
+bool CHyperChainSpace::isBetterThanLocalChain(const T_HEADERINDEX &localHeaderIndex, const T_HEADERINDEX &HeaderIndex)
+{
+    if (HeaderIndex.total_weight < localHeaderIndex.total_weight) {
+        return false;
+    }
+
+    if (HeaderIndex.total_weight > localHeaderIndex.total_weight) {
+        return true;
+    }
+
+    if (HeaderIndex.ctime > localHeaderIndex.ctime) {
+        return false;
+    }
+
+    if (HeaderIndex.ctime < localHeaderIndex.ctime) {
+        return true;
+    }
+
+    if (HeaderIndex.headerhash < localHeaderIndex.headerhash) {
+        return true;
+    }
+
+    return false;
+}
+
+void CHyperChainSpace::CollatingChainSpaceDate()
+{
+    int num = 0;
+    bool foundSingleHeader;
+    bool foundBlocksHeaderHash;
+    bool foundHeaderIndex;
+    T_SHA256 headerhash;
+    uint64 maxblockid = uiMaxBlockNum;
+
+    if (!m_LatestBlockReady)
+        return;
+
+    if (maxblockid <= MATURITY_SIZE)
+        return;
+
+    uint64 startid = maxblockid - MATURITY_SIZE;
+    vector<T_SHA256> vecheaderhash;
+
+    for (uint64 i = startid; i > 1; i--) {
+        if (!GetHyperBlockHeaderHash(i, headerhash)) {
+            g_daily_logger->error("CollatingChainSpaceDate() GetHyperBlockHeaderHash failed! hid:[{}]", i);
+            g_console_logger->error("CollatingChainSpaceDate() GetHyperBlockHeaderHash failed! hid:[{}]", i);
+            continue;
+        }
+
+        vecheaderhash.clear();
+        if (!m_db->getFurcatedHeaderHash(i, headerhash, vecheaderhash)) {
+            if (vecheaderhash.empty()) {
+                num++;
+                if (num >= MATURITY_SIZE) {
+                    
+
+                    break;
+                }
+
+                continue;
+            }
+
+            num = 0;
+            for (auto &hhash : vecheaderhash) {
+                foundSingleHeader = false;
+                foundBlocksHeaderHash = false;
+                foundHeaderIndex = false;
+
+                
+
+                auto ir = m_SingleHeaderMap.find(hhash);
+                if (ir != m_SingleHeaderMap.end()) {
+                    m_SingleHeaderMap.erase(ir);
+                    foundSingleHeader = true;
+                }
+
+                if (foundSingleHeader) {
+                    m_db->deleteSingleHeaderInfo(hhash);
+                    continue;
+                }
+
+                
+
+                for (auto tr = m_BlocksHeaderHash.begin(); tr != m_BlocksHeaderHash.end(); tr++) {
+                    if ((*tr).empty())
+                        continue;
+
+                    auto ir = (*tr).begin();
+                    if (*ir != hhash)
+                        continue;
+
+                    for (auto &hh : (*tr)) {
+                        
+
+                        auto it = m_HeaderIndexMap.find(hh);
+                        if (it != m_HeaderIndexMap.end()) {
+                            m_HeaderIndexMap.erase(it);
+                            foundHeaderIndex = true;
+                        }
+
+                        if (foundHeaderIndex) {
+                            m_db->deleteHeaderIndex(hh);
+                        }
+
+                        
+
+                        m_db->deleteHyperblockAndLocalblock(hh);
+                    }
+
+                    (*tr).clear();
+                    m_BlocksHeaderHash.erase(tr);
+                    foundBlocksHeaderHash = true;
+                    break;
+                }
+
+                if (foundBlocksHeaderHash)
+                    continue;
+
+                
+
+                auto it = m_HeaderIndexMap.find(hhash);
+                if (it != m_HeaderIndexMap.end()) {
+                    m_HeaderIndexMap.erase(it);
+                    foundHeaderIndex = true;
+                }
+
+                if (foundHeaderIndex) {
+                    m_db->deleteHeaderIndex(hhash);
+                }
+
+                
+
+                m_db->deleteHyperblockAndLocalblock(hhash);
+
+                
+
+                m_db->deleteHeader(hhash);
+            }
+        }
+    }
+}
+
+bool CHyperChainSpace::SaveHeaderIndex(T_SHA256 headerhash, T_SHA256 preheaderhash, T_HYPERBLOCKHEADER header, string from_nodeid, bool &Flag)
+{
+    int ret;
+    bool isBetter = false;
+    bool AcceptFlag = false;
+    bool IsBestHeader = false;
+    bool IsGensisBlock = false;
+    uint32 total = 0;
+    uint32 weight = 0;
+    uint64 hid = header.GetID();
+    T_SHA256 LBestHeaderHash;
+    T_HEADERINDEX headerindex;
+    T_HEADERINDEX LBestHeaderIndex;
+
+    if ((pro_ver == ProtocolVer::NET::SAND_BOX && hid == 0) || (pro_ver == ProtocolVer::NET::INFORMAL_NET &&
+        hid == INFORMALNET_GENESISBLOCKID && headerhash == INFORMALNET_GENESISBLOCK_HEADERHASH)) {
+        
+
+        total = 0;
+        AcceptFlag = true;
+        IsGensisBlock = true;
+    }
+    else {
+        auto it = m_HeaderIndexMap.find(preheaderhash);
+        if (it != m_HeaderIndexMap.end()) {
+            total = it->second.total_weight;
+            AcceptFlag = true;
+        }
+    }
+
+    if (!AcceptFlag) {
+        if (hid == sync_header_hid) {
+            sync_header_furcated = true;
+        }
+
+        auto ir = m_SingleHeaderMap.find(headerhash);
+        if (ir == m_SingleHeaderMap.end()) {
+            
+
+            T_SINGLEHEADER singleheader;
+            singleheader.headerhash = headerhash;
+            singleheader.preheaderhash = preheaderhash;
+            singleheader.from_id = from_nodeid;
+
+            m_SingleHeaderMap[headerhash] = singleheader;
+
+            
+
+            ret = m_db->updateSingleHeaderInfo(singleheader);
+            if (ret != 0) {
+                char HeaderHash[FILESIZEL] = { 0 };
+                CCommonStruct::Hash256ToStr(HeaderHash, headerhash);
+                g_daily_logger->error("updateSingleHeaderInfo failed!({}) headerhash: [{}]", ret, HeaderHash);
+                g_console_logger->error("updateSingleHeaderInfo failed!({}) headerhash: [{}]", ret, HeaderHash);
+            }
+
+            
+
+            /*if (m_SingleHeaderMap.find(preheaderhash) == m_SingleHeaderMap.end()){
+                uint64 startid = hid > MATURITY_SIZE ? hid - MATURITY_SIZE : 0;
+                if (pro_ver ==  ProtocolVer::NET::INFORMAL_NET && startid < INFORMALNET_GENESISBLOCKID) {
+                    HC: 测试网数据校验起始块为INFORMALNET_GENESISBLOCKID
+                    startid = INFORMALNET_GENESISBLOCKID;
+                }
+
+                uint16 range = hid - startid;
+                PullBlockHeaderData(startid + 1, range, from_nodeid);
+                g_console_logger->warn("Pull Block Header, startid:[{}] range:[{}] from:[{}] for dependency check", startid, range, from_nodeid);
+            }*/
+        }
+
+        return isBetter;
+    }
+
+    bool headerindex_exist = false;
+    auto irt = m_HeaderIndexMap.find(headerhash);
+    if (irt != m_HeaderIndexMap.end()) {
+        headerindex = irt->second;
+        headerindex_exist = true;
+    }
+    else {
+        weight = header.GetChildBlockCount();
+
+        headerindex.id = hid;
+        headerindex.prehash = header.GetPreHash();
+        headerindex.headerhash = headerhash;
+        headerindex.preheaderhash = preheaderhash;
+        headerindex.ctime = header.GetCTime();
+        headerindex.weight = weight;
+        headerindex.total_weight = total + weight;
+        headerindex.from_id = from_nodeid;
+
+        m_HeaderIndexMap[headerhash] = headerindex;
+
+        
+
+        ret = m_db->updateHeaderIndex(headerindex);
+        if (ret != 0) {
+            g_daily_logger->error("updateHeaderIndex failed!({}) hid: [{}]", ret, hid);
+            g_console_logger->error("updateHeaderIndex failed!({}) hid: [{}]", ret, hid);
+        }
+    }
+
+    
+
+    if (IsGensisBlock == true) {
+        m_HeaderHashMap[hid] = headerhash;
+        LBestHeaderHash = headerhash;
+        IsBestHeader = true;
+    }
+    else if (!m_HeaderHashMap.empty()) {
+        auto ir = m_HeaderHashMap.end();
+        ir--;
+
+        LBestHeaderHash = ir->second;
+        if ((ir->first == hid - 1) && (LBestHeaderHash == preheaderhash)) {
+            
+
+            m_HeaderHashMap[hid] = headerhash;
+            LBestHeaderHash = headerhash;
+            IsBestHeader = true;
+        }
+    }
+
+    if (IsBestHeader == true) {
+        m_db->updateHeaderHashInfo(hid, headerhash);
+        if (hid > uiMaxHeaderID)
+            uiMaxHeaderID = hid;
+        /*char HeaderHash[FILESIZEL] = { 0 };
+        CCommonStruct::Hash256ToStr(HeaderHash, headerhash);
+        g_console_logger->info("IsBestHeader {} [{}]", hid, HeaderHash);*/
+    }
+    else if (!headerindex_exist) {
+        
+
+        auto it = m_HeaderIndexMap.find(LBestHeaderHash);
+        if (it != m_HeaderIndexMap.end()) {
+            LBestHeaderIndex = it->second;
+        }
+
+        
+
+        bool finded = false;
+        for (auto tr = m_BlocksHeaderHash.begin(); tr != m_BlocksHeaderHash.end(); tr++) {
+            if ((*tr).empty())
+                continue;
+
+            auto ir = (*tr).end();
+            ir--;
+
+            if (*ir == preheaderhash) {
+                (*tr).push_back(headerhash);
+                m_HashChain = tr;
+                finded = true;
                 break;
             }
-            this_thread::sleep_for(chrono::milliseconds(200));
         }
-    };
 
-    while (!_isstop) {
-        PullChainSpaceData();
-        sleepfn(20);
+        if (finded == false) {
+            list<T_SHA256> listhash;
+            listhash.emplace_back(headerhash);
+            m_BlocksHeaderHash.push_back(listhash);
+            m_HashChain = m_BlocksHeaderHash.end() - 1;
+        }
+
+        if (isBetterThanLocalChain(LBestHeaderIndex, headerindex)) {
+            char HeaderHash[FILESIZEL] = { 0 };
+            CCommonStruct::Hash256ToStr(HeaderHash, headerindex.headerhash);
+            g_daily_logger->info("isBetterThanLocalChain is true. id:[{}], total_weight:[{}], headerhash:[{}]",
+                headerindex.id, headerindex.total_weight, HeaderHash);
+            isBetter = true;
+
+            return isBetter;
+        }
+    }
+
+    Flag = true;
+
+    return isBetter;
+}
+
+bool CHyperChainSpace::SwitchLocalBestChain()
+{
+    bool found = false;
+    uint64 hid = 0;
+    string nodeid;
+    T_SHA256 preheaderhash;
+    T_HEADERINDEX localheaderindex;
+    list<T_SHA256> listhash;
+
+    auto it = m_HeaderIndexMap.find(*(*m_HashChain).begin());
+    if (it == m_HeaderIndexMap.end()) {
+        char HeaderHash[FILESIZEL] = { 0 };
+        CCommonStruct::Hash256ToStr(HeaderHash, *(*m_HashChain).begin());
+        g_daily_logger->error("SwitchLocalBestChain failed! Can't find headerhash: [{}]", HeaderHash);
+        g_console_logger->error("SwitchLocalBestChain failed! Can't find headerhash: [{}]", HeaderHash);
+        return false;
+    }
+
+    hid = it->second.id;
+    nodeid = it->second.from_id;
+    preheaderhash = it->second.preheaderhash;
+
+    
+
+    T_HYPERBLOCK hblk;
+    if (CHyperchainDB::getHyperBlock(hblk, hid - 1)) {
+        publishNewHyperBlock(hid - 2, hblk, true, true);
+    }
+
+    if (m_db->isBlockExistedOnBestChain(hid)) {
+        
+
+        m_db->rollbackHyperblockAndLocalblock(hid);
+        m_db->rollbackHashInfo(hid);
+
+        g_daily_logger->info("rollbackHyperBlockCache, starting hid:{}", hid);
+
+        for (uint64 currblockid = hid; currblockid <= uiMaxHeaderID; currblockid++) {
+            m_localHID.erase(currblockid);
+
+            
+
+            m_BlockHashMap.erase(currblockid);
+        }
+
+        GenerateHIDSection();
+
+        
+
+        uint64 nHyperId = GetLocalLatestHID();
+        T_HYPERBLOCK hyperBlock;
+        if (CHyperchainDB::getHyperBlock(hyperBlock, nHyperId)) {
+            uiMaxBlockNum = nHyperId;
+            m_LatestHyperBlock = std::move(hyperBlock);
+            g_daily_logger->info("rollbackHyperBlockCache, uiMaxBlockNum:{}", hyperBlock.GetID());
+        }
+
+        found = true;
+    }
+
+    
+
+    m_db->rollbackHeaderHashInfo(hid);
+
+    for (auto ir = m_HeaderHashMap.find(hid); ir != m_HeaderHashMap.end();) {
+        listhash.emplace_back(ir->second);
+
+        char HeaderHash[FILESIZEL] = { 0 };
+        CCommonStruct::Hash256ToStr(HeaderHash, ir->second);
+        g_daily_logger->info("SwitchLocalBestChain, m_HeaderHashMap, delete hid:[{}], headerhash: [{}]", ir->first, HeaderHash);
+
+        m_HeaderHashMap.erase(ir++);
+    }
+
+    
+
+    for (auto ir = (*m_HashChain).begin(); ir != (*m_HashChain).end(); ir++, hid++) {
+        m_HeaderHashMap[hid] = *ir;
+        m_db->updateHeaderHashInfo(hid, *ir);
+
+        char HeaderHash[FILESIZEL] = { 0 };
+        CCommonStruct::Hash256ToStr(HeaderHash, *ir);
+        g_daily_logger->info("SwitchLocalBestChain, m_HeaderHashMap, insert hid:[{}], headerhash: [{}]", hid, HeaderHash);
+
+        
+
+        if (m_db->isBlockExistedbyHeaderHash(*ir)) {
+            T_HYPERBLOCK hyperblock;
+            if (CHyperchainDB::getHyperBlockbyHeaderHash(hyperblock, *ir)) {
+                updateHyperBlockCache(hyperblock);
+                continue;
+            }
+        }
+
+        
+
+        //if (found) {
+        //    
+
+        //    auto irt = m_HeaderIndexMap.find(*ir);
+        //    if (irt != m_HeaderIndexMap.end()) {
+        //        g_daily_logger->info("SwitchLocalBestChain, GetRemoteHyperBlockByPreHash, hid:{}", hid);
+        //        GetRemoteHyperBlockByPreHash(hid, irt->second.prehash);
+        //    }
+        //}
+    }
+
+    uiMaxHeaderID = m_HeaderHashMap.empty() ? 0 : m_HeaderHashMap.rbegin()->first;
+    g_daily_logger->info("SwitchLocalBestChain, uiMaxHeaderID:{}", uiMaxHeaderID);
+
+    (*m_HashChain).clear();
+
+    
+
+    m_BlocksHeaderHash.erase(m_HashChain);
+    m_BlocksHeaderHash.push_back(listhash);
+
+    return true;
+}
+
+void CHyperChainSpace::PutHyperBlockHeader(vector<T_HYPERBLOCKHEADER>& hyperblockheaders, string from_nodeid)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        for (auto iter = hyperblockheaders.begin(); iter != hyperblockheaders.end(); iter++) {
+            PutHyperBlockHeader(*iter, from_nodeid);
+        }
+
+        uint64 globalHID = GetGlobalLatestHyperBlockNo();
+        if (m_db->isHeaderIndexExisted(globalHID)) {
+            m_localHeaderReady = true;
+        }
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::PutHyperBlockHeaderList, &hyperblockheaders, from_nodeid);
+        if (rspmsg) {
+            delete rspmsg;
+        }
     }
 }
 
-bool CHyperChainSpace::getHyperBlockFromDB(uint64 hid, T_HYPERBLOCK& hyperblock)
+void CHyperChainSpace::PutHyperBlockHeader(T_HYPERBLOCKHEADER& hyperblockheader, string from_nodeid)
 {
-    return CHyperchainDB::getHyperBlock(hyperblock, hid);
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        bool found = false;
+        uint64 hid = hyperblockheader.GetID();
+        if (hid == -1)
+            return;
+
+        T_SHA256 headerhash = hyperblockheader.calculateHeaderHashSelf();
+        T_SHA256 preheaderhash = hyperblockheader.GetPreHeaderHash();
+
+        /*char HeaderHash[FILESIZEL] = { 0 };
+        CCommonStruct::Hash256ToStr(HeaderHash, headerhash);
+        char preHeaderHash[FILESIZEL] = { 0 };
+        CCommonStruct::Hash256ToStr(preHeaderHash, preheaderhash);
+        g_console_logger->info("PutHyperBlockHeader(), hyper block: [{}] headerhash: [{}] preheaderhash: [{}] nodeid: [{}]",
+            hid, HeaderHash, preHeaderHash, from_nodeid);*/
+
+        if (hid == sync_header_hid) {
+            sync_header_ready = true;
+        }
+
+        T_SHA256 blockheaderhash;
+        if (GetHyperBlockHeaderHash(hid, blockheaderhash)) {
+            if (headerhash == blockheaderhash)
+                return;
+        }
+
+        if (m_db->isHeaderExistedbyHash(headerhash)) {
+            found = true;
+        }
+
+        if (!found) {
+            
+
+            int ret = m_db->updateHeaderInfo(hid, headerhash, hyperblockheader);
+            if (ret != 0) {
+                g_daily_logger->error("updateHeaderInfo failed! hid: [{}]", hid);
+                g_console_logger->error("updateHeaderInfo failed! hid: [{}]", hid);
+                return;
+            }
+        }
+
+        bool isBetter;
+        bool CheckFlag = false;
+        
+
+    RETRY:
+        isBetter = SaveHeaderIndex(headerhash, preheaderhash, hyperblockheader, from_nodeid, CheckFlag);
+        if (isBetter) {
+            
+
+            m_LatestBlockReady = false;
+            SwitchLocalBestChain();
+        }
+
+        if (CheckFlag) {
+            
+
+            bool find = false;
+            T_SINGLEHEADER singleheader;
+            auto ir = m_SingleHeaderMap.begin();
+            for (; ir != m_SingleHeaderMap.end(); ir++) {
+                if (ir->second.preheaderhash != headerhash)
+                    continue;
+
+                singleheader = ir->second;
+                find = true;
+                break;
+            }
+
+            if (!find) {
+                return;
+            }
+
+            
+
+            int ret;
+            T_HYPERBLOCKHEADER header;
+            ret = m_db->getHeaderByHash(header, singleheader.headerhash);
+            if (ret != 0) {
+                char HeaderHash[FILESIZEL] = { 0 };
+                CCommonStruct::Hash256ToStr(HeaderHash, singleheader.headerhash);
+                g_daily_logger->error("getHeaderByHash failed! hash: [{}]", HeaderHash);
+                g_console_logger->error("getHeaderByHash failed! hash: [{}]", HeaderHash);
+                return;
+            }
+
+            
+
+            ret = m_db->deleteSingleHeaderInfo(singleheader.headerhash);
+            if (ret != 0) {
+                char HeaderHash[FILESIZEL] = { 0 };
+                CCommonStruct::Hash256ToStr(HeaderHash, singleheader.headerhash);
+                g_daily_logger->error("deleteSingleHeaderInfo failed!({}) headerhash: [{}]", ret, HeaderHash);
+                g_console_logger->error("deleteSingleHeaderInfo failed!({}) headerhash: [{}]", ret, HeaderHash);
+            }
+
+            
+
+            m_SingleHeaderMap.erase(ir);
+
+            headerhash = singleheader.headerhash;
+            preheaderhash = singleheader.preheaderhash;
+            hyperblockheader = header;
+            from_nodeid = singleheader.from_id;
+            CheckFlag = false;
+            goto RETRY;
+        }
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::PutHyperBlockHeader, &hyperblockheader, from_nodeid);
+        if (rspmsg) {
+            delete rspmsg;
+        }
+    }
 }
 
 bool CHyperChainSpace::getHyperBlock(uint64 hid, T_HYPERBLOCK &hyperblock)
 {
-    CAutoMutexLock muxAuto(m_MuxHchainBlockList);
-    return getHyperBlockwithoutMutexLock(hid, hyperblock);
-}
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        if (m_localHID.empty() || !m_localHID.count(hid))
+            return false;
 
-bool CHyperChainSpace::getHyperBlockwithoutMutexLock(uint64 hid, T_HYPERBLOCK &hyperblock)
-{
-    if (m_localHID.empty() || !m_localHID.count(hid))
-        return false;
-
-
-    if (m_LatestHyperBlock.GetID() == hid) {
-        hyperblock = m_LatestHyperBlock;
-        return true;
-    }
-
-    auto itrList = m_HchainBlockList.begin();
-    for (; itrList != m_HchainBlockList.end(); itrList++) {
-        if ((*itrList).GetID() == hid) {
-            //
-            hyperblock = (*itrList);
+        if (m_LatestHyperBlock.GetID() == hid) {
+            hyperblock = m_LatestHyperBlock;
             return true;
         }
-    }
 
-    //
-    return CHyperchainDB::getHyperBlock(hyperblock, hid);
+        
+
+        return CHyperchainDB::getHyperBlock(hyperblock, hid);
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetHyperBlockByID, hid, &hyperblock);
+
+        bool ret = false;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, ret);
+            delete rspmsg;
+        }
+
+        return ret;
+    }
 }
 
 bool CHyperChainSpace::getHyperBlock(const T_SHA256 &hhash, T_HYPERBLOCK &hyperblock)
 {
-    CAutoMutexLock muxAuto(m_MuxHchainBlockList);
-
-    if (m_LatestHyperBlock.GetHashSelf() == hhash) {
-        hyperblock = m_LatestHyperBlock;
-        return true;
-    }
-
-    auto itrList = m_HchainBlockList.begin();
-    for (; itrList != m_HchainBlockList.end(); itrList++) {
-        if ((*itrList).GetHashSelf() == hhash) {
-            //
-            hyperblock = (*itrList);
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        if (m_LatestHyperBlock.GetHashSelf() == hhash) {
+            hyperblock = m_LatestHyperBlock;
             return true;
         }
-    }
 
-    //
-    return CHyperchainDB::getHyperBlock(hyperblock, hhash);
+        
+
+        return CHyperchainDB::getHyperBlock(hyperblock, hhash);
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetHyperBlockByHash, &hhash, &hyperblock);
+
+        bool ret = false;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, ret);
+            delete rspmsg;
+        }
+
+        return ret;
+    }
+}
+
+bool CHyperChainSpace::getHyperBlockByPreHash(T_SHA256 &prehash, T_HYPERBLOCK &hyperblock)
+{
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        if (m_LatestHyperBlock.GetPreHash() == prehash) {
+            hyperblock = m_LatestHyperBlock;
+            return true;
+        }
+
+        
+
+        return CHyperchainDB::getHyperBlock(hyperblock, prehash);
+    }
+    else {
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::GetHyperBlockByPreHash, &prehash, &hyperblock);
+
+        bool ret = false;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, ret);
+            delete rspmsg;
+        }
+
+        return ret;
+    }
 }
 
 void CHyperChainSpace::SaveToLocalStorage(const T_HYPERBLOCK &tHyperBlock)
 {
     DBmgr::Transaction t = m_db->beginTran();
 
-    //
+    
+
     if (m_db->isBlockExisted(tHyperBlock.GetID())) {
         m_db->deleteHyperblockAndLocalblock(tHyperBlock.GetID());
     }
@@ -839,129 +2391,116 @@ void CHyperChainSpace::SaveToLocalStorage(const T_HYPERBLOCK &tHyperBlock)
     t.set_trans_succ();
 }
 
-void CHyperChainSpace::SaveHashToLocalStorage(uint64 hid, T_SHA256 headerhash, T_SHA256 blockhash)
-{
-    m_db->updateHashInfo(hid, headerhash, blockhash);
-}
 
-//
+
 bool CHyperChainSpace::updateHyperBlockCache(T_HYPERBLOCK &hyperblock)
 {
-    uint64_t currblockid = hyperblock.GetID();
-    uint64_t blockcount = hyperblock.GetChildBlockCount();
+    if (_msghandler.getID() == std::this_thread::get_id()) {
+        uint64_t currblockid = hyperblock.GetID();
+        uint64_t blockcount = hyperblock.GetChildBlockCount();
 
-    //
-    //
+        
 
-    char HyperblockHash[FILESIZEL] = { 0 };
-    CCommonStruct::Hash256ToStr(HyperblockHash, hyperblock.GetHashSelf());
+        
 
-    //
-    bool isBlockAlreadyExisted = false;
-    CAutoMutexLock muxAuto(m_MuxHchainBlockList);
-    if (!isAcceptHyperBlock(currblockid, hyperblock, isBlockAlreadyExisted)) {
-        g_consensus_console_logger->info("I have the hyper block or local is more well, refuse it: {} {} {}",
+
+        char HyperblockHash[FILESIZEL] = { 0 };
+        CCommonStruct::Hash256ToStr(HyperblockHash, hyperblock.GetHashSelf());
+
+        
+
+        bool isBlockAlreadyExisted = false;
+        if (!isAcceptHyperBlock(currblockid, hyperblock, isBlockAlreadyExisted)) {
+            g_daily_logger->info("I have the hyper block or local is more well, refuse it: {} {} {}",
+                currblockid, blockcount, HyperblockHash);
+            return false;
+        }
+
+        
+
+        
+
+        
+
+
+        g_daily_logger->info("I accept the hyper block: {} {} {}",
             currblockid, blockcount, HyperblockHash);
-        return false;
-    }
 
-    //
-    //
-    //
+        //g_tP2pManagerStatus->ApplicationAccept(currblockid - 1, hyperblock, uiMaxBlockNum <= currblockid);
+        SaveToLocalStorage(hyperblock);
 
-    if (!g_tP2pManagerStatus->ApplicationCheck(hyperblock)) {
-        g_consensus_console_logger->warn("found the invalid or orphant application data in hyper block : {} {} {}",
-            currblockid, blockcount, HyperblockHash);
-        //
-        //
-        //return false;
-    }
+        
 
-    g_consensus_console_logger->info("I accept the hyper block: {} {} {}",
-        currblockid, blockcount, HyperblockHash);
+        T_SHA256 headerhash = hyperblock.calculateHeaderHashSelf();
+        m_db->updateHashInfo(currblockid, headerhash, hyperblock.GetHashSelf());
 
-    //
-    if (isBlockAlreadyExisted) {
-        g_tP2pManagerStatus->initOnChainingState(currblockid);
-    }
+        
 
-    g_tP2pManagerStatus->ApplicationAccept(hyperblock);
-    SaveToLocalStorage(hyperblock);
-
-    //
-    g_tP2pManagerStatus->updateOnChainingState(hyperblock);
-
-    //
-    T_SHA256 headerhash = hyperblock.calculateHeaderHashSelf();
-    SaveHashToLocalStorage(currblockid, headerhash, hyperblock.GetHashSelf());
-
-    //
-    {
-        CAutoMutexLock muxAuto1(m_MuxHeaderHashMap);
-        m_HeaderHashMap[currblockid] = headerhash;
-    }
-
-    //
-    {
-        CAutoMutexLock muxAuto2(m_MuxBlockHashMap);
         m_BlockHashMap[currblockid] = hyperblock.GetHashSelf();
-    }
 
-    //
-    g_tP2pManagerStatus->SignalHyperBlockUpdated(hyperblock);
+        if (!isBlockAlreadyExisted) {
+            
 
-    //
-    auto itr = m_HchainBlockList.begin();
-    for (; itr != m_HchainBlockList.end();) {
-        uint64_t blocknum = (*itr).GetID();
-        if (blocknum == currblockid || blocknum < currblockid - ATMOSTHYPERBLOCKINMEMORY) {
-            itr = m_HchainBlockList.erase(itr);
-            continue;
-        }
-        ++itr;
-    }
-
-    if (!isBlockAlreadyExisted) {
-        //
-        m_localHID.insert(currblockid);
-        GenerateHIDSection();
-    }
-
-    if (GetMaxBlockID() <= currblockid) {
-        //
-        if (m_LatestHyperBlock.GetID() != -1 && m_LatestHyperBlock.GetID() != currblockid) {
-            m_HchainBlockList.emplace_back(std::move(m_LatestHyperBlock));
+            m_localHID.insert(currblockid);
+            GenerateHIDSection();
         }
 
-        m_LatestHyperBlock = std::move(hyperblock);
+        if (uiMaxBlockNum <= currblockid) {
+            
 
-        uint64 globalHID = GetGlobalLatestHyperBlockNo();
-        uiMaxBlockNum = std::max(globalHID, currblockid);
+            uiMaxBlockNum = currblockid;
+            m_LatestHyperBlock = std::move(hyperblock);
 
-        if (currblockid >= globalHID) {
-            m_LatestBlockReady = true;
+            
 
-            if (currblockid != 0) {
-                //
-                TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-                taskpool->put(make_shared<BoardcastHyperBlockTask>());
+            publishNewHyperBlock(currblockid - 1, m_LatestHyperBlock, true, false);
+
+            uint64 headerHID = GetHeaderHashCacheLatestHID();
+            if (m_localHeaderReady && currblockid >= headerHID) {
+                m_LatestBlockReady = true;
+
+                if (currblockid != 0) {
+                    
+
+                    BoardcastHyperBlockTask task;
+                    task.exec();
+                }
             }
         }
+        else {
+            publishNewHyperBlock(currblockid - 1, hyperblock, false, false);
+        }
+
+        return true;
     }
     else {
-        //
-        m_HchainBlockList.push_back(std::move(hyperblock));
+        zmsg *rspmsg = MQRequest(HYPERCHAINSPACE_SERVICE, (int)SERVICE::UpdateHyperBlockCache, &hyperblock);
+
+        bool ret = false;
+        if (rspmsg) {
+            MQMsgPop(rspmsg, ret);
+            delete rspmsg;
+        }
+
+        return ret;
     }
-
-    muxAuto.unlock();
-
-    RehandleUnconfirmedBlock(currblockid, headerhash);
-
-    return true;
 }
 
-//
-//
+void CHyperChainSpace::publishNewHyperBlock(uint32_t hidFork, const T_HYPERBLOCK &hyperblock, bool isLatest, bool needSwitch)
+{
+    stringstream ssBuf;
+    boost::archive::binary_oarchive oa(ssBuf, boost::archive::archive_flags::no_header);
+    putStream(oa, hyperblock);
+
+    zmsg msg;
+    MQMsgPush(&msg, hidFork, ssBuf.str(), isLatest, needSwitch);
+    msg.send(*_hyperblock_pub);
+}
+
+
+
+
+
 bool CHyperChainSpace::isMoreWellThanLocal(const T_HYPERBLOCK &localHyperBlock,
     uint64 blockid, uint64 blockcount, const T_SHA256 &hhashself)
 {
@@ -984,7 +2523,7 @@ bool CHyperChainSpace::isAcceptHyperBlock(uint64 blockid, const T_HYPERBLOCK &re
 {
     T_HYPERBLOCK localHyperBlock;
 
-    bool Existed = getHyperBlockwithoutMutexLock(blockid, localHyperBlock);
+    bool Existed = getHyperBlock(blockid, localHyperBlock);
     if (!Existed) {
         isAlreadyExisted = false;
         return true;
@@ -992,37 +2531,35 @@ bool CHyperChainSpace::isAcceptHyperBlock(uint64 blockid, const T_HYPERBLOCK &re
 
     isAlreadyExisted = true;
 
-    //
-    if ((uiMaxBlockNum > MATURITY_SIZE) && (blockid <= uiMaxBlockNum - MATURITY_SIZE)) {
-        g_consensus_console_logger->info("hyper block {} has matured, refuse update", blockid);
+    T_SHA256 lblockhash = localHyperBlock.GetHashSelf();
+    T_SHA256 rblockhash = remoteHyperBlock.GetHashSelf();
+    if (lblockhash == rblockhash) {
+        g_daily_logger->info("I have the hyper block: {}", blockid);
         return false;
     }
 
-    //
-    T_SHA256 lpreheaderhash = localHyperBlock.GetPreHeaderHash();
-    T_SHA256 rpreheaderhash = remoteHyperBlock.GetPreHeaderHash();
-
-    if (lpreheaderhash != rpreheaderhash) {
-        T_SHA256 PreHeaderHash;
-        uint64_t preblockid = blockid - 1;
-        if (GetHyperBlockHeaderHash(preblockid, PreHeaderHash)) {
-            if (rpreheaderhash == PreHeaderHash) {
-                g_consensus_console_logger->info("hyper block {} has furcated, update local data", blockid);
-                return true;
-            }
-        }
-    }
-
-    uint64_t blockcount = remoteHyperBlock.GetChildBlockCount();
-    T_SHA256 hhashself = remoteHyperBlock.GetHashSelf();
-
-    if (isMoreWellThanLocal(localHyperBlock, blockid, blockcount, hhashself)) {
-        g_consensus_console_logger->info("isMoreWellThanLocal is true {} {}", blockid, blockcount);
-        return true;
-    }
-
-    return false;
+    g_daily_logger->info("hyper block {} has furcated, update local data", blockid);
+    return true;
 }
+
+void getFromStream(boost::archive::binary_iarchive &ia, T_HYPERBLOCK& hyperblock, T_SHA256 &hash)
+{
+    ia >> hash;
+    ia >> hyperblock;
+    uint32 count = hyperblock.GetChildChainsCount();
+    for (uint32 i = 0; i < count; i++) {
+        LIST_T_LOCALBLOCK childchain;
+        uint32 blocknum;
+        ia >> blocknum;
+        for (uint32 j = 0; j < blocknum; j++) {
+            T_LOCALBLOCK block;
+            ia >> block;
+            childchain.push_back(std::move(block));
+        }
+        hyperblock.AddChildChain(std::move(childchain));
+    }
+}
+
 
 void putStream(boost::archive::binary_oarchive &oa, const T_HYPERBLOCK& hyperblock)
 {
@@ -1044,4 +2581,11 @@ void putStream(boost::archive::binary_oarchive &oa, const T_HYPERBLOCK& hyperblo
     assert(hyperblock.GetChildBlockCount() == totalBlocks);
 }
 
-
+void putStream(boost::archive::binary_oarchive &oa, const vector<T_HYPERBLOCKHEADER>& hyperblockheader)
+{
+    uint32 headernum = hyperblockheader.size();
+    oa << headernum;
+    for (auto iter = hyperblockheader.begin(); iter != hyperblockheader.end(); iter++) {
+        oa << (*iter);
+    }
+}

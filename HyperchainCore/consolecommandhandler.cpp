@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -32,7 +32,6 @@ DEALINGS IN THE SOFTWARE.
 #include "AppPlugins.h"
 
 #include "node/Singleton.h"
-#include "node/TaskThreadPool.h"
 #include "node/UdpAccessPoint.hpp"
 #include "HyperChain/HyperChainSpace.h"
 #include "node/NodeManager.h"
@@ -123,6 +122,8 @@ ConsoleCommandHandler::ConsoleCommandHandler() :
     _commands.emplace_back(cmdstruct("l", std::bind(&ConsoleCommandHandler::showLocalData, this)));
     _commands.emplace_back(cmdstruct("down", std::bind(&ConsoleCommandHandler::downloadHyperBlock, this, std::placeholders::_1)));
     _commands.emplace_back(cmdstruct("d", std::bind(&ConsoleCommandHandler::downloadHyperBlock, this, std::placeholders::_1)));
+    _commands.emplace_back(cmdstruct("downheader", std::bind(&ConsoleCommandHandler::downloadBlockHeader, this, std::placeholders::_1)));
+    _commands.emplace_back(cmdstruct("dh", std::bind(&ConsoleCommandHandler::downloadBlockHeader, this, std::placeholders::_1)));
     _commands.emplace_back(cmdstruct("search", std::bind(&ConsoleCommandHandler::searchLocalHyperBlock, this, std::placeholders::_1)));
     _commands.emplace_back(cmdstruct("se", std::bind(&ConsoleCommandHandler::searchLocalHyperBlock, this, std::placeholders::_1)));
     _commands.emplace_back(cmdstruct("i", std::bind(&ConsoleCommandHandler::showInnerDataStruct, this)));
@@ -155,14 +156,14 @@ void ConsoleCommandHandler::showUsages()
     cout << "   spacemore(spm):                 show a specified hyper block from HyperChain-Space more information" << endl;
     cout << "                                       spm  'HyperBlockID'" << endl;
     cout << "   local(l):                       show local data information" << endl;
-    cout << "   down(d):                        download a specified hyper block from HyperChain-Space to local" << endl;
-    cout << "                                       d 'HyperBlockID' 'NodeID' " << endl;
+    cout << "   down(d):                        download specified hyper blocks from HyperChain-Space to local" << endl;
+    cout << "                                       d 'NodeID' 'HyperBlockID' 'BlockCount' " << endl;
     cout << "   search(se):                     search detail information for a number of specified hyper blocks,show child chains with 'v'" << endl;
     cout << "                                       se [HyperBlockID] [v]" << endl;
     cout << "   inner(i):                       show inner information" << endl;
-    cout << "   debug:                          debug the specified application: debug application [file/con/both/off]" << endl;
+    cout << "   debug:                          debug the specified application: debug application [file/con/both/bt/off]" << endl;
     cout << "   resolve(rs):                    resolve the specified data into a kind of application" << endl;
-    cout << "                                       rs [ledgerr/paracoin] [hid chainid localid] or rs [ledgerr/paracoin] height" << endl;
+    cout << "                                       rs [ledger/paracoin] [hid chainid localid] or rs [ledger/paracoin] height" << endl;
     cout << "   start:                          load and start the specified application: start ledger/paracoin [options]" << endl;
     cout << "                                       start paracoin -debug -gen" << endl;
 
@@ -210,7 +211,8 @@ void ConsoleCommandHandler::handleCommand(const string &command)
     }
 }
 
-void ConsoleCommandHandler::run() {
+void ConsoleCommandHandler::run()
+{
     cout << "Input help for detail usages" << endl;
 
     string command;
@@ -218,6 +220,10 @@ void ConsoleCommandHandler::run() {
         showPrompt();
 
         getline(cin, command);
+        if (cin.fail()) {
+            cin.clear();
+            continue;
+        }
         handleCommand(command);
     }
 }
@@ -225,27 +231,26 @@ void ConsoleCommandHandler::run() {
 void ConsoleCommandHandler::showNeighborNode()
 {
     NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-    cout << "My neighbor nodes:" <<endl;
-    cout << nodemgr->toFormatString();
+    std::printf("My neighbor nodes:\n%s\n", nodemgr->toFormatString().c_str());
 }
 
-void ConsoleCommandHandler::showUnconfirmedBlock()
+void ConsoleCommandHandler::showMQBroker()
 {
-    CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
+    cout << "MQ Thread ID:" << endl;
+    cout << "\t  Consensus: " << Singleton<ConsensusEngine>::getInstance()->MQID() << endl;
+    cout << "\t ChainSpace: " << Singleton<CHyperChainSpace, string>::getInstance()->MQID() << endl;
+    cout << "\tNodeManager: " << Singleton<NodeManager>::getInstance()->MQID() << endl << endl;
 
-    map<uint64, string> UnconfirmedBlockMap;
-    HSpce->GetUnconfirmedBlockMapShow(UnconfirmedBlockMap);
+    HCMQMonitor mon;
 
-    if (UnconfirmedBlockMap.empty()) {
-        cout << "UnconfirmedBlockMap is empty..." << endl;
-        return;
+    zmsg request;
 
-    }
+    zmsg *recvmsg = mon.synccall("", &request);
 
-    cout << "UnconfirmedBlockMap:" << endl;
-    for (auto &mdata : UnconfirmedBlockMap ) {
-        cout << "HyperID = " << mdata.first << ",HyperBlockHash = " << mdata.second << endl;
-    }
+    string ret;
+    MQMsgPop(recvmsg, ret);
+
+    std::printf("MQ broker details:\n%s\n", ret.c_str());
 }
 
 void ConsoleCommandHandler::showHyperChainSpace()
@@ -258,12 +263,11 @@ void ConsoleCommandHandler::showHyperChainSpace()
     if (HyperChainSpace.empty()) {
         cout << "HyperChainSpace is empty..." << endl;
         return;
-
     }
 
     cout << "HyperChainSpace:" << endl;
     for (auto &mdata : HyperChainSpace) {
-        cout << "NodeID = " << mdata.first << ",HyperIDs = " << mdata.second << endl;
+        cout << "NodeID = " << mdata.first << ", " << mdata.second << endl;
     }
 
 }
@@ -282,11 +286,11 @@ void ConsoleCommandHandler::showHyperChainSpaceMore(const list<string> &commlist
         if (iterCurrPos != commlist.end()) {
             uint64 nblocknum = std::stol(*iterCurrPos);
 
-			CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
-			map<uint64, set<string>> HyperChainSpace;
-			HSpce->GetHyperChainData(HyperChainSpace);
+            CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
+            map<uint64, set<string>> HyperChainSpace;
+            HSpce->GetHyperChainData(HyperChainSpace);
 
-            if (HyperChainSpace.size() <= 0) {
+            if (HyperChainSpace.empty()) {
                 cout << "HyperChainSpace is empty." << endl;
                 return;
             }
@@ -313,9 +317,9 @@ void ConsoleCommandHandler::showLocalData()
     string Ldata;
     CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
     vector<string> LocalChainSpace;
-    HSpce->GetLocalChainShow(LocalChainSpace);
+    HSpce->GetLocalHIDsection(LocalChainSpace);
 
-    if (LocalChainSpace.size() <= 0) {
+    if (LocalChainSpace.empty()) {
         cout << "Local HyperData is empty." << endl;
         return;
     }
@@ -325,33 +329,77 @@ void ConsoleCommandHandler::showLocalData()
         Ldata += ";";
     }
 
-    cout << "LocalHyperData : HyperID = " << Ldata << endl;
+    uint64 HID = HSpce->GetHeaderHashCacheLatestHID();
 
-    //showUnconfirmedBlock();
+    cout << "LocalHyperBlockData : HyperID = " << Ldata << endl;
+    cout << "LocalHeaderData : Latest Header ID = " << HID << endl;
+
 }
 
 void ConsoleCommandHandler::downloadHyperBlock(const list<string> &commlist)
 {
     size_t s = commlist.size();
-	CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
+    CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
 
     if (s < 3) {
-        cout << "Please specify the block number." << endl;
         cout << "Please specify the node id." << endl;
+        cout << "Please specify the block height." << endl;
         return;
     }
 
     try {
         auto iterCurrPos = commlist.begin();
         std::advance(iterCurrPos, 1);
+        string strnodeid = *iterCurrPos;
+
+        std::advance(iterCurrPos, 1);
+        uint64 nblockid = std::stoll(*iterCurrPos);
+
+        std::advance(iterCurrPos, 1);
+
+        uint64 nblockcount = 1;
         if (iterCurrPos != commlist.end()) {
-            uint64 nblocknum = std::stoll(*iterCurrPos);
-            std::advance(iterCurrPos, 1);
+            nblockcount = std::stoll(*iterCurrPos);
+        }
+
+        for (uint64 i = 0; i < nblockcount; i++) {
             if (iterCurrPos != commlist.end()) {
-                string strnodeid = *iterCurrPos;
-                HSpce->PullHyperDataByHID(nblocknum, strnodeid);
+                HSpce->GetRemoteHyperBlockByID(nblockid + i, strnodeid);
             }
         }
+    }
+    catch (std::exception &e) {
+        std::printf("Exception %s\n", e.what());
+    }
+}
+
+void ConsoleCommandHandler::downloadBlockHeader(const list<string> &commlist)
+{
+    size_t s = commlist.size();
+    CHyperChainSpace * HSpce = Singleton<CHyperChainSpace, string>::getInstance();
+
+    if (s < 3) {
+        cout << "Please specify the node id." << endl;
+        cout << "Please specify the block id." << endl;
+        return;
+    }
+
+    try {
+        auto iterCurrPos = commlist.begin();
+        std::advance(iterCurrPos, 1);
+        string strnodeid = *iterCurrPos;
+
+        std::advance(iterCurrPos, 1);
+        uint64 nblockid = std::stoll(*iterCurrPos);
+
+        std::advance(iterCurrPos, 1);
+
+        uint16 range = 1;
+        if (iterCurrPos != commlist.end()) {
+            range = std::stoll(*iterCurrPos);
+        }
+
+        HSpce->GetRemoteBlockHeader(nblockid, range, strnodeid);
     }
     catch (std::exception &e) {
         std::printf("Exception %s\n", e.what());
@@ -444,27 +492,25 @@ void ConsoleCommandHandler::searchLocalHyperBlock(const list<string> &commlist)
             isShowDetails = true;
         }
     }
-    
-    for (nblocknum; nblocknum<= nblocknumEnd; nblocknum++) {
+
+    for (; nblocknum <= nblocknumEnd; nblocknum++) {
         showHyperBlock(nblocknum, isShowDetails);
     }
 }
 
 void showUdpDetails()
 {
-    size_t num = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance()->getUdpSendQueueSize();
+    /*size_t num = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance()->getUdpSendQueueSize();
     size_t rnum = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance()->getUdpRetryQueueSize();
     cout << "Udp Send Queue Size: " << num << ", Retry Queue Size: " << rnum << endl;
     num = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance()->getUdpRecvQueueSize();
-    cout << "Udp Recv Queue Size: " << num << endl;
-}
+    cout << "Udp Recv Queue Size: " << num << endl;*/
 
-void showTaskDetails()
-{
-    auto p = Singleton<TaskThreadPool>::getInstance();
-    cout << "Task numbers in task pool: " << p->getQueueSize() << endl;
-    cout << "Thread numbers in task pool: " << p->getTaskThreads() << endl;
-    cout << p->getQueueDetails() << endl;
+    size_t num = Singleton<UdtThreadPool, const char*, uint32_t>::getInstance()->getUdtSendQueueSize();
+    //size_t rnum = Singleton<UdpThreadPool, const char*, uint32_t>::getInstance()->getUdpRetryQueueSize();
+    cout << "Udt Send Queue Size: " << num << endl;
+    num = Singleton<UdtThreadPool, const char*, uint32_t>::getInstance()->getUdtRecvQueueSize();
+    cout << "Udt Recv Queue Size: " << num << endl;
 }
 
 
@@ -472,7 +518,7 @@ void ConsoleCommandHandler::debug(const list<string> &paralist)
 {
     size_t s = paralist.size();
     if (s != 3 && s != 2) {
-        std::printf("debug application-name [file/con/both/off]\n");
+        std::printf("debug application-name [file/con/both/bt/off]\n");
         return;
     }
 
@@ -487,7 +533,7 @@ void ConsoleCommandHandler::debug(const list<string> &paralist)
     string ret;
     auto f = (*g_appPlugin)[app];
     if (f) {
-        f->appTurnOnOffDebugOutput(onoff,ret);
+        f->appTurnOnOffDebugOutput(onoff, ret);
         std::printf("%s\n", ret.c_str());
         return;
     }
@@ -527,14 +573,21 @@ void ConsoleCommandHandler::resolveAppData(const list<string> &paralist)
         }
 
         if (paralist.size() == 3) {
-            //
+            
+
             int32 height = std::stoi(*(++para));
             f->appResolveHeight(height, info);
             std::printf("%s\n", info.c_str());
             return;
         }
 
-        //
+        if (paralist.size() != 5) {
+            std::printf("format error\n");
+            return;
+        }
+
+        
+
         int64 hID = std::stol(*(++para));
         int16 chainID = std::stoi(*(++para));
         int16 localID = std::stoi(*(++para));
@@ -566,10 +619,12 @@ void ConsoleCommandHandler::showInnerDataStruct()
     cout << "My NodeID: " << me->getNodeId<string>() << endl;
     cout << "My Max HyperBlock ID: " << sp->GetMaxBlockID() << endl;
     cout << "Latest HyperBlock is ready: " << sp->IsLatestHyperBlockReady() << endl;
-    cout << "My Data Root Directory: " << GetHyperChainDataDir() << endl << endl;
+    cout << "My Data Root Directory: " << GetHyperChainDataDir() << endl;
+    cout << "Network protocol version: " << ProtocolVer::getString() << endl << endl;
+
 
     stringstream ss;
-    for (int i=0; i < g_argc; i++) {
+    for (int i = 0; i < g_argc; i++) {
         ss << g_argv[i] << " ";
     }
     cout << "Command line: " << ss.str() << endl;
@@ -579,30 +634,36 @@ void ConsoleCommandHandler::showInnerDataStruct()
 #else
     cout << "PID: " << getpid() << endl << endl;
 #endif
-
-    showNeighborNode();
-    cout << endl << endl;
-    showTaskDetails();
+    showMQBroker();
+    //cout << endl << endl;
 
     showUdpDetails();
     cout << endl;
 
-    cout << "Block numbers waiting to consensus: " << g_tP2pManagerStatus->GetListOnChainReq().size() << endl;
+    ConsensusEngine *consensuseng = Singleton<ConsensusEngine>::getInstance();
+    T_P2PMANAGERSTATUS *pConsensusStatus = consensuseng->GetConsunsusState();
+
+    cout << "Block numbers waiting to consensus: " << pConsensusStatus->GetListOnChainReqCount() << endl;
     cout << endl;
 
-    ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::getInstance();
-    switch (g_tP2pManagerStatus->GetCurrentConsensusPhase())
-    {
+    size_t reqblknum, rspblknum, reqchainnum, rspchainnum;
+    size_t localchainBlocks, globalbuddychainnum;
+    LIST_T_LOCALCONSENSUS localbuddychaininfos;
+
+    consensuseng->GetDetailsOfCurrentConsensus(reqblknum, rspblknum,
+        reqchainnum, rspchainnum, localchainBlocks, &localbuddychaininfos, globalbuddychainnum);
+
+    switch (pConsensusStatus->GetCurrentConsensusPhase()) {
     case CONSENSUS_PHASE::PREPARE_LOCALBUDDY_PHASE:
         cout << "Phase: Prepare to enter LOCALBUDDY_PHASE, "
-            << "Consensus condition : " << consensuseng->isAbleToConsensus() << endl;
+            << "Consensus condition : " << consensuseng->IsAbleToConsensus() << endl;
         break;
     case CONSENSUS_PHASE::LOCALBUDDY_PHASE:
         cout << "Phase: LOCALBUDDY_PHASE" << endl;
-        cout << "Request block number(listRecvLocalBuddyReq): " << g_tP2pManagerStatus->listRecvLocalBuddyReq.size() << endl;
-        cout << "Respond block number(listRecvLocalBuddyRsp): " << g_tP2pManagerStatus->listRecvLocalBuddyRsp.size() << endl;
-        cout << "Standby block chain number(listCurBuddyReq): " << g_tP2pManagerStatus->listCurBuddyReq.size() << endl;
-        cout << "Standby block chain number(listCurBuddyRsp): " << g_tP2pManagerStatus->listCurBuddyRsp.size() << endl;
+        cout << "Request block number(listRecvLocalBuddyReq): " << reqblknum << endl;
+        cout << "Respond block number(listRecvLocalBuddyRsp): " << rspblknum << endl;
+        cout << "Standby block chain number(listCurBuddyReq): " << reqchainnum << endl;
+        cout << "Standby block chain number(listCurBuddyRsp): " << rspchainnum << endl;
         break;
     case CONSENSUS_PHASE::GLOBALBUDDY_PHASE:
         cout << "Phase: GLOBALBUDDY_PHASE" << endl;
@@ -612,13 +673,12 @@ void ConsoleCommandHandler::showInnerDataStruct()
     }
 
     int i = 0;
-    CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxlistLocalBuddyChainInfo);
-    cout << "listLocalBuddyChainInfo Number: " << g_tP2pManagerStatus->listLocalBuddyChainInfo.size() << endl;
-    for (auto &b : g_tP2pManagerStatus->listLocalBuddyChainInfo) {
-		cout << "Application Type:  " << b.GetLocalBlock().GetAppType().tohexstring() << endl;
+    cout << "listLocalBuddyChainInfo Number: " << localbuddychaininfos.size() << endl;
+    for (auto &b : localbuddychaininfos) {
+        cout << "Application Type:  " << b.GetLocalBlock().GetAppType().tohexstring() << endl;
         cout << "LocalBlock Preview: " << ++i << "," << b.GetLocalBlock().GetPayLoadPreview() << endl;
     }
-    cout << "listGlobalBuddyChainInfo Number: " << g_tP2pManagerStatus->listGlobalBuddyChainInfo.size() << endl;
+    cout << "listGlobalBuddyChainInfo Number: " << globalbuddychainnum << endl;
 }
 
 void ConsoleCommandHandler::setLoggerLevelHelp(std::shared_ptr<spdlog::logger> & logger,
@@ -652,7 +712,8 @@ void ConsoleCommandHandler::setLoggerLevelHelp(std::shared_ptr<spdlog::logger> &
         return false;
     });
 
-    //
+    
+
     std::printf("%s log level is %s (trace,debug,info,warn,err,critical,off)\n",
         logger->name().c_str(), levelname.c_str());
 }
@@ -724,7 +785,7 @@ void ConsoleCommandHandler::enableTest(const list<string> &onoff)
         }
     }
     else {
-        if (consensuseng->isTestRunning()) {
+        if (consensuseng->IsTestRunning()) {
             std::printf("Consensus test thread is on\n");
         }
         else {

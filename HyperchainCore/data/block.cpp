@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -38,10 +38,14 @@ void _tlocalblock::updatePreHyperBlockInfo(uint64_t preHID, const T_SHA256 &preH
     if (preHHash == header.tPreHHash) {
         return;
     }
-    //
-    header.tPreHHash = preHHash;
+    
 
-    //
+
+    header.tPreHHash = preHHash;
+    _prehid = preHID;
+
+    
+
     CalculateHashSelf();
 }
 
@@ -238,7 +242,7 @@ _tlocalconsensus& _tlocalconsensus:: operator = (const _tlocalconsensus& arRes)
     return *this;
 }
 
-void _tlocalconsensus::SetLoaclConsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, uint64 RetryTime, const char *FileHash)
+void _tlocalconsensus::SetLoaclConsensus(T_BLOCKSTATEADDR Peer,const T_LOCALBLOCK &LocalBlock, uint64 RetryTime, const char *FileHash)
 {
     tPeer = Peer;
     tLocalBlock = LocalBlock;
@@ -246,14 +250,14 @@ void _tlocalconsensus::SetLoaclConsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  Lo
     uiRetryTime = RetryTime;
 }
 
-void _tlocalconsensus::SetLoaclConsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock, uint64 RetryTime)
+void _tlocalconsensus::SetLoaclConsensus(T_BLOCKSTATEADDR Peer, const T_LOCALBLOCK &LocalBlock, uint64 RetryTime)
 {
     tPeer = Peer;
     tLocalBlock = LocalBlock;
     uiRetryTime = RetryTime;
 }
 
-void _tlocalconsensus::SetLoaclConsensus(T_BLOCKSTATEADDR Peer, T_LOCALBLOCK  LocalBlock)
+void _tlocalconsensus::SetLoaclConsensus(T_BLOCKSTATEADDR Peer, const T_LOCALBLOCK &LocalBlock)
 {
     tPeer = Peer;
     tLocalBlock = LocalBlock;

@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -20,8 +20,10 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 DEALINGS IN THE SOFTWARE.
 */
 
-
 #include "newLog.h"
+
+#include <cpprest/http_listener.h>
+#include <cpprest/filestream.h>
 #include "RestApi.h"
 
 #include "../node/Singleton.h"
@@ -29,15 +31,11 @@ DEALINGS IN THE SOFTWARE.
 #include "../HyperChain/HyperChainSpace.h"
 #include "../headers/commonstruct.h"
 #include "../headers/inter_public.h"
-//#include "HChainP2PManager.h"
-//#include "../interface/QtInterface.h"
 #include "../headers/UUFile.h"
 #include "../HttpUnit/HttpUnit.h"
 #include "../wnd/common.h"
 #include "../consensus/buddyinfo.h"
 #include "../consensus/consensus_engine.h"
-#include <cpprest/http_listener.h>
-#include <cpprest/filestream.h>
 
 
 #ifdef WIN32
@@ -53,34 +51,27 @@ DEALINGS IN THE SOFTWARE.
 using namespace std;
 using std::chrono::system_clock;
 
+
 #define MAX_BUF_LEN 512
 #define LOCAL_BLOCK_BASE_LEN	sizeof(T_LOCALBLOCK)
 
 std::map<uint64, system_clock::time_point> g_mapDownLoad;
-std::mutex	_guard;
+std::mutex _guard;
 
-http_listener_config server_config;
 
-utility::string_t address =
-#ifdef WIN32
-U("http://*:8080");
-#else
-U("http://0.0.0.0:8080");
-#endif
-
-web::uri_builder uri1(address);
-auto addr = uri1.to_uri().to_string();
-CommandHandler restHandler(addr, server_config);
+std::shared_ptr<CommandHandler> g_spRestHandler;
 
 
 string tstringToUtf8(const utility::string_t& str)
 {
 #ifdef _UTF16_STRINGS
-    //
+    
+
     wstring_convert<codecvt_utf8<wchar_t> > strCnv;
     return strCnv.to_bytes(str);
 #else
-    //
+    
+
     return str;
 #endif
 }
@@ -88,11 +79,13 @@ string tstringToUtf8(const utility::string_t& str)
 utility::string_t stringToTstring(const string& str)
 {
 #ifdef _UTF16_STRINGS
-    //
+    
+
     std::wstring_convert<std::codecvt<wchar_t, char, std::mbstate_t>> strCnv;
     return strCnv.from_bytes(str);
 #else
-    //
+    
+
     return str;
 #endif
 }
@@ -103,19 +96,18 @@ bool CheckMyVersion(string& newversion)
     web::json::value json_return;
     try {
         web::json::value json_v;
-        web::http::client::http_client client(U("https://www.hyperchain.net/"));
-        client.request(web::http::methods::GET, U("/sw/ParalismLatestSWVersion.json"))
+        web::http::client::http_client client(_XPLATSTR("https://www.hyperchain.net/"));
+        client.request(web::http::methods::GET, _XPLATSTR("/sw/ParalismLatestSWVersion.json"))
             .then([](const web::http::http_response& response) {
-            return response.extract_json();
-        })
+                return response.extract_json(); })
             .then([&json_return](const pplx::task<web::json::value>& task) {
-            try {
-                json_return = task.get();
-            }
-            catch (const web::http::http_exception & e) {
-                std::cout << "error " << e.what() << std::endl;
-            }
-        }).wait();
+                try {
+                    json_return = task.get();
+                }
+                catch (const web::http::http_exception & e) {
+                    std::cout << "error " << e.what() << std::endl;
+                } })
+            .wait();
     }
     catch (web::json::json_exception & je) {
         std::cout << je.what();
@@ -126,15 +118,15 @@ bool CheckMyVersion(string& newversion)
         return false;
     }
 
-    if (!json_return.has_field(U("version"))) {
+    if (!json_return.has_field(_XPLATSTR("version"))) {
         return false;
     }
 
-    newversion = t2s(json_return[U("version")].as_string());
+    newversion = t2s(json_return[_XPLATSTR("version")].as_string());
     return true;
 }
 
-CommandHandler::CommandHandler(utility::string_t url, http_listener_config server_config) : m_listener(url, server_config)
+CommandHandler::CommandHandler(const utility::string_t &url) : m_listener(url)
 {
     m_listener.support(methods::GET, std::bind(&CommandHandler::handle_get, this, std::placeholders::_1));
     m_listener.support(methods::POST, std::bind(&CommandHandler::handle_post, this, std::placeholders::_1));
@@ -154,16 +146,16 @@ UUFile			m_uufiletest;
 utility::string_t resource_type(const utility::string_t& strSuffix)
 {
     std::map<utility::string_t, utility::string_t> oVals;
-    oVals[U(".html")] = U("text/html");
-    oVals[U(".js")] = U("application/javascript");
-    oVals[U(".css")] = U("text/css");
-    oVals[U(".png")] = U("application/octet-stream");
-    oVals[U(".jpg")] = U("application/octet-stream");
+    oVals[_XPLATSTR(".html")] = _XPLATSTR("text/html");
+    oVals[_XPLATSTR(".js")] = _XPLATSTR("application/javascript");
+    oVals[_XPLATSTR(".css")] = _XPLATSTR("text/css");
+    oVals[_XPLATSTR(".png")] = _XPLATSTR("application/octet-stream");
+    oVals[_XPLATSTR(".jpg")] = _XPLATSTR("application/octet-stream");
 
     auto pIt = oVals.find(strSuffix);
     if (pIt != oVals.end())
         return pIt->second;
-    return U("application/octet-stream");
+    return _XPLATSTR("application/octet-stream");
 }
 
 #define BADPARAMETER(msg) message.reply(status_codes::OK, json::value(_XPLATSTR("Bad Parameter:"#msg)));
@@ -186,7 +178,7 @@ void CommandHandler::handle_get(http_request message)
         else {
             concurrency::streams::fstream::open_istream(stringToTstring(confPath.c_str()), std::ios::in).then([=](concurrency::streams::istream is)
             {
-                message.reply(status_codes::OK, is, U("text/html"));
+                message.reply(status_codes::OK, is, _XPLATSTR("text/html"));
             });
         }
 
@@ -197,7 +189,7 @@ void CommandHandler::handle_get(http_request message)
         return;
     }*/
 
-    g_basic_logger->error("RestApi Method: {}, URI: {}, Query: {})", "GET", tstringToUtf8(uri::decode(message.relative_uri().path())), tstringToUtf8(uri::decode(message.relative_uri().query())));
+    g_basic_logger->debug("RestApi Method: {}, URI: {}, Query: {})", "GET", tstringToUtf8(uri::decode(message.relative_uri().path())), tstringToUtf8(uri::decode(message.relative_uri().query())));
 
     auto path = requestPath(message);
     if (!path.empty() && path.size() == 1) {
@@ -206,8 +198,8 @@ void CommandHandler::handle_get(http_request message)
 
         json::value vRet;
 
-        if (path[0] == U("SubmitRegistration")) {
-            auto data = query.find(U("data"));
+        if (path[0] == _XPLATSTR("SubmitRegistration")) {
+            auto data = query.find(_XPLATSTR("data"));
             if (data == query.end()) {
                 BADPARAMETER(data);
                 return;
@@ -221,13 +213,13 @@ void CommandHandler::handle_get(http_request message)
             }
         }
 
-        else if (path[0] == U("GetHyperblocks")) {
-            auto cntEntryId = query.find(U("start_id"));
+        else if (path[0] == _XPLATSTR("GetHyperblocks")) {
+            auto cntEntryId = query.find(_XPLATSTR("start_id"));
             if (cntEntryId == query.end()) {
                 BADPARAMETER(start_id);
                 return;
             }
-            auto cntEntryNum = query.find(U("num"));
+            auto cntEntryNum = query.find(_XPLATSTR("num"));
             if (cntEntryNum == query.end()) {
                 BADPARAMETER(num);
                 return;
@@ -243,8 +235,8 @@ void CommandHandler::handle_get(http_request message)
             vRet = api.getHyperblocks(nHyperBlockId, nNum);
         }
 
-        else if (path[0] == U("SyncHyperblock")) {
-            auto cntEntryHId = query.find(U("hid"));
+        else if (path[0] == _XPLATSTR("SyncHyperblock")) {
+            auto cntEntryHId = query.find(_XPLATSTR("hid"));
             if (cntEntryHId == query.end()) {
                 BADPARAMETER(hid);
                 return;
@@ -266,7 +258,8 @@ void CommandHandler::handle_get(http_request message)
                     system_clock::time_point curr = system_clock::now();
                     seconds timespan = std::chrono::duration_cast<seconds>(curr - it->second);
                     if (timespan.count() < 30) {
-                        //
+                        
+
                         vRet = json::value::string(_XPLATSTR("downloading"));
                         goto REPLY;
                     }
@@ -275,7 +268,7 @@ void CommandHandler::handle_get(http_request message)
 
             CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
             int ret = HSpce->GetRemoteHyperBlockByID(nHyperBlockId);
-            if (ret < 0)
+            if (ret <= 0)
                 vRet = json::value::string(_XPLATSTR("nonexistent"));
             else {
                 std::lock_guard<std::mutex> lck(_guard);
@@ -284,18 +277,18 @@ void CommandHandler::handle_get(http_request message)
             }
         }
 
-        else if (path[0] == U("GetLocalBlock")) {
-            auto cntEntryHId = query.find(U("hid"));
+        else if (path[0] == _XPLATSTR("GetLocalBlock")) {
+            auto cntEntryHId = query.find(_XPLATSTR("hid"));
             if (cntEntryHId == query.end()) {
                 BADPARAMETER(hid);
                 return;
             }
-            auto cntEntryId = query.find(U("id"));
+            auto cntEntryId = query.find(_XPLATSTR("id"));
             if (cntEntryId == query.end()) {
                 BADPARAMETER(id);
                 return;
             }
-            auto cntEntryNum = query.find(U("chain_num"));
+            auto cntEntryNum = query.find(_XPLATSTR("chain_num"));
             if (cntEntryNum == query.end()) {
                 BADPARAMETER(chain_num);
                 return;
@@ -313,13 +306,13 @@ void CommandHandler::handle_get(http_request message)
             vRet = api.getLocalblock(nHyperBlockId, nLocalBlockId, nNum);
         }
 
-        else if (path[0] == U("GetLocalChain")) {
-            auto cntEntryHId = query.find(U("hid"));
+        else if (path[0] == _XPLATSTR("GetLocalChain")) {
+            auto cntEntryHId = query.find(_XPLATSTR("hid"));
             if (cntEntryHId == query.end()) {
                 BADPARAMETER(hid);
                 return;
             }
-            auto cntEntryNum = query.find(U("chain_num"));
+            auto cntEntryNum = query.find(_XPLATSTR("chain_num"));
             if (cntEntryNum == query.end()) {
                 BADPARAMETER(chain_num);
                 return;
@@ -335,9 +328,9 @@ void CommandHandler::handle_get(http_request message)
             vRet = api.getLocalchain(nHyperBlockId, nNum);
         }
 
-        else if (path[0] == U("GetOnchainState"))
+        else if (path[0] == _XPLATSTR("GetOnchainState"))
         {
-            auto id = query.find(U("requestid"));
+            auto id = query.find(_XPLATSTR("requestid"));
             if (id == query.end()) {
                 BADPARAMETER(requestid);
                 return;
@@ -351,9 +344,9 @@ void CommandHandler::handle_get(http_request message)
             }
         }
 
-        else if (path[0] == U("GetHyperBlockInfo"))
+        else if (path[0] == _XPLATSTR("GetHyperBlockInfo"))
         {
-            auto cntEntryId = query.find(U("key"));
+            auto cntEntryId = query.find(_XPLATSTR("key"));
             if (cntEntryId == query.end()) {
                 BADPARAMETER(key);
                 return;
@@ -364,9 +357,9 @@ void CommandHandler::handle_get(http_request message)
             RestApi api;
             vRet = api.getHyperblockInfo(nHyperBlockId);
         }
-        else if (path[0] == U("GetHyperBlockHead"))
+        else if (path[0] == _XPLATSTR("GetHyperBlockHead"))
         {
-            auto cntEntryId = query.find(U("key"));
+            auto cntEntryId = query.find(_XPLATSTR("key"));
             if (cntEntryId == query.end()) {
                 BADPARAMETER(key);
                 return;
@@ -377,9 +370,9 @@ void CommandHandler::handle_get(http_request message)
             RestApi api;
             vRet = api.getHyperblockHead(nHyperBlockId);
         }
-        else if (path[0] == U("GetHyperBlockBody"))
+        else if (path[0] == _XPLATSTR("GetHyperBlockBody"))
         {
-            auto cntEntryId = query.find(U("key"));
+            auto cntEntryId = query.find(_XPLATSTR("key"));
             if (cntEntryId == query.end()) {
                 BADPARAMETER(key);
                 return;
@@ -391,19 +384,19 @@ void CommandHandler::handle_get(http_request message)
             vRet = api.getHyperblockBody(nHyperBlockId);
         }
 
-        else if (path[0] == U("GetLocalBlockHead"))
+        else if (path[0] == _XPLATSTR("GetLocalBlockHead"))
         {
-            auto cntEntryHId = query.find(U("hid"));
+            auto cntEntryHId = query.find(_XPLATSTR("hid"));
             if (cntEntryHId == query.end()) {
                 BADPARAMETER(hid);
                 return;
             }
-            auto cntEntryId = query.find(U("id"));
+            auto cntEntryId = query.find(_XPLATSTR("id"));
             if (cntEntryId == query.end()) {
                 BADPARAMETER(id);
                 return;
             }
-            auto cntEntryNum = query.find(U("chain_num"));
+            auto cntEntryNum = query.find(_XPLATSTR("chain_num"));
             if (cntEntryNum == query.end()) {
                 BADPARAMETER(chain_num);
                 return;
@@ -420,19 +413,19 @@ void CommandHandler::handle_get(http_request message)
             RestApi api;
             vRet = api.getLocalblockHead(nHyperBlockId, nLocalBlockId, nNum);
         }
-        else if (path[0] == U("GetLocalBlockBody"))
+        else if (path[0] == _XPLATSTR("GetLocalBlockBody"))
         {
-            auto cntEntryHId = query.find(U("hid"));
+            auto cntEntryHId = query.find(_XPLATSTR("hid"));
             if (cntEntryHId == query.end()) {
                 BADPARAMETER(hid);
                 return;
             }
-            auto cntEntryId = query.find(U("id"));
+            auto cntEntryId = query.find(_XPLATSTR("id"));
             if (cntEntryId == query.end()) {
                 BADPARAMETER(id);
                 return;
             }
-            auto cntEntryNum = query.find(U("chain_num"));
+            auto cntEntryNum = query.find(_XPLATSTR("chain_num"));
             if (cntEntryNum == query.end()) {
                 BADPARAMETER(chain_num);
                 return;
@@ -450,7 +443,7 @@ void CommandHandler::handle_get(http_request message)
             vRet = api.getLocalblockBody(nHyperBlockId, nLocalBlockId, nNum);
         }
 
-        /*else if (path[0] == U("GetRegWaitingList"))
+        /*else if (path[0] == _XPLATSTR("GetRegWaitingList"))
         {
             ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::getInstance();
             if (consensuseng == nullptr)
@@ -479,7 +472,7 @@ void CommandHandler::handle_get(http_request message)
 
         }*/
 
-        else if (path[0] == U("GetLatestHyperBlockNo")) {
+        else if (path[0] == _XPLATSTR("GetLatestHyperBlockNo")) {
             uint64 localHID = Singleton<DBmgr>::instance()->getLatestHyperBlockNo();
 
             CHyperChainSpace* hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
@@ -490,111 +483,114 @@ void CommandHandler::handle_get(http_request message)
             else
                 vRet[_XPLATSTR("laststHyperBlockNo")] = json::value::number(globalHID);
         }
-        else if (path[0] == U("GetNodeRuntimeEnv"))
+        else if (path[0] == _XPLATSTR("GetNodeRuntimeEnv"))
         {
             NodeManager* nodemgr = Singleton<NodeManager>::getInstance();
-            if (nodemgr == nullptr)
-                return;
+            if (nodemgr == nullptr)                 {
+                vRet[_XPLATSTR("NodeEnv")] = json::value::string(_XPLATSTR("initializing"));
+            }
+            else {
+                HCNodeSH me = nodemgr->myself();
+                string strnodeenv = me->serialize();
 
-            HCNodeSH me = nodemgr->myself();
-            string strnodeenv = me->serialize();
-
-            vRet[_XPLATSTR("NodeEnv")] = json::value::string(s2t(strnodeenv));
-
+                vRet[_XPLATSTR("NodeEnv")] = json::value::string(s2t(strnodeenv));
+            }
         }
-        else if (path[0] == U("GetStateOfCurrentConsensus"))
+        else if (path[0] == _XPLATSTR("GetStateOfCurrentConsensus"))
         {
             ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
-            if (consensuseng == nullptr)
-                return;
-
-            uint64_t blockNo;
-            uint16 blockNum = 0;
-            uint16 chainNum = 0;
-            uint16 uiState = consensuseng->GetStateOfCurrentConsensus(blockNo, blockNum, chainNum);
-
-
-            vRet[_XPLATSTR("curBuddyNo")] = json::value::number(blockNo);
-            if (uiState == IDLE) {
-                vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("idle"));
+            if (consensuseng == nullptr)                 {
+                vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("initializing"));
             }
-            else if (uiState == LOCAL_BUDDY) {
-                vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("localbuddy"));
-            }
-            else if (uiState == GLOBAL_BUDDY) {
-                vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("globalbuddy"));
+            else {
+                uint64_t blockNo;
+                uint16 blockNum = 0;
+                uint16 chainNum = 0;
+                uint16 uiState = consensuseng->GetStateOfCurrentConsensus(blockNo, blockNum, chainNum);
+
+                vRet[_XPLATSTR("curBuddyNo")] = json::value::number(blockNo);
+                if (uiState == IDLE) {
+                    vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("idle"));
+                }
+                else if (uiState == LOCAL_BUDDY) {
+                    vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("localbuddy"));
+                }
+                else if (uiState == GLOBAL_BUDDY) {
+                    vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("globalbuddy"));
+                }
             }
         }
-        else if (path[0] == U("GetDataOfCurrentConsensus")) {
+        else if (path[0] == _XPLATSTR("GetDataOfCurrentConsensus")) {
 
             ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
-            if (consensuseng == nullptr)
-                return;
-
-            uint64_t blockNo;
-            uint16 blockNum = 0;
-            uint16 chainNum = 0;
-            uint16 uiState = consensuseng->GetStateOfCurrentConsensus(blockNo, blockNum, chainNum);
-
-
-            vRet[_XPLATSTR("curBuddyNo")] = json::value::number(blockNo);
-            if (uiState == IDLE) {
-                vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("idle"));
+            if (consensuseng == nullptr) {
+                vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("initializing"));
             }
-            else if (uiState == LOCAL_BUDDY)
-            {
-                vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("localbuddy"));
-                vRet[_XPLATSTR("blockNum")] = json::value::number(blockNum);
-            }
-            else if (uiState == GLOBAL_BUDDY)
-            {
-                vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("globalbuddy"));
-                vRet[_XPLATSTR("chainNum")] = json::value::number(chainNum);
-            }
+            else {
+                uint64_t blockNo;
+                uint16 blockNum = 0;
+                uint16 chainNum = 0;
+                uint16 uiState = consensuseng->GetStateOfCurrentConsensus(blockNo, blockNum, chainNum);
 
+                vRet[_XPLATSTR("curBuddyNo")] = json::value::number(blockNo);
+                if (uiState == IDLE) {
+                    vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("idle"));
+                }
+                else if (uiState == LOCAL_BUDDY) {
+                    vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("localbuddy"));
+                    vRet[_XPLATSTR("blockNum")] = json::value::number(blockNum);
+                }
+                else if (uiState == GLOBAL_BUDDY) {
+                    vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("globalbuddy"));
+                    vRet[_XPLATSTR("chainNum")] = json::value::number(chainNum);
+                }
+            }
         }
-        else if (path[0] == U("GetDetailOfCurrentConsensus"))
+        else if (path[0] == _XPLATSTR("GetDetailOfCurrentConsensus"))
         {
-            uint64 localHID = Singleton<DBmgr>::instance()->getLatestHyperBlockNo();
-            uint32 localchainBlocks = g_tP2pManagerStatus->listLocalBuddyChainInfo.size();
-            uint32 requestBlocks = g_tP2pManagerStatus->listRecvLocalBuddyReq.size() + g_tP2pManagerStatus->listCurBuddyReq.size();
-            uint32 respondBlocks = g_tP2pManagerStatus->listRecvLocalBuddyRsp.size() + g_tP2pManagerStatus->listCurBuddyRsp.size();
-
-            vRet[_XPLATSTR("latestHyperBlockNo")] = json::value::number(localHID);
-            vRet[_XPLATSTR("localchainBlocks")] = json::value::number(localchainBlocks);
-            vRet[_XPLATSTR("requestBlocks")] = json::value::number(requestBlocks);
-            vRet[_XPLATSTR("respondBlocks")] = json::value::number(respondBlocks);
-        }
-        else if (path[0] == U("GetRequestTaskTypeList"))
-        {
-            TASKTYPE type;
-            CAutoMutexLock muxAuto(g_tP2pManagerStatus->MuxCycleQueueTask);
-
-            json::value obj = json::value::array();
-            int i = 0;
-            while (g_tP2pManagerStatus->CycleQueueTask.pop(&type))
-            {
-                obj[i++] = json::value::number(static_cast<uint32>(type));
+            ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
+            if (consensuseng == nullptr) {
+                vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("initializing"));
             }
+            else {
+                size_t reqblknum, rspblknum, reqchainnum, rspchainnum, globalbuddychainnum;
+                size_t localchainBlocks;
 
-            vRet[_XPLATSTR("TaskTypeList")] = obj;
+                consensuseng->GetDetailsOfCurrentConsensus(reqblknum, rspblknum,
+                    reqchainnum, rspchainnum, localchainBlocks, nullptr, globalbuddychainnum);
+
+                uint64 localHID = Singleton<DBmgr>::instance()->getLatestHyperBlockNo();
+                uint32 requestBlocks = reqblknum + reqchainnum;
+                uint32 respondBlocks = rspblknum + rspchainnum;
+
+                vRet[_XPLATSTR("latestHyperBlockNo")] = json::value::number(localHID);
+                vRet[_XPLATSTR("localchainBlocks")] = json::value::number(localchainBlocks);
+                vRet[_XPLATSTR("requestBlocks")] = json::value::number(requestBlocks);
+                vRet[_XPLATSTR("respondBlocks")] = json::value::number(respondBlocks);
+            }
         }
-        else if (path[0] == U("CreatCustomerizeConsensusScript"))
+        else if (path[0] == _XPLATSTR("GetLatestCacheBlockHeaderNo"))
         {
-            auto cntEntryType = query.find(U("Type"));
+            CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
+            uint64 headerHID = HSpce->GetHeaderHashCacheLatestHID();
+            bool bReady = HSpce->IsLatestHyperBlockReady();
+            vRet[_XPLATSTR("laststCacheBlockNo")] = json::value::number(headerHID);
+            vRet[_XPLATSTR("isReady")] = json::value::boolean(bReady);
+        }
+        else if (path[0] == _XPLATSTR("CreatCustomerizeConsensusScript"))
+        {
+            auto cntEntryType = query.find(_XPLATSTR("Type"));
             if (cntEntryType == query.end()) {
                 BADPARAMETER(Type);
                 return;
             }
-            auto cntEntryScript = query.find(U("Script"));
+            auto cntEntryScript = query.find(_XPLATSTR("Script"));
             if (cntEntryScript == query.end()) {
                 BADPARAMETER(Script);
                 return;
             }
 
-            if (cntEntryType != query.end() && !cntEntryType->second.empty() && cntEntryScript != query.end() && !cntEntryScript->second.empty())
-            {
-
+            if (cntEntryType != query.end() && !cntEntryType->second.empty() && cntEntryScript != query.end() && !cntEntryScript->second.empty()) {
                 utility::string_t sType = cntEntryType->second;
                 utility::string_t sScript = cntEntryScript->second;
 
@@ -608,105 +604,99 @@ void CommandHandler::handle_get(http_request message)
             }
         }
 
-        else if (path[0] == U("GetNeighborNodes"))
+        else if (path[0] == _XPLATSTR("GetNeighborNodes"))
         {
             NodeManager* nodemgr = Singleton<NodeManager>::getInstance();
 
-            const HCNodeMap* nodemap = nodemgr->getNodeMap();
-            json::value arr = json::value::array(nodemap->size());
-            auto iter = nodemap->begin();
-            for (int i = 0; iter != nodemap->end(); iter++, i++) {
-                arr[i] = json::value::parse(s2t(iter->second->serialize()));
+            vector<string> vNeighborNodes;
+            nodemgr->GetNodesJson(vNeighborNodes);
+            json::value arr = json::value::array(vNeighborNodes.size());
+            for (size_t i = 0; i < vNeighborNodes.size(); i++) {
+                arr[i] = json::value::parse(s2t(vNeighborNodes[i]));
             }
 
             vRet[_XPLATSTR("NeighborNodes")] = arr;
-            vRet[_XPLATSTR("NeighborNodesNum")] = json::value::number(nodemgr->getNodeMapSize());
+            vRet[_XPLATSTR("NeighborNodesNum")] = json::value::number(vNeighborNodes.size());
         }
-        else if (path[0] == U("GetNeighborInfo"))
+        else if (path[0] == _XPLATSTR("GetNeighborInfo"))
         {
             NodeManager* nodemgr = Singleton<NodeManager>::getInstance();
 
             vRet[_XPLATSTR("NeighborNodesNum")] = json::value::number(nodemgr->getNodeMapSize());
-            vRet[_XPLATSTR("KBucketNodesNum")] = json::value::number(nodemgr->GetKBuckets()->GetNodesNum());
+            vRet[_XPLATSTR("KBucketNodesNum")] = json::value::number(nodemgr->GetNodesNum());
         }
-        else if (path[0] == U("GetHyperBlocksIDList"))
+        else if (path[0] == _XPLATSTR("GetHyperBlocksIDList"))
         {
             CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
 
             vector<string> LocalChainSpace;
-            HSpce->GetLocalChainShow(LocalChainSpace);
+            HSpce->GetLocalHIDsection(LocalChainSpace);
 
-            if (LocalChainSpace.size() <= 0)
-            {
+            if (LocalChainSpace.empty()) {
                 vRet[_XPLATSTR("HyperBlocksNum")] = json::value::number(0);
                 vRet[_XPLATSTR("HyperBlocksIDList")] = json::value::string(_XPLATSTR(""));
-                return;
             }
+            else {
+                size_t nums = HSpce->GetLocalChainIDSize();
+                string Ldata;
+                for (auto& t : LocalChainSpace) {
+                    Ldata += t;
+                    Ldata += ";";
+                }
 
-            size_t nums = HSpce->GetLocalChainIDSize();
-            string Ldata;
-            for (auto& t : LocalChainSpace)
-            {
-                Ldata += t;
-                Ldata += ";";
+                vRet[_XPLATSTR("HyperBlocksNum")] = json::value::number(nums);
+                vRet[_XPLATSTR("HyperBlocksIDList")] = json::value::string(s2t(Ldata));
             }
-
-            vRet[_XPLATSTR("HyperBlocksNum")] = json::value::number(nums);
-            vRet[_XPLATSTR("HyperBlocksIDList")] = json::value::string(s2t(Ldata));
         }
-        else if (path[0] == U("GetHyperChainSpace"))
+        else if (path[0] == _XPLATSTR("GetHyperChainSpace"))
         {
             CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
 
             map<string, string> HyperChainSpace;
             HSpce->GetHyperChainShow(HyperChainSpace);
 
-            if (HyperChainSpace.size() <= 0)
-            {
+            if (HyperChainSpace.empty()) {
                 vRet[_XPLATSTR("HyperChainSpace")] = json::value::string(_XPLATSTR(""));
-                return;
             }
+            else {
 
-            json::value obj;
-            for (auto& mdata : HyperChainSpace)
-            {
-                obj[s2t(mdata.first)] = json::value::string(s2t(mdata.second));
+                json::value obj;
+                for (auto& mdata : HyperChainSpace) {
+                    obj[s2t(mdata.first)] = json::value::string(s2t(mdata.second));
+                }
+
+                std::stringstream oss;
+                obj.serialize(oss);
+
+                vRet[_XPLATSTR("HyperChainSpace")] = json::value::string(s2t(oss.str()));
             }
-
-            std::stringstream oss;
-            obj.serialize(oss);
-
-            vRet[_XPLATSTR("HyperChainSpace")] = json::value::string(s2t(oss.str()));
         }
-        else if (path[0] == U("GetHyperBlockHealthInfo"))
+        else if (path[0] == _XPLATSTR("GetHyperBlockHealthInfo"))
         {
             CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
 
             map<uint64, uint32> HyperBlockHealthInfo;
             HSpce->GetHyperBlockHealthInfo(HyperBlockHealthInfo);
 
-            if (HyperBlockHealthInfo.size() <= 0)
-            {
+            if (HyperBlockHealthInfo.empty()) {
                 vRet[_XPLATSTR("HyperBlockHealthInfo")] = json::value::string(_XPLATSTR(""));
-                return;
             }
+            else {
+                string Ldata;
+                for (auto& mdata : HyperBlockHealthInfo) {
+                    Ldata += to_string(mdata.first);
+                    Ldata += ":";
+                    Ldata += to_string(mdata.second);
+                    Ldata += ";";
+                }
 
-            string Ldata;
-            for (auto& mdata : HyperBlockHealthInfo)
-            {
-                Ldata += to_string(mdata.first);
-                Ldata += ":";
-                Ldata += to_string(mdata.second);
-                Ldata += ";";
+                vRet[_XPLATSTR("HyperBlockHealthInfo")] = json::value::string(s2t(Ldata));
             }
-
-            vRet[_XPLATSTR("HyperBlockHealthInfo")] = json::value::string(s2t(Ldata));
         }
-        else if (path[0] == U("GetNodeIDList"))
+        else if (path[0] == _XPLATSTR("GetNodeIDList"))
         {
-            auto cntEntryId = query.find(U("key"));
-            if (cntEntryId == query.end())
-            {
+            auto cntEntryId = query.find(_XPLATSTR("key"));
+            if (cntEntryId == query.end()) {
                 BADPARAMETER(key);
                 return;
             }
@@ -719,42 +709,37 @@ void CommandHandler::handle_get(http_request message)
             map<uint64, set<string>> HyperChainSpace;
             HSpce->GetHyperChainData(HyperChainSpace);
 
-            if (HyperChainSpace.size() <= 0)
-            {
+            if (HyperChainSpace.empty()) {
                 vRet[_XPLATSTR("HyperBlockID")] = json::value::number(nblocknum);
                 vRet[_XPLATSTR("NodeIDList")] = json::value::string(_XPLATSTR(""));
-                return;
             }
+            else {
+                string nodelist;
+                for (auto& mdata : HyperChainSpace) {
+                    if (mdata.first != nblocknum)
+                        continue;
 
-            string nodelist;
-            for (auto& mdata : HyperChainSpace)
-            {
-                if (mdata.first != nblocknum)
-                    continue;
-
-                for (auto& sid : mdata.second)
-                {
-                    nodelist += sid;
-                    nodelist += ";";
+                    for (auto& sid : mdata.second) {
+                        nodelist += sid;
+                        nodelist += ";";
+                    }
+                    break;
                 }
-                break;
-            }
 
-            vRet[_XPLATSTR("HyperBlockID")] = json::value::number(nblocknum);
-            vRet[_XPLATSTR("NodeIDList")] = json::value::string(s2t(nodelist));
+                vRet[_XPLATSTR("HyperBlockID")] = json::value::number(nblocknum);
+                vRet[_XPLATSTR("NodeIDList")] = json::value::string(s2t(nodelist));
+            }
         }
-        else if (path[0] == U("DownloadHyperBlock"))
+        else if (path[0] == _XPLATSTR("DownloadHyperBlock"))
         {
-            auto cntEntryBlockId = query.find(U("HyperBlockID"));
-            if (cntEntryBlockId == query.end())
-            {
+            auto cntEntryBlockId = query.find(_XPLATSTR("HyperBlockID"));
+            if (cntEntryBlockId == query.end()) {
                 BADPARAMETER(HyperBlockID);
                 return;
             }
 
-            auto cntEntryNodeId = query.find(U("NodeID"));
-            if (cntEntryNodeId == query.end())
-            {
+            auto cntEntryNodeId = query.find(_XPLATSTR("NodeID"));
+            if (cntEntryNodeId == query.end()) {
                 BADPARAMETER(NodeID);
                 return;
             }
@@ -765,7 +750,7 @@ void CommandHandler::handle_get(http_request message)
 
             CHyperChainSpace* HSpce = Singleton<CHyperChainSpace, string>::getInstance();
             try {
-                HSpce->PullHyperDataByHID(nblocknum, strnodeid);
+                HSpce->GetRemoteHyperBlockByID(nblocknum, strnodeid);
             }
             catch (std::exception & e) {
                 message.reply(status_codes::OK, json::value(stringToTstring(string("Bad Parameter:") + e.what())));
@@ -778,7 +763,7 @@ void CommandHandler::handle_get(http_request message)
     REPLY:
         http_response response(status_codes::OK);
         response.set_body(vRet);
-        response.headers().add(U("Access-Control-Allow-Origin"), U("*"));
+        response.headers().add(_XPLATSTR("Access-Control-Allow-Origin"), _XPLATSTR("*"));
         message.reply(response);
         return;
     }
@@ -788,11 +773,11 @@ void CommandHandler::handle_get(http_request message)
 
 void CommandHandler::handle_post(http_request message)
 {
-    g_basic_logger->error("RestApi Method: {}, URI: {}, Query: {})", "POST", tstringToUtf8(uri::decode(message.relative_uri().path())), tstringToUtf8(uri::decode(message.relative_uri().query())));
+    g_basic_logger->debug("RestApi Method: {}, URI: {}, Query: {})", "POST", tstringToUtf8(uri::decode(message.relative_uri().path())), tstringToUtf8(uri::decode(message.relative_uri().query())));
 
     auto path = requestPath(message);
     if (!path.empty() && path.size() == 1) {
-        if (path[0] == U("SubmitRegistration")) {
+        if (path[0] == _XPLATSTR("SubmitRegistration")) {
             Concurrency::streams::istream inStream = message.body();
             concurrency::streams::container_buffer<std::string> inStringBuffer;
 
@@ -814,7 +799,7 @@ void CommandHandler::handle_post(http_request message)
 
                 http_response response(status_codes::OK);
                 response.set_body(vRet);
-                response.headers().add(U("Access-Control-Allow-Origin"), U("*"));
+                response.headers().add(_XPLATSTR("Access-Control-Allow-Origin"), _XPLATSTR("*"));
                 message.reply(response).then([](pplx::task<void> t)
                 {
                     try {
@@ -828,7 +813,7 @@ void CommandHandler::handle_post(http_request message)
                     t.get();
                 }
                 catch (...) {
-                    message.reply(status_codes::InternalError, U("INTERNAL ERROR "));
+                    message.reply(status_codes::InternalError, _XPLATSTR("INTERNAL ERROR "));
                 }
             });
 
@@ -844,7 +829,7 @@ void CommandHandler::handle_post(http_request message)
         json::value vRet;
 
 
-        if (key == U("SubmitRegistration"))
+        if (key == _XPLATSTR("SubmitRegistration"))
         {
 
             Concurrency::streams::istream inStream = message.body();
@@ -878,7 +863,7 @@ void CommandHandler::handle_post(http_request message)
 
                 http_response response(status_codes::OK);
                 response.set_body(vRet);
-                response.headers().add(U("Access-Control-Allow-Origin"), U("*"));
+                response.headers().add(_XPLATSTR("Access-Control-Allow-Origin"), _XPLATSTR("*"));
                 message.reply(response).then([](pplx::task<void> t)
                 {
                     try {
@@ -895,7 +880,7 @@ void CommandHandler::handle_post(http_request message)
                 }
                 catch (...)
                 {
-                    message.reply(status_codes::InternalError, U("INTERNAL ERROR "));
+                    message.reply(status_codes::InternalError, _XPLATSTR("INTERNAL ERROR "));
                 }
             });
 
@@ -905,7 +890,7 @@ void CommandHandler::handle_post(http_request message)
             vRet[_XPLATSTR("returnValue")] = json::value::string(stringToTstring("unknow error"));
             http_response response(status_codes::OK);
             response.set_body(vRet);
-            response.headers().add(U("Access-Control-Allow-Origin"), U("*"));
+            response.headers().add(_XPLATSTR("Access-Control-Allow-Origin"), _XPLATSTR("*"));
             message.reply(response);
         }*/
 }
@@ -948,7 +933,8 @@ void RestApi::blockHeadToJsonValue(const T_LOCALBLOCK& localblock, json::value& 
     val[_XPLATSTR("root_block_body_hash")] = json::value::string(stringToTstring(localblock.GetRootHash().toHexString()));
     val[_XPLATSTR("script_hash")] = json::value::string(stringToTstring(localblock.GetScriptHash().toHexString()));
 
-    //
+    
+
     val[_XPLATSTR("payload_size")] = json::value::number(localblock.GetPayload().size());
     val[_XPLATSTR("block_size")] = json::value::number(localblock.GetSize());
 }
@@ -988,7 +974,8 @@ void RestApi::blockHeadToJsonValue(const T_HYPERBLOCK& hyperblock, size_t hyperB
     for (uint16 i = 0; i < hyperblock.GetChildChainsCount(); i++) {
         obj[i] = json::value::number(hyperblock.GetChildChainBlockCount(i));
     }
-    val[_XPLATSTR("childchain_blockscount")] = obj;     //
+    val[_XPLATSTR("childchain_blockscount")] = obj;     
+
 
     obj = json::value::array();
     const list<T_SHA256>& tailhashlist = hyperblock.GetChildTailHashList();
@@ -996,7 +983,8 @@ void RestApi::blockHeadToJsonValue(const T_HYPERBLOCK& hyperblock, size_t hyperB
     for (auto tailhash : tailhashlist) {
         obj[i++] = json::value::string(stringToTstring(tailhash.toHexString()));
     }
-    val[_XPLATSTR("tailblockshash")] = obj;       //
+    val[_XPLATSTR("tailblockshash")] = obj;       
+
 
     //val[_XPLATSTR("hyperBlockHashVersion")] = json::value::number(1);
     val[_XPLATSTR("hyperBlockSize")] = json::value::number(hyperBlockSize);
@@ -1017,7 +1005,8 @@ void RestApi::blockBodyToJsonValue(const T_HYPERBLOCK& hyperblock, json::value& 
 
         vObj[j++] = lObj;
     }
-    val[_XPLATSTR("local_blocks_header_hash")] = vObj;     //
+    val[_XPLATSTR("local_blocks_header_hash")] = vObj;     
+
 
     int k = 0;
     json::value obj = json::value::array();
@@ -1163,11 +1152,16 @@ json::value RestApi::getLocalchain(uint64_t hid, uint64_t chain_num)
     json::value LocalChain;
     int nRet = Singleton<DBmgr>::instance()->getLocalchain(hid, chain_num, blocks, chain_difficulty);
     if (nRet == 0) {
-        LocalChain[_XPLATSTR("chain_num")] = json::value::number(chain_num);	//
-        LocalChain[_XPLATSTR("blocks")] = json::value::number(blocks);			//
-        LocalChain[_XPLATSTR("block_chain")] = json::value::string(_XPLATSTR("unknown")); //
-        LocalChain[_XPLATSTR("difficulty")] = json::value::number(chain_difficulty);	  //
-        LocalChain[_XPLATSTR("consensus")] = json::value::string(_XPLATSTR("buddy"));	  //
+        LocalChain[_XPLATSTR("chain_num")] = json::value::number(chain_num);	
+
+        LocalChain[_XPLATSTR("blocks")] = json::value::number(blocks);			
+
+        LocalChain[_XPLATSTR("block_chain")] = json::value::string(_XPLATSTR("unknown")); 
+
+        LocalChain[_XPLATSTR("difficulty")] = json::value::number(chain_difficulty);	  
+
+        LocalChain[_XPLATSTR("consensus")] = json::value::string(_XPLATSTR("buddy"));	  
+
     }
 
     return LocalChain;
@@ -1210,7 +1204,8 @@ json::value RestApi::getOnchainState(const string& requestID)
         status = consensuseng->GetOnChainState(requestID, queuenum);
 
         if (status == ONCHAINSTATUS::unknown) {
-            //
+            
+
             if (consensuseng->CheckSearchOnChainedPool(requestID, addr)) {
                 status = ONCHAINSTATUS::failed;
                 if (addr.isValid()) {
@@ -1218,7 +1213,8 @@ json::value RestApi::getOnchainState(const string& requestID)
                 }
             }
             else {
-                //
+                
+
                 bool isfound = Singleton<DBmgr>::instance()->getOnChainStateFromRequestID(requestID, addr);
                 if (!isfound) {
                     status = ONCHAINSTATUS::nonexistent;
@@ -1281,17 +1277,32 @@ bool RestApi::Upqueue(string strdata, vector<string>& out_vc)
     return true;
 }
 
-int RestApi::startRest()
+int RestApi::startRest(int nport)
 {
-    cout << "Start RestServer" << endl;
+    stringstream ss;
+
+#ifdef WIN32
+    ss << "http://*:" << nport;
+#else
+    ss << "http://0.0.0.0:" << nport;
+#endif
+
+    cout << "Start RestServer: " << ss.str() <<  endl;
+
+    utility::string_t address = s2t(ss.str());
+
+    web::uri_builder uri1(address);
+    auto addr = uri1.to_uri().to_string();
+    g_spRestHandler = std::make_shared<CommandHandler>(addr);
+
     try {
-        restHandler.open().wait();
+        g_spRestHandler->open().wait();
     }
     catch (std::exception & ex) {
         g_daily_logger->error("Start RestServer error");
         g_console_logger->error("Start RestServer error");
         cout << "RestServer exception:" << __FUNCTION__ << " " << ex.what() << endl;
-        restHandler.close().wait();
+        g_spRestHandler->close().wait();
     }
 
     return 0;
@@ -1300,7 +1311,7 @@ int RestApi::startRest()
 int RestApi::stopRest()
 {
     try {
-        restHandler.close().wait();
+        g_spRestHandler->close().wait();
     }
     catch (std::exception & ex) {
         cout << "RestServer exception:" << __FUNCTION__ << " " << ex.what() << endl;

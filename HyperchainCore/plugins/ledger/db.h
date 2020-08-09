@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -310,7 +310,8 @@ public:
     bool EraseBlockIndex(uint256 hash);
     bool ReadHashBestChain(uint256& hashBestChain);
     bool WriteHashBestChain(uint256 hashBestChain);
-    //HC
+    
+
     bool ReadAddrMaxChain(T_LOCALBLOCKADDRESS& addrMax);
     bool WriteAddrMaxChain(const T_LOCALBLOCKADDRESS& addrMax);
 

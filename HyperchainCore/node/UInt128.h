@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -159,7 +159,6 @@ public:
      */
     void StoreCryptValue(uint8_t *buf) const;
     bool IsZero() const throw() { return (m_data.u64_data[0] | m_data.u64_data[1]) == 0; }
-    int GetNonZeroTopBit();
 private:
     int CompareTo(const CUInt128& other) const throw();
     int CompareTo(uint32_t value) const throw();
@@ -168,6 +167,7 @@ private:
     CUInt128& Subtract(const CUInt128& value) throw();
     CUInt128& Subtract(uint32_t value) throw() { return value ? Subtract(CUInt128(value)) : *this; }
     CUInt128& ShiftLeft(unsigned bits) throw();
+    CUInt128& ShiftRight(unsigned bits) throw();
 
     CUInt128& XOR(const CUInt128& value) throw()
     {
@@ -204,6 +204,7 @@ public:
     CUInt128& operator^=(uint32_t value) throw() { return value ? XOR(CUInt128(value)) : *this; }
 
     CUInt128& operator<<=(unsigned bits) throw() { return ShiftLeft(bits); }
+    CUInt128& operator>>=(unsigned bits) throw() { return ShiftRight(bits); }
 
     CUInt128& operator=(CUInt128&& value) throw() { m_data = std::move(value.m_data); return *this; }
     CUInt128  operator+(const CUInt128& value) const throw() { return CUInt128(*this).operator+=(value); }
@@ -215,6 +216,7 @@ public:
     CUInt128  operator^(uint32_t value) const throw() { return CUInt128(*this).operator^=(value); }
 
     CUInt128  operator<<(unsigned bits) const throw() { return CUInt128(*this).operator<<=(bits); }
+    CUInt128  operator>>(unsigned bits) const throw() { return CUInt128(*this).operator>>=(bits); }
 
     friend class boost::serialization::access;
     template<class Archive>

@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -162,7 +162,8 @@ bool CWallet::EncryptWallet(const string& strWalletPassphrase)
 
     CCrypter crypter;
     int64 nStartTime = GetTimeMillis();
-    //
+    
+
     crypter.SetKeyFromPassphrase(strWalletPassphrase, kMasterKey.vchSalt, 25000, kMasterKey.nDerivationMethod);
     kMasterKey.nDeriveIterations = 2500000 / ((double)(GetTimeMillis() - nStartTime));
 
@@ -361,7 +362,8 @@ bool CWallet::IsMine(const CTxIn &txin) const
     return false;
 }
 
-//
+
+
 int64 CWallet::GetDebit(const CTxIn &txin) const
 {
     CRITICAL_BLOCK(cs_wallet)
@@ -590,7 +592,8 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
                 if (AddToWalletIfInvolvingMe(tx, &block, fUpdate))
                     ret++;
             }
-            //
+            
+
             if (pindex->pnextSibling) {
                 pindex = pindex->pnextSibling;
             }
@@ -1083,7 +1086,8 @@ bool CWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey)
             printf("CommitTransaction() : Error: Transaction not valid");
             return false;
         }
-        //
+        
+
         //wtxNew.RelayWalletTransaction();
 
     }
@@ -1168,7 +1172,7 @@ int CWallet::LoadWallet(bool& fFirstRunRet)
         if (!SetAddressBookName(CBitcoinAddress(vchDefaultKey), ""))
             return DB_LOAD_FAIL;
     }
-    
+
     m_threadFlushWallet.reset(new std::thread(&ThreadFlushWalletDB, &strWalletFile));
     return DB_LOAD_OK;
 }
@@ -1182,7 +1186,8 @@ bool CWallet::SetAddressBookName(const CBitcoinAddress& address, const string& s
 
     CWalletDB db(strWalletFile);
 
-    //
+    
+
     if (db.WriteName(address.ToString(), strName))
     {
         CAccount account;

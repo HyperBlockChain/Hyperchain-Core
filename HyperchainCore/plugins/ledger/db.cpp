@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -377,7 +377,8 @@ bool CTxDB::WriteHashBestChain(uint256 hashBestChain)
     return Write(string("hashBestChain"), hashBestChain);
 }
 
-//
+
+
 bool CTxDB::ReadAddrMaxChain(T_LOCALBLOCKADDRESS& addrMax)
 {
     string strAddrMax;
@@ -388,7 +389,8 @@ bool CTxDB::ReadAddrMaxChain(T_LOCALBLOCKADDRESS& addrMax)
     return ret;
 }
 
-//
+
+
 bool CTxDB::WriteAddrMaxChain(const T_LOCALBLOCKADDRESS& addrMax)
 {
     string str = addrMax.tostring();
@@ -462,11 +464,11 @@ bool CTxDB::LoadBlockIndex()
             pindexNew->pnext          = InsertBlockIndex(diskindex.hashNext);
             pindexNew->pprevSibling   = InsertBlockIndex(diskindex.hashPrevSibling);
             pindexNew->pnextSibling   = InsertBlockIndex(diskindex.hashNextSibling);
-            pindexNew->nFile          = diskindex.nFile;
-            pindexNew->nBlockPos      = diskindex.nBlockPos;
-            //
+            
+
             //pindexNew->nHeight        = diskindex.nHeight;
-            //
+            
+
             pindexNew->addr           = diskindex.addr;
             pindexNew->nVersion       = diskindex.nVersion;
             pindexNew->hashMerkleRoot = diskindex.hashMerkleRoot;
@@ -487,7 +489,8 @@ bool CTxDB::LoadBlockIndex()
     pcursor->close();
 
     // Calculate bnChainWork
-    //
+    
+
     //vector<pair<int, CBlockIndex*> > vSortedByHeight;
     //vSortedByHeight.reserve(mapBlockIndex.size());
     //BOOST_FOREACH(const PAIRTYPE(uint256, CBlockIndex*)& item, mapBlockIndex)
@@ -503,7 +506,8 @@ bool CTxDB::LoadBlockIndex()
     //}
 
 
-    //
+    
+
     // Load hashBestChain pointer to end of best chain
     if (!ReadHashBestChain(hashBestChain))
     {
@@ -516,20 +520,23 @@ bool CTxDB::LoadBlockIndex()
 
     pindexBest = mapBlockIndex[hashBestChain];
 
-    //
+    
+
     //auto maxindex = std::max_element(mapBlockIndex.begin(), mapBlockIndex.end());
     if (pindexBest) {
         nBestHeight = pindexBest->Height();
         printf("LoadBlockIndex(): hashBestChain=%s  height=%d\n", hashBestChain.ToString().substr(0, 20).c_str(), nBestHeight);
     }
 
-    //
+    
+
     if (!ReadAddrMaxChain(addrMaxChain)) {
         addrMaxChain = pindexBest ? pindexBest->addr : T_LOCALBLOCKADDRESS();
     }
 
     // Load bnBestInvalidWork, OK if it doesn't exist
-    //
+    
+
     //ReadBestInvalidWork(bnBestInvalidWork);
 
     //Verify blocks in the best chain

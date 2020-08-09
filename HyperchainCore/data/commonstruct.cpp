@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -266,10 +266,9 @@ bool CCommonStruct::ReadConfig()
     return true;
 }
 #endif
-char* CCommonStruct::Time2String(time_t time1)
+string CCommonStruct::Time2String(time_t time1)
 {
-    static char szTime[1024] = "";
-    memset(szTime, 0, 1024);
+    char szTime[128] = {0};
     struct tm tm1;
 #ifdef WIN32
     localtime_s(&tm1, &time1);
@@ -279,7 +278,7 @@ char* CCommonStruct::Time2String(time_t time1)
     sprintf(szTime, "%4.4d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d",
         tm1.tm_year + 1900, tm1.tm_mon + 1, tm1.tm_mday,
         tm1.tm_hour, tm1.tm_min, tm1.tm_sec);
-    return szTime;
+    return string(szTime);
 }
 
 string CCommonStruct::generateNodeId(bool isbase62)
@@ -288,7 +287,8 @@ string CCommonStruct::generateNodeId(bool isbase62)
     string struuid = boost::uuids::to_string(r_uuid);
     struuid.erase(std::remove(struuid.begin(), struuid.end(), '-'), struuid.end());*/
 
-    //
+    
+
     sole::uuid u4 = sole::uuid4();
     string struuid;
     if (isbase62) {
@@ -335,19 +335,22 @@ T_SHA256 calculateMerkleTreeRoot(vector<const T_SHA256*> &mttree)
 string T_LOCALBLOCK::GetUUID() const {
 
     string uuidpayload;
-    //
+    
+
     string payload = GetPayLoad();
-    CBRET ret =
-        g_tP2pManagerStatus->appCallback<cbindex::GETUUIDIDX>(GetAppType(), payload, uuidpayload);
+    
+
+    //CBRET ret =
+    //    g_tP2pManagerStatus->appCallback<cbindex::GETUUIDIDX>(GetAppType(), payload, uuidpayload);
 
     Digest<DT::sha1> digest;
     digest.AddData(&header.uiTime, sizeof(header.uiTime));
-    if (ret == CBRET::REGISTERED_TRUE) {
-        digest.AddData(uuidpayload.c_str(), uuidpayload.size());
-    }
-    else {
+    //if (ret == CBRET::REGISTERED_TRUE) {
+    //    digest.AddData(uuidpayload.c_str(), uuidpayload.size());
+    //}
+    //else {
         digest.AddData(body.payload.c_str(), body.payload.size());
-    }
+    //}
     std::string d = digest.getDigestBase58();
     return string(d.data(), d.size());
 }

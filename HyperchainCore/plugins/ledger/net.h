@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -104,6 +104,7 @@ extern CAddress addrLocalHost;
 extern uint64 nLocalHostNonce;
 extern boost::array<int, 10> vnThreadsRunning;
 
+extern CCriticalSection cs_main;
 extern std::vector<CNode*> vNodes;
 extern CCriticalSection cs_vNodes;
 extern std::map<std::vector<unsigned char>, CAddress> mapAddresses;
@@ -603,6 +604,7 @@ public:
 inline void RelayInventory(const CInv& inv)
 {
     // Put on lists to offer to the other nodes
+    CRITICAL_BLOCK(cs_main)
     CRITICAL_BLOCK(cs_vNodes)
         BOOST_FOREACH(CNode* pnode, vNodes)
             pnode->PushInventory(inv);
@@ -662,6 +664,7 @@ void AdvertStartPublish(CNode* pfrom, unsigned int nChannel, unsigned int nHops,
         return;
 
     // Relay
+    CRITICAL_BLOCK(cs_main)
     CRITICAL_BLOCK(cs_vNodes)
         BOOST_FOREACH(CNode* pnode, vNodes)
             if (pnode != pfrom && (nHops < PUBLISH_HOPS || pnode->IsSubscribed(nChannel)))
@@ -673,6 +676,7 @@ void AdvertStopPublish(CNode* pfrom, unsigned int nChannel, unsigned int nHops, 
 {
     uint256 hash = obj.GetHash();
 
+    CRITICAL_BLOCK(cs_main)
     CRITICAL_BLOCK(cs_vNodes)
         BOOST_FOREACH(CNode* pnode, vNodes)
             if (pnode != pfrom && (nHops < PUBLISH_HOPS || pnode->IsSubscribed(nChannel)))

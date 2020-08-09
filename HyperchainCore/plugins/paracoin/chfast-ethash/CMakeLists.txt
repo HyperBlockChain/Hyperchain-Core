@@ -63,7 +63,7 @@ endif()
 
 add_subdirectory(lib/ethash)
 
-#
+#HC: off test project
 option(ETHASH_BUILD_TESTS "Build unit tests" OFF)
 if(ETHASH_BUILD_TESTS)
     add_subdirectory(test)

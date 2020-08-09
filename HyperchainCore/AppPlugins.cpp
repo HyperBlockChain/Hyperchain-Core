@@ -44,13 +44,13 @@ void AppPlugins::StartApp(const string& appname)
 {
     PluginContext context;
     context.nodemgr = Singleton<NodeManager>::getInstance();
-    context.taskpool = Singleton<TaskThreadPool>::getInstance();
     context.hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
     context.consensuseng = Singleton<ConsensusEngine>::getInstance();
     context.dbmgr = Singleton<DBmgr>::getInstance();
     context.tP2pManagerStatus = Singleton<T_P2PMANAGERSTATUS>::getInstance();
+    context.inproc_context = g_inproc_context;
 
-#ifdef WIN32 
+#ifdef WIN32
     context.daily_logger = g_daily_logger;
     context.basic_logger = g_basic_logger;
     context.rotating_logger = g_rotating_logger;
@@ -68,7 +68,8 @@ void AppPlugins::StartApp(const string& appname)
     if (_mapAppFunc.count(appname)) {
         auto & f = _mapAppFunc[appname];
 
-        //
+        
+
         int app_argc = _argc + f.appargv.size();
         std::shared_ptr<char*> app_argv(new char*[app_argc]);
 
@@ -76,7 +77,8 @@ void AppPlugins::StartApp(const string& appname)
         int j = 0;
         char ** p = app_argv.get();
         for (; i < _argc; i++) {
-        //
+        
+
             if (string(_argv[i]).find("-with") == 0 ||
                 string(_argv[i]).find("-seedserver") == 0 ||
                 string(_argv[i]).find("-me") == 0 ) {
@@ -94,7 +96,7 @@ void AppPlugins::StartApp(const string& appname)
         try {
             if (f.appIsStopped()) {
                 if (f.appStart(&context)) {
-                    f.appRegisterTask(&handler->GetTaskFactory());
+                    f.appRegisterTask(handler);
                     std::cout << "Module " << appname << " is started" << endl;
                 }
             }
@@ -123,8 +125,9 @@ void AppPlugins::StopApp(const string& appname, bool isErase)
         else {
             std::cout << "Module " << appname << " has stopped" << endl;
         }
-        f.appUnregisterTask(&handler->GetTaskFactory());
-        //
+        f.appUnregisterTask(handler);
+        
+
         if (isErase) {
             f.unload();
             _mapAppFunc.erase(appname);
@@ -171,10 +174,10 @@ void AppPlugins::GetAllAppStatus(map<string, string>& mapappstatus)
     }
 }
 
-void AppPlugins::RegisterAllAppTasks(objectFactory& objFactory)
+void AppPlugins::RegisterAllAppTasks(void* objFactory)
 {
     for (auto& app : _mapAppFunc) {
-        if (!app.second.appRegisterTask(&objFactory)) {
+        if (!app.second.appRegisterTask(objFactory)) {
             std::printf("Failed to register tasks for application %s \n", app.first.c_str());
         }
     }

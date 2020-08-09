@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -113,7 +113,8 @@ public:
     bool IsTokenSame(uint32_t hid, uint16_t chainnum, uint16_t localid) {
         return GetHID() == hid && GetChainNum() == chainnum && GetLocalID() == localid;
     }
-    //
+    
+
     bool ReadTokenFile(const string& name, string& shorthash, string& errormsg);
 
     static bool SearchTokenByName(const string& coinname, string& coinshorthash, string& errormsg);

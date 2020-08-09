@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -45,17 +45,21 @@ using namespace std;
 
 extern bool HandleGenesisBlockCb(vector<T_PAYLOADADDR>& vecPA);
 extern bool PutTxsChainCb();
-extern bool UpdateLedgeDataCb(string& payload, string &newpaylod);
+extern bool UpdateLedgerDataCb(string& payload, string &newpaylod);
 extern bool CheckChainCb(vector<T_PAYLOADADDR>& vecPA);
-extern bool LedgeAcceptChainCb(const T_APPTYPE& app, vector<T_PAYLOADADDR>& vecPA, uint32_t& hid, T_SHA256& thhash);
-extern bool ValidateLedgeDataCb(T_PAYLOADADDR& payloadaddr, map<boost::any, T_LOCALBLOCKADDRESS>& mapOutPt, boost::any& hashPrevBlock);
-extern bool LedgeBlockUUIDCb(string& payload, string& uuidpayload);
+extern bool LedgerAcceptChainCb(map<T_APPTYPE, vector<T_PAYLOADADDR>>& , uint32_t& hidFork, uint32_t& hid, T_SHA256& thhash, bool isLatest);
+extern bool ValidateLedgerDataCb(T_PAYLOADADDR& payloadaddr, map<boost::any, T_LOCALBLOCKADDRESS>& mapOutPt, boost::any& hashPrevBlock);
+extern bool LedgerBlockUUIDCb(string& payload, string& uuidpayload);
 extern bool GetVPath(T_LOCALBLOCKADDRESS& sAddr, T_LOCALBLOCKADDRESS& eAddr, vector<string>& vecVPath);
 
 extern void ThreadRSyncGetBlock(void* parg);
 
 extern void StartRPCServer();
 extern void StopRPCServer();
+
+extern void StartMQHandler();
+extern void StopMQHandler();
+
 
 CWallet* pwalletMain = nullptr;
 bool fExit = true;
@@ -119,10 +123,14 @@ bool IsStopped()
 
 void ShutdownExcludeRPCServer()
 {
+    
+
+    g_sys_interrupted = 1;
+
     ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
     if (consensuseng) {
-        consensuseng->unregisterAppCallback(T_APPTYPE(APPTYPE::ledger, 0, 0, 0));
-        consensuseng->unregisterAppCallback(T_APPTYPE(APPTYPE::ledger,
+        consensuseng->UnregisterAppCallback(T_APPTYPE(APPTYPE::ledger, 0, 0, 0));
+        consensuseng->UnregisterAppCallback(T_APPTYPE(APPTYPE::ledger,
             g_cryptoToken.GetHID(), g_cryptoToken.GetChainNum(), g_cryptoToken.GetLocalID()));
     }
 
@@ -157,8 +165,8 @@ void Shutdown(void* parg)
 
     ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
     if (consensuseng) {
-        consensuseng->unregisterAppCallback(T_APPTYPE(APPTYPE::ledger, 0, 0, 0));
-        consensuseng->unregisterAppCallback(T_APPTYPE(APPTYPE::ledger, 
+        consensuseng->UnregisterAppCallback(T_APPTYPE(APPTYPE::ledger, 0, 0, 0));
+        consensuseng->UnregisterAppCallback(T_APPTYPE(APPTYPE::ledger,
             g_cryptoToken.GetHID(), g_cryptoToken.GetChainNum(), g_cryptoToken.GetLocalID()));
     }
 
@@ -168,8 +176,9 @@ void Shutdown(void* parg)
 
     if (fFirstThread)
     {
-        printf("Stopping Hyperchain Ledge...\n");
+        printf("Stopping Hyperchain Ledger...\n");
         fShutdown = true;
+        StopMQHandler();
         StopRPCServer();
         nTransactionsUpdated++;
         DBFlush(false);
@@ -191,7 +200,8 @@ void HandleSIGTERM(int)
 
 bool LoadCryptoToken()
 {
-    //
+    
+
     CApplicationSettings appini;
     string defaultAppHash;
     appini.ReadDefaultApp(defaultAppHash);
@@ -205,23 +215,25 @@ bool LoadCryptoToken()
     if (!CryptoToken::ContainToken(tokenhash)) {
 
         ERROR_FL("Invalid CryptoToken hash: %s", tokenhash.c_str());
-		
+
 		if (CryptoToken::ContainToken(defaultAppHash)) {
             ERROR_FL("Invalid Cryptotoken: %s", defaultAppHash.c_str());
             tokenhash = defaultAppHash;
         }
         else {
-            //
+            
+
             tokenhash = g_cryptoToken.GetHashPrefixOfGenesis();
         }
-		
+
     }
 
     if (defaultAppHash != tokenhash) {
         appini.WriteDefaultApp(tokenhash);
     }
 
-    //
+    
+
     if (g_cryptoToken.GetHashPrefixOfGenesis() != tokenhash) {
         string errmsg;
         if (!g_cryptoToken.ReadTokenFile("", tokenhash, errmsg)) {
@@ -229,10 +241,11 @@ bool LoadCryptoToken()
         }
     }
     hashGenesisBlock = g_cryptoToken.GetHashGenesisBlock();
+
     
-    //
-    string strLedgeDir = CreateChildDir(g_cryptoToken.GetTokenConfigPath());
-    strlcpy(pszSetDataDir, strLedgeDir.c_str(), sizeof(pszSetDataDir));
+
+    string strLedgerDir = CreateChildDir(g_cryptoToken.GetTokenConfigPath());
+    strlcpy(pszSetDataDir, strLedgerDir.c_str(), sizeof(pszSetDataDir));
 
     return true;
 }
@@ -254,7 +267,7 @@ bool StartApplication(PluginContext* context)
         PrintException(NULL, "AppInit()");
     }
     if (!fRet) {
-        printf("Failed to start Ledge");
+        printf("Failed to start Ledger");
         Shutdown(NULL);
     }
 
@@ -308,6 +321,7 @@ bool AppInit2(int argc, char* argv[])
 
     fPrintToConsole = GetBoolArg("-printtoconsole");
     fPrintToDebugger = GetBoolArg("-printtodebugger");
+    fPrintToDebugFile = GetBoolArg("-printtofile");
 
     fTestNet = GetBoolArg("-testnet");
     bool fTOR = (fUseProxy && addrProxy.port == htons(9050));
@@ -323,11 +337,12 @@ bool AppInit2(int argc, char* argv[])
         exit(ret);
     }
 
-	pro_ver = SAND_BOX;
-	if (mapArgs.count("-model") && mapArgs["-model"] == "informal")
-		pro_ver = INFORMAL_NET;
+    pro_ver = ProtocolVer::NET::SAND_BOX;
+    if (mapArgs.count("-model") && mapArgs["-model"] == "informal")
+        pro_ver = ProtocolVer::NET::INFORMAL_NET;
 
-    //
+    
+
     LoadCryptoToken();
 
     if (!fDebug && !pszSetDataDir[0])
@@ -350,7 +365,7 @@ bool AppInit2(int argc, char* argv[])
     g_pLock = make_shared<boost::interprocess::file_lock>(strLockFile.c_str());
 
     if (!g_pLock->try_lock()) {
-        wxMessageBox(strprintf(_("Cannot obtain a lock on data directory %s. Ledge is probably already running."), GetDataDir().c_str()), "Hyperchain");
+        wxMessageBox(strprintf(_("Cannot obtain a lock on data directory %s. Ledger is probably already running."), GetDataDir().c_str()), "Hyperchain");
         return false;
     }
 
@@ -369,7 +384,7 @@ bool AppInit2(int argc, char* argv[])
     // Load data files
     //
     if (fDaemon)
-        fprintf(stdout, "Ledge server starting\n");
+        fprintf(stdout, "Ledger server starting\n");
     strErrors = "";
     int64 nStart;
 
@@ -395,23 +410,24 @@ bool AppInit2(int argc, char* argv[])
     }
     int nLoadWalletRet = pwalletMain->LoadWallet(fFirstRun);
 
-    //
+    
+
     if (GetBoolArg("-importkey") && g_cryptoToken.IsSysToken()) {
         CKey key;
         if (ReadKeyFromFile(key)) {
             CBitcoinAddress coinaddress = CBitcoinAddress(key.GetPubKey());
             if (pwalletMain->HaveKey(coinaddress)) {
                 string str = coinaddress.ToString();
-                fprintf(stdout, "Ledge's genesis key already exist : %s\n", str.c_str());
+                fprintf(stdout, "Ledger's genesis key already exist : %s\n", str.c_str());
             }
             else if (pwalletMain->AddKey(key)) {
                 pwalletMain->SetDefaultKey(key.GetPubKey());
                 pwalletMain->SetAddressBookName(coinaddress, "");
 
-                fprintf(stdout, "Ledge's genesis key imported successfully\n");
+                fprintf(stdout, "Ledger's genesis key imported successfully\n");
             }
             else {
-                fprintf(stderr, "Ledge's genesis key imported failed\n");
+                fprintf(stderr, "Ledger's genesis key imported failed\n");
             }
         }
         else {
@@ -419,7 +435,8 @@ bool AppInit2(int argc, char* argv[])
         }
     }
 
-    //
+    
+
     if (GetBoolArg("-scangenesis") || pindexBest == pindexGenesisBlock) {
         pwalletMain->ScanForWalletTransactions(pindexBest, true);
     }
@@ -428,7 +445,7 @@ bool AppInit2(int argc, char* argv[])
         if (nLoadWalletRet == DB_CORRUPT)
             strErrors += _("Error loading wallet.dat: Wallet corrupted      \n");
         else if (nLoadWalletRet == DB_TOO_NEW)
-            strErrors += _("Error loading wallet.dat: Wallet requires newer version of Ledge      \n");
+            strErrors += _("Error loading wallet.dat: Wallet requires newer version of Ledger      \n");
         else
             strErrors += _("Error loading wallet.dat      \n");
     }
@@ -457,14 +474,15 @@ bool AppInit2(int argc, char* argv[])
 
     //// debug print
     printf("mapBlockIndex.size() = %d\n", mapBlockIndex.size());
-    //
+    
+
     //printf("nBestHeight = %d\n", nBestHeight);
     printf("setKeyPool.size() = %d\n", pwalletMain->setKeyPool.size());
     printf("mapWallet.size() = %d\n", pwalletMain->mapWallet.size());
     printf("mapAddressBook.size() = %d\n", pwalletMain->mapAddressBook.size());
 
     if (!strErrors.empty()) {
-        wxMessageBox(strErrors, "Ledge", wxOK | wxICON_ERROR);
+        wxMessageBox(strErrors, "Ledger", wxOK | wxICON_ERROR);
         return false;
     }
 
@@ -511,7 +529,7 @@ bool AppInit2(int argc, char* argv[])
         fUseProxy = true;
         addrProxy = CAddress(mapArgs["-proxy"]);
         if (!addrProxy.IsValid()) {
-            wxMessageBox(_("Invalid -proxy address"), "Ledge");
+            wxMessageBox(_("Invalid -proxy address"), "Ledger");
             return false;
         }
     }
@@ -525,7 +543,8 @@ bool AppInit2(int argc, char* argv[])
                 AddAddress(addr);
         }
     }
-    //
+    
+
     //if (GetBoolArg("-nodnsseed"))
     //    printf("DNS seeding disabled\n");
     //else
@@ -533,7 +552,7 @@ bool AppInit2(int argc, char* argv[])
 
     if (mapArgs.count("-paytxfee")) {
         if (!ParseMoney(mapArgs["-paytxfee"], nTransactionFee)) {
-            wxMessageBox(_("Invalid amount for -paytxfee=<amount>"), "Ledge");
+            wxMessageBox(_("Invalid amount for -paytxfee=<amount>"), "Ledger");
             return false;
         }
         if (nTransactionFee > 0.25 * COIN)
@@ -555,42 +574,44 @@ bool AppInit2(int argc, char* argv[])
 
     RandAddSeedPerfmon();
 
-    //
+    
+
     ConsensusEngine * consensuseng = Singleton<ConsensusEngine>::getInstance();
     if (consensuseng) {
         CONSENSUSNOTIFY ledgerGenesisCallback =
-            std::make_tuple(HandleGenesisBlockCb, nullptr, 
-                nullptr, 
+            std::make_tuple(HandleGenesisBlockCb, nullptr,
                 nullptr,
-                nullptr, 
+                nullptr,
+                nullptr,
                 nullptr,
                 nullptr,
                 nullptr,
                 nullptr,
                 nullptr,
                 nullptr);
-       
-        consensuseng->registerAppCallback(T_APPTYPE(APPTYPE::ledger,0, 0, 0), ledgerGenesisCallback);
+
+        consensuseng->RegisterAppCallback(T_APPTYPE(APPTYPE::ledger,0, 0, 0), ledgerGenesisCallback);
 
         CONSENSUSNOTIFY ledgerCallback =
             std::make_tuple(nullptr, PutTxsChainCb,
                 nullptr,
-                UpdateLedgeDataCb,
-                ValidateLedgeDataCb,
+                UpdateLedgerDataCb,
+                ValidateLedgerDataCb,
                 CheckChainCb,
-                LedgeAcceptChainCb,
+                LedgerAcceptChainCb,
                 nullptr,
-                LedgeBlockUUIDCb,
+                LedgerBlockUUIDCb,
                 GetVPath,
                 nullptr);
 
-        consensuseng->registerAppCallback(
-            T_APPTYPE(APPTYPE::ledger, g_cryptoToken.GetHID(), g_cryptoToken.GetChainNum(), g_cryptoToken.GetLocalID()), 
+        consensuseng->RegisterAppCallback(
+            T_APPTYPE(APPTYPE::ledger, g_cryptoToken.GetHID(), g_cryptoToken.GetChainNum(), g_cryptoToken.GetLocalID()),
             ledgerCallback);
-        
+
         printf("Registered ledger callback\n");
     }
 
+    StartMQHandler();
     if (!CreateThread(StartNode, NULL))
         printf("Error: CreateThread(StartNode) failed\n");
 

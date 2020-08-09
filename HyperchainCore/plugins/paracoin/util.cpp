@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -47,6 +47,7 @@ map<string, vector<string> > mapMultiArgs;
 bool fDebug = false;
 bool fPrintToConsole = false;
 bool fPrintToDebugFile = false;
+bool fPrintBacktracking = false;
 bool fPrintToDebugger = false;
 char pszSetDataDir[MAX_PATH] = "";
 bool fRequestShutdown = false;
@@ -86,6 +87,7 @@ void log_output_nowrap(const char* format, ...)
     }
     fprintf(stdout, "%s", buffer);
 }
+
 
 
 // Init openssl library multithreading support
@@ -192,18 +194,23 @@ bool TurnOnOffDebugOutput(const string& onoff, string& ret)
     std::transform(onoff.begin(), onoff.end(), optiononoff.begin(),
         [](unsigned char c) { return std::tolower(c); });
 
+    ret = "Paracoin's debug setting is ";
     if (optiononoff.empty()) {
         if (fPrintToConsole && fPrintToDebugFile) {
-            ret = "Paracoin's debug setting is 'both'";
+            ret += "'both'";
         }
         else if (!fPrintToConsole && !fPrintToDebugFile) {
-            ret = "Paracoin's debug setting is 'off'";
+            ret += "'off'";
         }
         else if (fPrintToConsole && !fPrintToDebugFile) {
-            ret = "Paracoin's debug setting is 'con'";
+            ret += "'con'";
         }
         else if (!fPrintToConsole && fPrintToDebugFile) {
-            ret = "Paracoin's debug setting is 'file'";
+            ret += "'file'";
+        }
+
+        if (fPrintBacktracking) {
+            ret += " and 'backtracking'";
         }
         return true;
     }
@@ -223,6 +230,10 @@ bool TurnOnOffDebugOutput(const string& onoff, string& ret)
     else if (optiononoff == "off") {
         fPrintToConsole = false;
         fPrintToDebugFile = false;
+        fPrintBacktracking = false;
+    }
+    else if (optiononoff == "bt") {
+        fPrintBacktracking = true;
     }
     else {
         ret = "unknown debug option";
@@ -232,11 +243,21 @@ bool TurnOnOffDebugOutput(const string& onoff, string& ret)
     return true;
 }
 
-inline int OutputDebugStringF(const char* pszFormat, ...)
+void LogBacktracking(const char* format, ...)
+{
+    if (fPrintBacktracking || fPrintToConsole) {
+        // print to console
+        va_list arg_ptr;
+        va_start(arg_ptr, format);
+        vprintf(format, arg_ptr);
+        va_end(arg_ptr);
+    }
+}
+
+int OutputDebugStringF(const char* pszFormat, ...)
 {
     int ret = 0;
-    if (fPrintToConsole)
-    {
+    if (fPrintToConsole) {
         // print to console
         va_list arg_ptr;
         va_start(arg_ptr, pszFormat);
@@ -244,21 +265,18 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
         va_end(arg_ptr);
     }
 
-    if(fPrintToDebugFile)
-    {
+    if(fPrintToDebugFile) {
         // print to debug.log
         static FILE* fileout = NULL;
 
-        if (!fileout)
-        {
+        if (!fileout) {
             char pszFile[MAX_PATH+100];
             GetDataDir(pszFile);
-            strlcat(pszFile, "/debug.log", sizeof(pszFile));
+            strlcat(pszFile, "/debug_para.log", sizeof(pszFile));
             fileout = fopen(pszFile, "a");
             if (fileout) setbuf(fileout, NULL); // unbuffered
         }
-        if (fileout)
-        {
+        if (fileout) {
             static bool fStartedNewLine = true;
 
             // Debug print useful for profiling
@@ -277,8 +295,7 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
     }
 
 #ifdef __WXMSW__
-    if (fPrintToDebugger)
-    {
+    if (fPrintToDebugger) {
         static CCriticalSection cs_OutputDebugStringF;
 
         // accumulate a line at a time
@@ -293,8 +310,7 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
             int limit = END(pszBuffer) - pend - 2;
             int ret = _vsnprintf(pend, limit, pszFormat, arg_ptr);
             va_end(arg_ptr);
-            if (ret < 0 || ret >= limit)
-            {
+            if (ret < 0 || ret >= limit) {
                 pend = END(pszBuffer) - 2;
                 *pend++ = '\n';
             }
@@ -303,8 +319,7 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
             *pend = '\0';
             char* p1 = pszBuffer;
             char* p2;
-            while (p2 = strchr(p1, '\n'))
-            {
+            while (p2 = strchr(p1, '\n')) {
                 p2++;
                 char c = *p2;
                 *p2 = '\0';
@@ -322,34 +337,22 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
 }
 
 
-string strprintf(const char* format, ...)
+string strprintf(const char* fmt, ...)
 {
-    char buffer[50000];
-    char* p = buffer;
-    int limit = sizeof(buffer);
-    int ret;
-    loop
-    {
-        va_list arg_ptr;
-        va_start(arg_ptr, format);
-        ret = _vsnprintf(p, limit, format, arg_ptr);
-        va_end(arg_ptr);
-        if (ret >= 0 && ret < limit)
-            break;
-        if (p != buffer)
-            delete[] p;
-        limit *= 2;
-        p = new char[limit];
-        if (p == NULL)
-            throw std::bad_alloc();
-    }
-    string str(p, p+ret);
-    if (p != buffer)
-        delete[] p;
-    return str;
+    va_list args;
+
+    va_start(args, fmt);
+    int sz = std::vsnprintf(nullptr, 0, fmt, args);
+    va_end(args);
+
+    std::string buf(sz, 0);
+
+    va_start(args, fmt);
+    std::vsnprintf(&buf[0], sz + 1, fmt, args);
+    va_end(args);
+
+    return buf;
 }
-
-
 
 void ParseString(const string& str, char c, vector<string>& v)
 {
@@ -580,7 +583,8 @@ void PrintException(std::exception* pex, const char* pszThread)
     printf("\n\n************************\n%s\n", pszMessage);
     fprintf(stderr, "\n\n************************\n%s\n", pszMessage);
     strMiscWarning = pszMessage;
-    //
+    
+
     //throw;
 }
 
@@ -1034,5 +1038,14 @@ bool CCriticalSection::TryEnter(const char*, const char*, int)
     bool result = mutex.try_lock();
     return result;
 }
+
+char pcstName[] = "cs_main";
+
+template<>
+string CCriticalBlockT<pcstName>::_file = "";
+
+template<>
+int CCriticalBlockT<pcstName>::_nLine = 0;
+
 
 #endif /* DEBUG_LOCKORDER */

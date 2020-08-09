@@ -1,4 +1,4 @@
-#Copyright 2016-2019 hyperchain.net (Hyperchain)
+#Copyright 2016-2020 hyperchain.net (Hyperchain)
 #Distributed under the MIT software license, see the accompanying
 #file COPYING or https://opensource.org/licenses/MIT.
 
@@ -84,14 +84,14 @@ FILE(GLOB main_HEAD "${HC_DIR}/*.h")
 
 list(FILTER main_SRC EXCLUDE REGEX ".*main.cpp$")
 
-#
-#
+#HC: unix下全局变量模块间共享
+#HC: Windows下全局变量模块间隔离
 if(NOT WIN32)
 list(FILTER main_SRC EXCLUDE REGEX "newLog.cpp")
 endif()
 
-FILE(GLOB node_SRC "${HC_DIR}/node/UInt128.cpp")
-FILE(GLOB node_HEAD "${HC_DIR}/node/UInt128.h")
+FILE(GLOB node_SRC "${HC_DIR}/node/UInt128.cpp" "${HC_DIR}/node/HCMQBroker.cpp")
+FILE(GLOB node_HEAD "${HC_DIR}/node/UInt128.h" "${HC_DIR}/node/HCMQBroker.h")
 
 FILE(GLOB db_SRC "${HC_DIR}/db/dbmgr.cpp" "${HC_DIR}/db/HyperchainDB.cpp")
 FILE(GLOB db_HEAD "${HC_DIR}/db/dbmgr.h" "${HC_DIR}/db/HyperchainDB.h")
@@ -162,6 +162,8 @@ endif()
 
 target_link_libraries(${PROJECT_NAME} cpprestsdk::cpprest OpenSSL::Crypto ${BerkeleyDB_LIBRARIES} ${SQLITE3_LIBRARIES})
 target_link_libraries(${PROJECT_NAME} Boost::system Boost::program_options Boost::serialization Boost::filesystem Boost::thread)
+target_link_libraries(${PROJECT_NAME} cppzmq libzmq cppzmq-static libzmq-static)
+target_link_libraries(${PROJECT_NAME} ${Libcopp_LIBRARIES})
 
 
 configure_file (

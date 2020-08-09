@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -39,11 +39,24 @@ public:
         CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
         NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
 
-        string msgbuf;
-        if (sp && sp->GetLocalHIDsection(msgbuf)) {
-            DataBuffer<PullChainSpaceRspTask> datamsg(std::move(msgbuf));
-            nodemgr->sendTo(_sentnodeid, datamsg);
+        vector<string> localHIDsection;
+        sp->GetLocalHIDsection(localHIDsection);
+        if (localHIDsection.empty())
+            return;
+
+        string msgbuf = "BlockID=";
+        for (auto &li : localHIDsection) {
+            msgbuf += li;
+            msgbuf += ";";
         }
+
+        uint64 headerID = sp->GetHeaderHashCacheLatestHID();
+
+        msgbuf += "HeaderID=";
+        msgbuf += to_string(headerID);
+
+        DataBuffer<PullChainSpaceRspTask> datamsg(std::move(msgbuf));
+        nodemgr->sendTo(_sentnodeid, datamsg);
     }
 
     void execRespond() override
@@ -51,7 +64,7 @@ public:
         string msgbuf(_payload, _payloadlen);
         CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
         sp->AnalyzeChainSpaceData(msgbuf, _sentnodeid.ToHexString());
-        sp->SyncLatestHyperBlock();
+        //sp->SyncLatestHyperBlock();
     }
 };
 
@@ -71,8 +84,8 @@ public:
 
     void execRespond() override
     {
-        TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-        taskpool->put(std::make_shared<PullChainSpaceRspTask>(_sentnodeid));
+        PullChainSpaceRspTask task(_sentnodeid);
+        task.exec();
     }
 
 };

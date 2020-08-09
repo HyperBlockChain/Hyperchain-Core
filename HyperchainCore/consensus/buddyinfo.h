@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -25,9 +25,10 @@ DEALINGS IN THE SOFTWARE.
 #include "headers/inter_public.h"
 #include "headers/commonstruct.h"
 #include "utility/MutexObj.h"
+#include "node/zmsg.h"
+#include "node/mdp.h"
 #include "p2pprotocol.h"
 #include "node/ITask.hpp"
-#include <boost/signals2.hpp>
 
 #include <thread>
 #include <memory>
@@ -37,6 +38,7 @@ DEALINGS IN THE SOFTWARE.
 #include <unordered_map>
 using namespace std;
 
+class zmsg;
 enum _enodestate
 {
     IDLE = 0,
@@ -133,110 +135,73 @@ private:
 
 typedef struct _tp2pmanagerstatus
 {
+    std::thread::id threadid;
     bool bStartGlobalFlag;
 
     std::atomic<bool> bHaveOnChainReq;
     std::atomic<uint64> uiConsensusBlockNum;
-    uint16 usBuddyPeerCount;
     uint16 uiNodeState;
-    uint64 uiSendRegisReqNum;
-    uint64 uiRecvRegisReqNum;
-    uint64 uiSendConfirmingRegisReqNum;
-    uint64 uiRecvConfirmingRegisReqNum;
     T_LOCALBLOCK tPreLocalBlock;
     T_PEERADDRESS tLocalBuddyAddr;
 
-    CMutexObj		MuxCycleQueueTask;
-    CycleQueue		CycleQueueTask;
-
-    CMutexObj		 MuxlistOnChainReq;
     LIST_T_LOCALCONSENSUS listOnChainReq;
 
-    CMutexObj		 MuxlistLocalBuddyChainInfo;
     LIST_T_LOCALCONSENSUS listLocalBuddyChainInfo;
 
-    CMutexObj		 MuxlistGlobalBuddyChainInfo;
     LIST_LIST_GLOBALBUDDYINFO listGlobalBuddyChainInfo;
 
-    CMutexObj		 MuxlistRecvLocalBuddyRsp;
     LIST_T_BUDDYINFO  listRecvLocalBuddyRsp;
 
-    CMutexObj		 MuxlistCurBuddyRsp;
     LIST_T_BUDDYINFOSTATE listCurBuddyRsp;
 
-    CMutexObj		 MuxlistRecvLocalBuddyReq;
     LIST_T_BUDDYINFO  listRecvLocalBuddyReq;
 
-    CMutexObj		 MuxlistCurBuddyReq;
     LIST_T_BUDDYINFOSTATE listCurBuddyReq;
 
-    CMutexObj			MuxMapSearchOnChain;
     MAP_T_SEARCHONCHAIN mapSearchOnChain;
-
-    uint64 uiSendPoeNum;
-    uint64 uiRecivePoeNum;
 
     T_STRUCTBUDDYINFO tBuddyInfo;
 
-    CMutexObj		 MuxMulticastNodes;
-    vector<CUInt128> MulticastNodes;
-
-    void clearStatus();
+    void ClearStatus();
 
     _tp2pmanagerstatus()
     {
-        clearStatus();
+        ClearStatus();
     }
 
     bool StartGlobalFlag()const;
 
     bool HaveOnChainReq()const;
 
-    //
+    
+
     T_SHA256 GetConsensusPreHyperBlockHash()const;
 
-    uint16 GetBuddyPeerCount()const;
-
     uint16 GetNodeState()const;
-
-    uint64 GetSendRegisReqNum()const;
-
-    uint64 GetRecvRegisReqNum()const;
-
-    uint64 GetSendConfirmingRegisReqNum()const;
-
-    uint64 GetRecvConfirmingRegisReqNum()const;
 
     uint64 GettTimeOfConsensus();
     CONSENSUS_PHASE GetCurrentConsensusPhase() const;
 
     T_PEERADDRESS GetLocalBuddyAddr()const;
 
-    uint64 GetSendPoeNum()const;
+    enum class SERVICE : short
+    {
+        GetListOnChainReqCount = 80,
+        RequestOnChain,
+        TrackLocalBlock,
+    };
 
-    void SetSendPoeNum(uint64 num);
+    bool ReplyMsg(int t, zmsg *msg);
 
-    LIST_T_LOCALCONSENSUS& GetListOnChainReq();
+
+    size_t GetListOnChainReqCount();
+    void RequestOnChain(const T_LOCALCONSENSUS& LocalConsensusInfo);
 
     void SetStartGlobalFlag(bool flag);
 
     void SetHaveOnChainReq(bool haveOnChainReq);
 
     void SetNodeState(uint16 state);
-
-    void SetSendRegisReqNum(uint64 num);
-
-    void SetRecvRegisReqNum(uint64 num);
-
-    void SetSendConfirmingRegisReqNum(uint64 num);
-
-    void SetRecvConfirmingRegisReqNum(uint64 num);
-
-    void SetGlobalBuddyAddr(T_PEERADDRESS addr);
-
-    uint64 GetRecvPoeNum()const;
-
-    void SetRecvPoeNum(uint64 num);
 
     T_STRUCTBUDDYINFO GetBuddyInfo()const;
 
@@ -245,30 +210,29 @@ typedef struct _tp2pmanagerstatus
     void SetMaxBlockNum(uint64 num);
     void SetPreHyperBlock(T_HYPERBLOCK&& h);
 
-    void SetMulticastNodes();
-    void ClearMulticastNodes();
-    vector<CUInt128> GetMulticastNodes();
+    void GetMulticastNodes(vector<CUInt128> &MulticastNodes);
 
-    void updateOnChainingState(const T_HYPERBLOCK& hyperblock);
+    void UpdateOnChainingState(const T_HYPERBLOCK& hyperblock);
 
     bool ApplicationCheck(T_HYPERBLOCK& hyperblock);
-    bool ApplicationAccept(T_HYPERBLOCK& hyperblock);
+    bool ApplicationAccept(uint32_t hidFork,T_HYPERBLOCK& hyperblock, bool isLatest);
 
-    void updateLocalBuddyBlockToLatest();
+    void UpdateLocalBuddyBlockToLatest(uint64 prehyperblockid, const T_SHA256& preHyperBlockHash);
 
-    void cleanConsensusEnv();
+    void CleanConsensusEnv();
 
-    //
-    void trackLocalBlock(const T_LOCALBLOCK& localblock);
-    void initOnChainingState(uint64 hid);
+    
 
-    void setAppCallback(const T_APPTYPE& app, const CONSENSUSNOTIFY& notify);
-    void removeAppCallback(const T_APPTYPE& app);
+    void TrackLocalBlock(const T_LOCALBLOCK& localblock);
+    void InitOnChainingState(uint64 hid);
+    void RehandleOnChainingState(uint64 hid);  
+
+    void SetAppCallback(const T_APPTYPE& app, const CONSENSUSNOTIFY& notify);
+    void RemoveAppCallback(const T_APPTYPE& app);
 
     template<cbindex I, typename... Args>
-    bool allAppCallback(Args&... args)
+    bool AllAppCallback(Args&... args)
     {
-        std::lock_guard<std::recursive_mutex> lck(_muxmapcbfn);
         for (auto appnoti : _mapcbfn) {
             auto fn = std::get<static_cast<size_t>(I)>(appnoti.second);
             if (fn) {
@@ -279,11 +243,12 @@ typedef struct _tp2pmanagerstatus
     }
 
     template<cbindex I, typename... Args>
-    CBRET appCallback(const T_APPTYPE& app, Args&... args)
+    CBRET AppCallback(const T_APPTYPE& app, Args&... args)
     {
-        //
-        //
-        std::lock_guard<std::recursive_mutex> lck(_muxmapcbfn);
+        
+
+        
+
         if (_mapcbfn.count(app)) {
             auto& noti = _mapcbfn.at(app);
             auto fn = std::get<static_cast<size_t>(I)>(noti);
@@ -294,26 +259,15 @@ typedef struct _tp2pmanagerstatus
         return CBRET::UNREGISTERED;
     }
 
-    using FnHyperBlockUpdated = boost::function<void(const T_HYPERBLOCK&)>;
-    void RegisterHyperBlockSignal(FnHyperBlockUpdated f) {
-        SignalHyperBlockUpdated.connect(f);
-    }
-    void RemoveHyperBlockSignal(FnHyperBlockUpdated f) {
-        SignalHyperBlockUpdated.disconnect(&f);
-    }
-
-    boost::signals2::signal<void(const T_HYPERBLOCK & h)> SignalHyperBlockUpdated;
 private:
 
     void ToAppPayloads(const T_HYPERBLOCK& hyperblock, map<T_APPTYPE, vector<T_PAYLOADADDR>>& mapPayload);
 
 private:
 
-    std::recursive_mutex _muxmapcbfn;
     unordered_map<T_APPTYPE, CONSENSUSNOTIFY> _mapcbfn;
 
 }T_P2PMANAGERSTATUS, * T_PP2PMANAGERSTATUS;
 
 
 //////////////////////////////////////////////////////////////////////////
-extern T_P2PMANAGERSTATUS* g_tP2pManagerStatus;

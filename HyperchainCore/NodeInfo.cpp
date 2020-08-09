@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -23,15 +23,15 @@ DEALINGS IN THE SOFTWARE.
 
 string CNodeInfo::GetKadId()
 {
-	return m_strKadId;
+    return m_strKadId;
 }
 
 int CNodeInfo::GetIP()
 {
-	return m_nIP;
+    return m_nIP;
 }
 
 int CNodeInfo::GetPort()
 {
-	return m_nPort;
+    return m_nPort;
 }

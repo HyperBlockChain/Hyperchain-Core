@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -29,6 +29,7 @@ SOFTWARE.
 #include "headers.h"
 #include "db.h"
 #include "net.h"
+#include "util.h"
 #include <boost/filesystem.hpp>
 #include <boost/filesystem/fstream.hpp>
 
@@ -51,9 +52,15 @@ static bool fDbEnvInit = false;
 DbEnv* dbenv= new DbEnv(0);
 static map<string, int> mapFileUseCount;
 static map<string, Db*> mapDb;
-extern map<uint256, CBlock> mapBlocks;
+
+thread_local int tls_db_opened_count = 0;
+thread_local CTxDB *tls_txdb_instance = nullptr;
+
+extern CBlockCacheLocator mapBlocks;
+
 
 extern void RSyncRemotePullHyperBlock(uint32_t hid, string nodeid = "");
+extern bool SwitchChainTo(CBlockIndexSP pindexBlock);
 
 class CDBInit
 {
@@ -243,14 +250,14 @@ void DBFlush(bool fShutdown)
 // CTxDB
 //
 
-bool CTxDB::ReadTxIndex(uint256 hash, CTxIndex& txindex)
+bool CTxDB::ReadTxIndex(const uint256& hash, CTxIndex& txindex)
 {
     assert(!fClient);
     txindex.SetNull();
     return Read(make_pair(string("tx"), hash), txindex);
 }
 
-bool CTxDB::UpdateTxIndex(uint256 hash, const CTxIndex& txindex)
+bool CTxDB::UpdateTxIndex(const uint256& hash, const CTxIndex& txindex)
 {
     assert(!fClient);
     return Write(make_pair(string("tx"), hash), txindex);
@@ -274,13 +281,13 @@ bool CTxDB::EraseTxIndex(const CTransaction& tx)
     return Erase(make_pair(string("tx"), hash));
 }
 
-bool CTxDB::ContainsTx(uint256 hash)
+bool CTxDB::ContainsTx(const uint256& hash)
 {
     assert(!fClient);
     return Exists(make_pair(string("tx"), hash));
 }
 
-bool CTxDB::ReadOwnerTxes(uint160 hash160, int nMinHeight, vector<CTransaction>& vtx)
+bool CTxDB::ReadOwnerTxes(const uint160& hash160, int nMinHeight, vector<CTransaction>& vtx)
 {
     assert(!fClient);
     vtx.clear();
@@ -334,7 +341,7 @@ bool CTxDB::ReadOwnerTxes(uint160 hash160, int nMinHeight, vector<CTransaction>&
     return true;
 }
 
-bool CTxDB::ReadDiskTx(uint256 hash, CTransaction& tx, CTxIndex& txindex)
+bool CTxDB::ReadDiskTx(const uint256& hash, CTransaction& tx, CTxIndex& txindex)
 {
     assert(!fClient);
     tx.SetNull();
@@ -343,21 +350,26 @@ bool CTxDB::ReadDiskTx(uint256 hash, CTransaction& tx, CTxIndex& txindex)
     return (tx.ReadFromDisk(txindex.pos));
 }
 
-bool CTxDB::ReadDiskTx(uint256 hash, CTransaction& tx)
+bool CTxDB::ReadDiskTx(const uint256& hash, CTransaction& tx)
 {
     CTxIndex txindex;
     return ReadDiskTx(hash, tx, txindex);
 }
 
-bool CTxDB::ReadDiskTx(COutPoint outpoint, CTransaction& tx, CTxIndex& txindex)
+bool CTxDB::ReadDiskTx(COutPoint& outpoint, CTransaction& tx, CTxIndex& txindex)
 {
     return ReadDiskTx(outpoint.hash, tx, txindex);
 }
 
-bool CTxDB::ReadDiskTx(COutPoint outpoint, CTransaction& tx)
+bool CTxDB::ReadDiskTx(COutPoint& outpoint, CTransaction& tx)
 {
     CTxIndex txindex;
     return ReadDiskTx(outpoint.hash, tx, txindex);
+}
+
+bool CTxDB::ReadBlockIndex(const uint256& hash, CDiskBlockIndex& blockindex)
+{
+    return Read(make_pair(string("blockindex"), hash), blockindex);
 }
 
 bool CTxDB::WriteBlockIndex(const CDiskBlockIndex& blockindex)
@@ -380,7 +392,8 @@ bool CTxDB::WriteHashBestChain(uint256 hashBestChain)
     return Write(string("hashBestChain"), hashBestChain);
 }
 
-//
+
+
 bool CTxDB::ReadAddrMaxChain(T_LOCALBLOCKADDRESS& addrMax)
 {
     string strAddrMax;
@@ -391,7 +404,8 @@ bool CTxDB::ReadAddrMaxChain(T_LOCALBLOCKADDRESS& addrMax)
     return ret;
 }
 
-//
+
+
 bool CTxDB::WriteAddrMaxChain(const T_LOCALBLOCKADDRESS& addrMax)
 {
     string str = addrMax.tostring();
@@ -410,23 +424,131 @@ bool CTxDB::WriteBestInvalidWork(CBigNum bnBestInvalidWork)
     return Write(string("bnBestInvalidWork"), bnBestInvalidWork);
 }
 
-CBlockIndex static * InsertBlockIndex(uint256 hash)
+static CBlockIndexSP InsertBlockIndex(uint256 hash, int nHeight)
 {
     if (hash == 0)
         return NULL;
 
     // Return existing
-    map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(hash);
-    if (mi != mapBlockIndex.end())
-        return (*mi).second;
+    auto mi = mapBlockIndex.fromcache(hash);
+    if (mi)
+        return mi;
 
     // Create new
-    CBlockIndex* pindexNew = new CBlockIndex();
+    CBlockIndexSP pindexNew = std::make_shared<CBlockIndex>();
     if (!pindexNew)
         throw runtime_error("LoadBlockIndex() : new CBlockIndex failed");
-    mi = mapBlockIndex.insert(make_pair(hash, pindexNew)).first;
-    pindexNew->phashBlock = &((*mi).first);
+    pindexNew->nHeight = nHeight;
+    auto miter = mapBlockIndex.insert(make_pair(hash, pindexNew),false).first;
+    pindexNew->hashBlock = ((*miter).first);
 
+    return miter->second;
+}
+
+bool CTxDB::CheckBestBlockIndex(CBlockIndexSP pIndex)
+{
+    CHyperChainSpace* hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
+    if (pIndex && hyperchainspace) {
+        
+
+        uint64 nPullingHID = 0;
+        for (; pIndex;) {
+
+            uint64 nHID = pIndex->nPrevHID;
+            T_HYPERBLOCK h;
+            if (!hyperchainspace->getHyperBlock(nHID, h)) {
+                WARNING_FL("Lack of hyper block: %d, Please pull from remote nodes", nHID);
+
+                RSyncRemotePullHyperBlock(nHID);
+                pIndex = pIndex->pprev();
+                continue;
+            }
+            T_SHA256 hash = h.GetHashSelf();
+
+            
+
+            if (pIndex->nPrevHID != nHID ||
+                pIndex->hashPrevHyperBlock != uint256S(hash.toHexString())) {
+                pIndex = pIndex->pprev();
+                continue;
+            }
+
+            if (pIndex->addr.isValid()) {
+                string payload;
+                if (!hyperchainspace->GetLocalBlockPayload(pIndex->addr, payload)) {
+                    
+
+                    WARNING_FL("Lack of block : %s contained by hyper block: %d, Please pull from remote nodes",
+                        pIndex->addr.tostring().c_str(), pIndex->addr.hid);
+                    RSyncRemotePullHyperBlock(pIndex->addr.hid);
+                    pIndex = pIndex->pprev();
+                    continue;
+                }
+                CBlock tailblock;
+                if (!ResolveBlock(tailblock, payload.c_str(), payload.length())) {
+                    ERROR_FL("Failed to resolve paracoin block: %s", pIndex->addr.tostring().c_str());
+                    pIndex = pIndex->pprev();
+                    continue;
+                }
+                if (tailblock.GetHash() != pIndex->GetBlockHash()) {
+                    
+
+                    uint256 hash = pIndex->GetBlockHash();
+                    pIndex = pIndex->pprev();
+
+                    auto iter = mapBlockIndex[hash];
+                    if (iter) {
+                        mapBlockIndex.erase(hash);
+                    }
+
+                    
+
+                    //EraseBlockIndex(hash);
+                    continue;
+                }
+                
+
+                break;
+            }
+            else {
+                pIndex = pIndex->pprev();
+            }
+        }
+
+        pindexBest = pIndex;
+        if (!pindexBest) {
+            pindexBest = pindexGenesisBlock;
+        }
+        hashBestChain = pindexBest->GetBlockHash();
+        nBestHeight = pindexBest->nHeight;
+        bnBestChainWork = pindexBest->bnChainWork;
+
+        printf("CheckBestBlockIndex(): hashBestChain=%s  height=%d\n", hashBestChain.ToString().substr(0, 20).c_str(), nBestHeight);
+    }
+    return true;
+}
+
+CBlockIndexSP CTxDB::ConstructBlockIndex(CDiskBlockIndex& diskindex)
+{
+    CBlockIndexSP pindexNew = InsertBlockIndex(diskindex.GetBlockHash(), diskindex.nHeight);
+    //pindexNew->pprev = InsertBlockIndex(diskindex.hashPrev, diskindex.nHeight - 1);
+    //pindexNew->pnext = InsertBlockIndex(diskindex.hashNext, diskindex.nHeight + 1);
+    pindexNew->hashPrev = diskindex.hashPrev;
+    pindexNew->hashNext = diskindex.hashNext;
+    
+
+    pindexNew->addr = diskindex.addr;
+    pindexNew->nVersion = diskindex.nVersion;
+    pindexNew->hashMerkleRoot = diskindex.hashMerkleRoot;
+    pindexNew->nTime = diskindex.nTime;
+    pindexNew->nBits = diskindex.nBits;
+    pindexNew->nNonce = diskindex.nNonce;
+    pindexNew->nSolution = diskindex.nSolution;
+    pindexNew->ownerNodeID = diskindex.ownerNodeID;
+    pindexNew->nPrevHID = diskindex.nPrevHID;
+    pindexNew->hashExternData = diskindex.hashExternData;
+    pindexNew->hashPrevHyperBlock = diskindex.hashPrevHyperBlock;
+    pindexNew->bnChainWork = diskindex.bnChainWork;
     return pindexNew;
 }
 
@@ -462,26 +584,7 @@ bool CTxDB::LoadBlockIndex()
             ssValue >> diskindex;
 
             // Construct block index object
-            CBlockIndex* pindexNew = InsertBlockIndex(diskindex.GetBlockHash());
-            pindexNew->pprev          = InsertBlockIndex(diskindex.hashPrev);
-            pindexNew->pnext          = InsertBlockIndex(diskindex.hashNext);
-            pindexNew->nFile          = diskindex.nFile;
-            pindexNew->nBlockPos      = diskindex.nBlockPos;
-            pindexNew->nHeight        = diskindex.nHeight;
-            //
-            pindexNew->addr           = diskindex.addr;
-            pindexNew->nVersion       = diskindex.nVersion;
-            pindexNew->hashMerkleRoot = diskindex.hashMerkleRoot;
-            pindexNew->nTime          = diskindex.nTime;
-            pindexNew->nBits          = diskindex.nBits;
-            pindexNew->nNonce         = diskindex.nNonce;
-            pindexNew->nSolution      = diskindex.nSolution;
-            pindexNew->ownerNodeID    = diskindex.ownerNodeID;
-            pindexNew->nPrevHID       = diskindex.nPrevHID;
-            pindexNew->hashExternData = diskindex.hashExternData;
-            pindexNew->hashPrevHyperBlock      = diskindex.hashPrevHyperBlock;
-
-            memcpy(pindexNew->nReserved, diskindex.nReserved, sizeof(pindexNew->nReserved));
+            CBlockIndexSP pindexNew = ConstructBlockIndex(diskindex);
 
             // Watch for genesis block
             if (pindexGenesisBlock == NULL && diskindex.GetBlockHash() == hashGenesisBlock)
@@ -498,207 +601,161 @@ bool CTxDB::LoadBlockIndex()
     pcursor->close();
 
     // Calculate bnChainWork
-    vector<pair<int, CBlockIndex*> > vSortedByHeight;
+    vector<pair<int, CBlockIndexSP> > vSortedByHeight;
     vSortedByHeight.reserve(mapBlockIndex.size());
-    BOOST_FOREACH(const PAIRTYPE(uint256, CBlockIndex*)& item, mapBlockIndex)
+    BOOST_FOREACH(const PAIRTYPE(uint256, CBlockIndexSP)& item, mapBlockIndex)
     {
-        CBlockIndex* pindex = item.second;
+        CBlockIndexSP pindex = item.second;
         vSortedByHeight.push_back(make_pair(pindex->nHeight, pindex));
     }
     sort(vSortedByHeight.begin(), vSortedByHeight.end());
-    BOOST_FOREACH(const PAIRTYPE(int, CBlockIndex*)& item, vSortedByHeight)
+    BOOST_FOREACH(const PAIRTYPE(int, CBlockIndexSP)& item, vSortedByHeight)
     {
-        CBlockIndex* pindex = item.second;
-        pindex->bnChainWork = (pindex->pprev ? pindex->pprev->bnChainWork : 0) + pindex->GetBlockWork();
+        CBlockIndexSP pindex = item.second;
+        auto spprev = pindex->pprev();
+        pindex->bnChainWork = (spprev ? spprev->bnChainWork : 0) + pindex->GetBlockWork();
     }
 
 
-    //
+    
+
     // Load hashBestChain pointer to end of best chain
     if (!ReadHashBestChain(hashBestChain))
     {
-        if (pindexGenesisBlock == NULL)
+        if (pindexGenesisBlock == NULL) {
             return true;
-        return ERROR_FL("hashBestChain not loaded");
+        }
+        hashBestChain = pindexGenesisBlock->GetBlockHash();
     }
-    if (!mapBlockIndex.count(hashBestChain))
-        return ERROR_FL("hashBestChain not found in the block index");
+    if (!mapBlockIndex.count(hashBestChain)) {
+        ERROR_FL("hashBestChain not found in the block index");
+        hashBestChain = hashGenesisBlock;
+    }
 
     pindexBest = mapBlockIndex[hashBestChain];
 
-    //
+    
+
     //auto maxindex = std::max_element(mapBlockIndex.begin(), mapBlockIndex.end());
-    CHyperChainSpace* hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
-    if (pindexBest && hyperchainspace) {
-        //
-        uint64 nPullingHID = 0;
-        for (;pindexBest;) {
+    cout << "Paracoin: verifying best block...\n";
+    CheckBestBlockIndex(pindexBest);
 
-            uint64 nHID = pindexBest->nPrevHID;
-            T_HYPERBLOCK h;
-            if (!hyperchainspace->getHyperBlockFromDB(nHID, h)) {
-                WARNING_FL("Lack of hyper block: %d, Please pull from remote nodes", nHID);
+    
 
-                RSyncRemotePullHyperBlock(nHID);
-                pindexBest = pindexBest->pprev;
-                continue;
-            }
-            T_SHA256 hash = h.GetHashSelf();
-
-            //
-            if (pindexBest->nPrevHID != nHID ||
-                pindexBest->hashPrevHyperBlock != uint256S(hash.toHexString())) {
-                pindexBest = pindexBest->pprev;
-                continue;
-            }
-            
-            if (pindexBest->addr.isValid()) {
-                string payload;
-                if (!hyperchainspace->GetLocalBlockPayload(pindexBest->addr, payload)) {
-                    //
-                    WARNING_FL("Lack of block : %s contained by hyper block: %d, Please pull from remote nodes", 
-                                pindexBest->addr.tostring().c_str(), pindexBest->addr.hid);
-                    RSyncRemotePullHyperBlock(pindexBest->addr.hid);
-                    pindexBest = pindexBest->pprev;
-                    continue;
-                }
-                CBlock tailblock;
-                if (!ResolveBlock(tailblock, payload.c_str(), payload.length())) {
-                    ERROR_FL("Failed to resolve paracoin block: %s", pindexBest->addr.tostring().c_str());
-                    pindexBest = pindexBest->pprev;
-                    continue;
-                }
-                if (tailblock.GetHash() != pindexBest->GetBlockHash()) {
-                    pindexBest = pindexBest->pprev;
-                    continue;
-                }
-                //
-                break;
-            }
-            else {
-                pindexBest = pindexBest->pprev;
-            }
-        }
-
-        if (!pindexBest) {
-            pindexBest = pindexGenesisBlock;
-        }
-        hashBestChain = pindexBest->GetBlockHash();
-        nBestHeight = pindexBest->nHeight;
-        bnBestChainWork = pindexBest->bnChainWork;
-        printf("LoadBlockIndex(): hashBestChain=%s  height=%d\n", hashBestChain.ToString().substr(0, 20).c_str(), nBestHeight);
-    }
-
-    //
     if (!ReadAddrMaxChain(addrMaxChain)) {
         addrMaxChain = pindexBest ? pindexBest->addr : T_LOCALBLOCKADDRESS();
     }
 
     // Load bnBestInvalidWork, OK if it doesn't exist
-    //
+    
+
     ReadBestInvalidWork(bnBestInvalidWork);
 
-    cout << "Paracoin: verify blocks in the best chain...\n";
-    CBlockIndex* pindexFork = NULL;
-    for (CBlockIndex* pindex = pindexBest; pindex && pindex->pprev; pindex = pindex->pprev)
-    {
-        if (pindex->nHeight < nBestHeight-1500 && !mapArgs.count("-checkblocks"))
+    cout << "Paracoin: verifying blocks in the best chain...\n";
+
+    
+
+    int nCurrHeight = nBestHeight - 1;
+    CBlockIndexSP pindexFork = nullptr;
+    CBlockIndexSP pindex = pindexBest->pprev();
+    CBlockIndexSP pprevindex;
+    if(pindex)
+        pprevindex = pindex->pprev();
+    for (; pindex && pprevindex; pindex = pprevindex, pprevindex = pindex->pprev(), nCurrHeight--) {
+
+        if (pindex->nTime == 0 || pindex->nSolution.size() == 0) {
+            printf("LoadBlockIndex() : *** error block at %d, hash=%s\n", pindex->nHeight, pindex->GetBlockHash().ToString().c_str());
+            pindexFork = pprevindex;
+            continue;
+        }
+
+        if (pindex->nHeight < nBestHeight - 1500 && !mapArgs.count("-checkblocks"))
             break;
 
-        //
-        if (!pindex->addr.isValid() && mapBlocks.count(pindex->GetBlockHash())) {
+        if (!pindex->addr.isValid() && !mapBlocks.contain(pindex->GetBlockHash())) {
             continue;
         }
 
         CBlock block;
         if (!block.ReadFromDisk(pindex)) {
             printf("LoadBlockIndex() : *** cannot read block at %d, hash=%s\n", pindex->nHeight, pindex->GetBlockHash().ToString().c_str());
-            pindexFork = pindex->pprev;
+            pindexFork = pprevindex;
             continue;
-            //return ERROR_FL("CBlock.ReadFromDisk failed");
         }
-        if (!block.CheckBlock())
-        {
+
+        if (!block.CheckBlock()) {
             printf("LoadBlockIndex() : *** found bad block at %d, hash=%s\n", pindex->nHeight, pindex->GetBlockHash().ToString().c_str());
-            pindexFork = pindex->pprev;
+            pindexFork = pprevindex;
         }
     }
-    if (pindexFork)
-    {
+
+    if (pindex && !pindex->pprev() && nCurrHeight > 0) {
+        cout << "LoadBlockIndex(): block index is bad, To rebuild, please remove blkindex.dat and restart the program\n";
+        return false;
+
+        //pindexBest = pindexGenesisBlock;
+        //while (pindexBest && pindexBest->pnext) {
+        //    pindexBest = pindexBest->pnext;
+        //}
+        //CheckBestBlockIndex(pindexBest);
+    }
+
+    if (pindexFork) {
         // Reorg back to the fork
         printf("LoadBlockIndex() : *** moving best chain pointer back to block %d\n", pindexFork->nHeight);
-        CBlock block;
-        if (!block.ReadFromDisk(pindexFork))
+        if (!SwitchChainTo(pindexFork)) {
             return ERROR_FL("block.ReadFromDisk failed");
-        CTxDB txdb;
-        block.SetBestChain(txdb, pindexFork);
-
-        INFO_FL("Switch to: %d,hid:%d,%s, %s, BestIndex: %d hid:%d,%s, %s", pindexFork->nHeight,
-            pindexFork->nPrevHID,
-            pindexFork->addr.tostring().c_str(),
-            pindexFork->GetBlockHash().ToPreViewString().c_str(),
-            pindexBest->nHeight, pindexBest->nPrevHID,
-            pindexBest->addr.tostring().c_str(),
-            pindexBest->GetBlockHash().ToPreViewString().c_str());
+        }
     }
 
     return true;
-
 }
 
 //
 //CBlockDB
 //
 
-//
+
+
 bool CBlockDB::LoadBlockUnChained()
 {
-    // Get database cursor
-    Dbc* pcursor = GetCursor();
-    if (!pcursor)
-        return false;
+    mapBlocks.clear();
+    bool ret = Load("block", [](CDataStream& ssKey, CDataStream& ssValue) -> bool {
 
-    // Load mapBlockIndex
-    unsigned int fFlags = DB_SET_RANGE;
-    loop
-    {
-        // Read next record
-        CDataStream ssKey;
-        if (fFlags == DB_SET_RANGE)
-            ssKey << make_pair(string("block"), uint256(0));
-        CDataStream ssValue;
-        int ret = ReadAtCursor(pcursor, ssKey, ssValue, fFlags);
-        fFlags = DB_NEXT;
-        if (ret == DB_NOTFOUND)
-            break;
-        else if (ret != 0)
-            return false;
+        CBlock block;
+        ssValue >> block;
 
-        // Unserialize
-        string strType;
         uint256 hash;
-        ssKey >> strType;
+        ssKey >> hash;
+        assert(hash == block.GetHash());
 
-        if (strType == "block") {
-            CBlock block;
-            ssValue >> block;
-            ssKey >> hash;
-            assert(hash == block.GetHash());
-            mapBlocks[hash] = block;
-        }
-        else {
-            break;
-        }
-    }
-    pcursor->close();
-
-    return true;
+        mapBlocks.insert(hash);
+        return true;
+    });
+    return ret;
 }
 
+
+
+
+bool CBlockDB::LoadBlockUnChained(const uint256& hash, std::function<bool(CDataStream&, CDataStream&)> f)
+{
+    return Load("block",hash, f);
+}
+
+bool CBlockDB::ReadBlock(const uint256& hash, CBlock& block)
+{
+    return Read(make_pair(string("block"), hash), block);
+}
 
 bool CBlockDB::WriteBlock(const CBlock& block)
 {
     return Write(make_pair(string("block"), block.GetHash()), block);
+}
+
+bool CBlockDB::WriteBlock(const uint256& hash, const CBlock& block)
+{
+    return Write(make_pair(string("block"), hash), block);
 }
 
 bool CBlockDB::EraseBlock(uint256 hash)
@@ -706,7 +763,78 @@ bool CBlockDB::EraseBlock(uint256 hash)
     return Erase(make_pair(string("block"), hash));
 }
 
+//
+//CTxDB
+//
+bool CTxDB::ReadSP(const uint256& hash, CBlockIndexSP &blockindex)
+{
+    CDiskBlockIndex diskindex;
+    if (!ReadBlockIndex(hash, diskindex)) {
+        return false;
+    }
 
+    //Construct block index object
+    blockindex = ConstructBlockIndex(diskindex);
+
+    return true;
+}
+
+bool CTxDB::WriteSP(const CBlockIndex* blockindex)
+{
+    CBlockIndex idx = *blockindex;
+    CDiskBlockIndex diskindex(&idx);
+    return WriteBlockIndex(diskindex);
+}
+
+//
+//CBlockTripleAddressDB
+//
+bool CBlockTripleAddressDB::LoadBlockTripleAddress()
+{
+    Load("triaddr", [](CDataStream& ssKey, CDataStream& ssValue) -> bool {
+
+        BLOCKTRIPLEADDRESS blocktripleaddr;
+        ssValue >> blocktripleaddr;
+        uint256 hash;
+        ssKey >> hash;
+        LatestParaBlock::AddBlockTripleAddress(hash, blocktripleaddr);
+        return true;
+    });
+    return true;
+}
+
+bool CBlockTripleAddressDB::ReadHID(std::set<uint32_t>& setHID)
+{
+    Load("hid", [&setHID](CDataStream& ssKey, CDataStream& ssValue) -> bool {
+
+        uint32 hid;
+        ssValue >> hid;
+        setHID.insert(hid);
+        return true;
+    });
+
+    return true;
+}
+
+bool CBlockTripleAddressDB::WriteHID(uint32 hid)
+{
+    return Write(make_pair(string("hid"), hid), hid);
+}
+
+bool CBlockTripleAddressDB::ReadBlockTripleAddress(const uint256& hash, BLOCKTRIPLEADDRESS& addr)
+{
+    return Read(make_pair(string("triaddr"), hash), addr);
+}
+
+bool CBlockTripleAddressDB::WriteBlockTripleAddress(const uint256& hash, const BLOCKTRIPLEADDRESS& addr)
+{
+    return Write(make_pair(string("triaddr"), hash), addr);
+}
+
+bool CBlockTripleAddressDB::EraseBlockTripleAddress(const uint256& hash)
+{
+    return Erase(make_pair(string("triaddr"), hash));
+}
 
 
 //
@@ -969,7 +1097,8 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
             }
             else if (strType == "key" || strType == "wkey")
             {
-                //
+                
+
                 vector<unsigned char> vchPubKey;
                 ssKey >> vchPubKey;
                 CKey key;
@@ -1015,7 +1144,8 @@ int CWalletDB::LoadWallet(CWallet* pwallet)
             }
             else if (strType == "pool")
             {
-                //
+                
+
                 int64 nIndex;
                 ssKey >> nIndex;
                 pwallet->setKeyPool.insert(nIndex);

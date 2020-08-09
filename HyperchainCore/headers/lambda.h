@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -27,45 +27,45 @@ DEALINGS IN THE SOFTWARE.
 
 struct Cmpare
 {
-	bool operator()(const T_PPEERINFO &st1, const T_PPEERINFO  &st2) const
-	{
-		return (st1->GetTime() < st2->GetTime());
-	}
+    bool operator()(const T_PPEERINFO &st1, const T_PPEERINFO  &st2) const
+    {
+        return (st1->GetTime() < st2->GetTime());
+    }
 };
 
 
 struct CmpareRecvLocalBuddyReq
 {
-	bool operator()(const T_BUDDYINFO &st1, const T_BUDDYINFO &st2) const
-	{
-		return (st1.GetType() < st2.GetType());
-	}
+    bool operator()(const T_BUDDYINFO &st1, const T_BUDDYINFO &st2) const
+    {
+        return (st1.GetType() < st2.GetType());
+    }
 };
 
 struct CmpareOnChain
 {
-	bool operator()(const T_LOCALCONSENSUS &st1, const T_LOCALCONSENSUS  &st2) const
-	{
-		return (st1.GetLocalBlock().GetUUID() < st2.GetLocalBlock().GetUUID());
-	}
+    bool operator()(const T_LOCALCONSENSUS &st1, const T_LOCALCONSENSUS  &st2) const
+    {
+        return (st1.GetLocalBlock().GetUUID() < st2.GetLocalBlock().GetUUID());
+    }
 };
 struct CmpareOnChainLocal
 {
-	bool operator()(const T_LOCALBLOCK &st1, const T_LOCALBLOCK &st2) const
-	{
-		return (st1.GetUUID() < st2.GetUUID());
-	}
+    bool operator()(const T_LOCALBLOCK &st1, const T_LOCALBLOCK &st2) const
+    {
+        return (st1.GetUUID() < st2.GetUUID());
+    }
 };
 
 struct CmpareGlobalBuddy
 {
-	bool operator()(const LIST_T_LOCALCONSENSUS &st1, const LIST_T_LOCALCONSENSUS  &st2) const
-	{
-		auto itr1 = st1.begin();
-		auto itr2 = st2.begin();
+    bool operator()(const LIST_T_LOCALCONSENSUS &st1, const LIST_T_LOCALCONSENSUS  &st2) const
+    {
+        auto itr1 = st1.begin();
+        auto itr2 = st2.begin();
 
-		return ((*itr1).GetLocalBlock().GetUUID() < (*itr2).GetLocalBlock().GetUUID());
-	}
+        return ((*itr1).GetLocalBlock().GetUUID() < (*itr2).GetLocalBlock().GetUUID());
+    }
 };
 
 

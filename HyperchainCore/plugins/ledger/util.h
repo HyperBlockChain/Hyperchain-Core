@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -281,7 +281,6 @@ public:
 private:
     string _configfile;
 };
-
 
 // Wrapper to automatically initialize mutex
 class CCriticalSection

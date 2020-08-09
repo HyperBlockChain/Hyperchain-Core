@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -23,7 +23,6 @@ DEALINGS IN THE SOFTWARE.
 #include "../newLog.h"
 #include "Singleton.h"
 #include "NodeManager.h"
-#include "TaskThreadPool.h"
 #include "SearchNeighbourTask.h"
 #include "../wnd/common.h"
 
@@ -53,7 +52,8 @@ namespace SEED {
 
             minutes timespan = std::chrono::duration_cast<minutes>(curr - _tp);
             if (timespan.count() > 3) {
-                //
+                
+
                 return true;
             }
             return false;
@@ -97,68 +97,28 @@ namespace SEED {
         return i;
     }
 }
-///////////////////////////////////////////
-///////////////////////////////////////////
-int g_nTaskID = 1; // µ˜ ‘”√
-void AddIDToMsgBuf(int& nID, string& msgBuff)
-{
-    char szID[9];
-    sprintf(szID, "%08d", nID);
-    msgBuff.insert(0, 8, '0');
-    memcpy((void*)msgBuff.c_str(), szID, 8);
-    nID++;
-    nID = nID % 0x7fffffff;
-}
-void ParseIDMsgBuf(string input, int& nID, string& msgBuf)
-{
-    string szID = input.substr(0, 8);
-    msgBuf = input.substr(8, input.length() - 8);
-    sscanf(szID.c_str(), "%8d", &nID);
-}
 
 int SearchNeighbourRspTask::getPeerList(CUInt128 nodeid, const string& targetid, string& peerlist)
 {
     NodeManager* nodemgr = Singleton<NodeManager>::getInstance();
-    CKBuckets* kBuckets = nodemgr->GetKBuckets();
-    int nMaxNum = 100;
-    CUInt128 targetID = nodeid;// std::move(CUInt128(targetid));
     vector<CUInt128> vecResult;
-    int nNum = kBuckets->PickNeighbourNodes(nMaxNum, targetID, vecResult);
+    nodemgr->PickNeighbourNodes(CUInt128(targetid), 10, vecResult);
 
     return nodemgr->getPeerList(nodeid, vecResult, peerlist);
 }
 
-//
+
+
 void SearchNeighbourRspTask::exec()
 {
-    //
-    int nTaskID;
-    ParseIDMsgBuf(_msg, nTaskID, _msg);
-
     string nodeid(_fromNodeId.ToHexString());
     string targetNodeID = _msg.substr(0, 32);
-    string nodemsg = _msg.substr(32, _msg.length() - 32);
-    //	nodemgr->parseNode(nodemsg);
-
-    char logmsg[128] = { 0 };
-    snprintf(logmsg, 128, "Handling SearchNeighbourRspTask from peer:%s\n", nodeid.c_str());
-    //   g_console_logger->debug(logmsg);
 
     NodeManager* nodemgr = Singleton<NodeManager>::getInstance();
 
-    //---
-    HCNodeSH nodeClient = nodemgr->getNode(_fromNodeId);
     string msgbuf;
+    getPeerList(_fromNodeId, targetNodeID, msgbuf);
 
-    int num = getPeerList(_fromNodeId, targetNodeID, msgbuf);
-    //---------------------------
-
-    snprintf(logmsg, 128, "TaskID = %d found %d neighbours for peer:%s\n", nTaskID, num, nodeid.c_str());
-    g_console_logger->debug(logmsg);
-
-    //
-    AddIDToMsgBuf(nTaskID, msgbuf);
-    //---
     DataBuffer<SearchNeighbourRspTask> datamsgbuf(std::move(msgbuf));
     nodemgr->sendTo(_fromNodeId, datamsgbuf);
 }
@@ -166,22 +126,18 @@ void SearchNeighbourRspTask::exec()
 void SearchNeighbourRspTask::execRespond()
 {
     string msg = _payload;
-    //
-    int nTaskID;
-    ParseIDMsgBuf(_payload, nTaskID, msg);
-    // ---
 
     NodeManager* nodemgr = Singleton<NodeManager>::getInstance();
     NodeUPKeepThreadPool* nodeUpkeep = Singleton<NodeUPKeepThreadPool>::instance();
 
-    //
+    
+
     vector<CUInt128> vecNewNode;
     nodemgr->ParseNodeList(msg, vecNewNode);
-    nodeUpkeep->AddToPingList(vecNewNode); //
-    //--
-    nodeUpkeep->RemoveNodeFromPullList(_sentnodeid);
+    nodeUpkeep->AddToPingList(vecNewNode); 
 
-    g_console_logger->debug("SearchNeighbourRspTask::execRespond(), taskID ={} , Nodes Num = {} from peer= {}", nTaskID, vecNewNode.size(), _sentnodeid.ToHexString());
+
+    g_console_logger->debug("SearchNeighbourRspTask::execRespond(), Nodes Num = {} from peer= {}", vecNewNode.size(), _sentnodeid.ToHexString());
 }
 
 void SearchNeighbourTask::exec()
@@ -191,29 +147,26 @@ void SearchNeighbourTask::exec()
     if (toServer == 0)
         return;
 
-    //
-    CUInt128 _targetNodeId = nodemgr->myself()->getNodeId<CUInt128>();
+    
+
+    //CUInt128 _targetNodeId = nodemgr->myself()->getNodeId<CUInt128>();
+    CUInt128 _targetNodeId = _toNodeId;
 
     string msgbuf = nodemgr->myself()->serialize();
     string strID = _targetNodeId.ToHexString();
     msgbuf.insert(0, 32, '\0');
     memcpy((void*)msgbuf.c_str(), strID.c_str(), 32);
 
-    //
-    AddIDToMsgBuf(g_nTaskID, msgbuf);
-    //---
-
     DataBuffer<SearchNeighbourTask> datamsgbuf(std::move(msgbuf));
     nodemgr->sendTo(toServer, datamsgbuf);
 
-    g_console_logger->debug("SearchNeighbourTask::exec(), taskID ={} ,toID = {}, targetID = {}", g_nTaskID - 1, _toNodeId.ToHexString(), strID);
-
+    g_console_logger->debug("SearchNeighbourTask::exec(),toID = {}, targetID = {}", _toNodeId.ToHexString(), strID);
 }
 
 void SearchNeighbourTask::execRespond()
 {
-    TaskThreadPool* taskpool = Singleton<TaskThreadPool>::instance();
-    taskpool->put(make_shared<SearchNeighbourRspTask>(std::move(_sentnodeid), _payload));
+    SearchNeighbourRspTask tsk(std::move(_sentnodeid), _payload);
+    tsk.exec();
 }
 
 

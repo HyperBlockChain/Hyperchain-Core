@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -28,17 +28,20 @@ using namespace std;
 
 
 
-//
+
+
 class PingPongTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::PING_PONG> {
 public:
     using ITask::ITask;
 
-    PingPongTask(CUInt128&& toNodeId) : _toNodeId(std::move(toNodeId)) {}
+    PingPongTask(vector<CUInt128>& vNodes) : _vNodes(vNodes) {}
     ~PingPongTask() {}
     void exec() override;
-void execRespond() override; private:
+    void execRespond() override;
+
 private:
-    CUInt128 _toNodeId; //
+    vector<CUInt128> _vNodes; 
+
 };
 
 class PingPongRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::PING_PONG_RSP>
@@ -49,8 +52,10 @@ public:
     PingPongRspTask(CUInt128&& fromNodeId, const char* requestNode) : _fromNodeId(std::move(fromNodeId)), _msg(requestNode) {}
     ~PingPongRspTask() {}
     void exec() override;
-void execRespond() override; private:
+    void execRespond() override;
+
 private:
     CUInt128 _fromNodeId;
-    string _msg; //
+    string _msg; 
+
 };

@@ -22,5 +22,5 @@
 
 
 
-add_subdirectory(ledger)
+add_subdirectory(ledge)
 add_subdirectory(paracoin)

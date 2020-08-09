@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -23,6 +23,8 @@ DEALINGS IN THE SOFTWARE.
 
 #pragma once
 
+#include "ProtocolVer.h"
+
 #include <assert.h>
 #include "IDGenerator.h"
 #include "UInt128.h"
@@ -31,7 +33,7 @@ DEALINGS IN THE SOFTWARE.
 #include <memory>
 using namespace std;
 
-enum class TASKTYPE :char
+enum class TASKTYPE : unsigned char
 {
     BASETYPE = 0,
     HYPER_CHAIN_SEARCH,
@@ -50,10 +52,15 @@ enum class TASKTYPE :char
     GLOBAL_BUDDY_START_REQ,
     GLOBAL_BUDDY_SEND_REQ,
     GLOBAL_BUDDY_RSP,
+    NO_HYPERBLOCK_RSP,
     BOARDCAST_HYPER_BLOCK,
     GET_HYPERBLOCK_BY_NO_REQ,
+    GET_HYPERBLOCK_BY_PREHASH_REQ,
     GET_HEADERHASH_BY_NO_REQ,
     GET_HEADERHASH_BY_NO_RSP,
+    GET_BLOCKHEADER_REQ,
+    GET_BLOCKHEADER_RSP,
+    NO_BLOCKHEADER_RSP,
 
     HYPER_CHAIN_SPACE_PULL,
     HYPER_CHAIN_SPACE_PULL_RSP,
@@ -64,27 +71,28 @@ enum class TASKTYPE :char
 
 	PING_PONG,
 	PING_PONG_RSP,
-	
-    //
-    LEDGE,
-    LEDGE_RSP,
-    LEDGE_PING_NODE,
-    LEDGE_PING_NODE_RSP,
 
-    //
+    
+
+    LEDGER,
+
+    
+
     PARACOIN,
-	PARACOIN_RSP,
-    PARA_PING_NODE,
-    PARA_PING_NODE_RSP,
 
     APP_CHAIN,
     APP_CHAIN_RSP,
-    APP_ACTION
+    APP_ACTION,
+
+    
+
+    ACTIVE_NODE = 0xfa
 };
 
-using TASKBUF = std::shared_ptr<string>;
-using ProtocolVer = uint16_t;
+
+using TASKBUF = std::shared_ptr<std::string>;
 const size_t ProtocolHeaderLen = CUInt128::value + sizeof(ProtocolVer) + sizeof(TASKTYPE);
+
 
 class ITask
 {
@@ -96,7 +104,7 @@ public:
         memcpy(ut, _recvbuf->c_str(), CUInt128::value);
         _sentnodeid = CUInt128(ut);
         _ver = *(ProtocolVer*)(_recvbuf->c_str() + CUInt128::value);
-        _payload = _recvbuf->c_str() + ProtocolHeaderLen;
+        _payload = (char*)(_recvbuf->c_str() + ProtocolHeaderLen);
         _payloadlen = _recvbuf->size() - ProtocolHeaderLen;
     }
 
@@ -105,6 +113,31 @@ public:
     virtual void execRespond() = 0;
 
     bool isRespond() { return _isRespond; }
+    TASKBUF getRecvBuf() { return _recvbuf; }
+
+    static bool checkProtocolVer(const char *recvbuf, ProtocolVer::NET reqnet)
+    {
+        ProtocolVer verrecv(recvbuf + CUInt128::value);
+        if (verrecv == reqnet) {
+            if (verrecv.checkVersion())
+                return true;
+        }
+        return false;
+    }
+
+
+    static TASKTYPE getTaskType(const char *recvbuf)
+    {
+        TASKTYPE tt = *(TASKTYPE*)(recvbuf + CUInt128::value + sizeof(ProtocolVer));
+        return tt;
+    }
+
+    static void setTaskType(char *recvbuf, TASKTYPE tt)
+    {
+        TASKTYPE *t = (TASKTYPE *)(recvbuf + ProtocolHeaderLen - sizeof(TASKTYPE));
+        *t = tt;
+    }
+
 
 protected:
     bool _isRespond = false;

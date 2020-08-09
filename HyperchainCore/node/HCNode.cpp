@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -95,10 +95,25 @@ HCNode & HCNode::operator=(const HCNode & node)
     return *this;
 }
 
-int HCNode::send(string &msgbuf) const
+bool HCNode::getUDPAP(string& ip, int& nport)
 {
-    //
-    //for (const shared_ptr<IAccessPoint> ap : _aplist) {
+    if (_aplist.size() > 0) {
+        UdpAccessPoint* ap = reinterpret_cast<UdpAccessPoint*>(_aplist.begin()->get());
+        if (ap) {
+            ip = ap->ip();
+            nport = ap->port();
+            return true;
+        }
+    }
+    return false;
+}
+
+int HCNode::send(const string &msgbuf) const
+{
+    
+
+    
+
     for (auto &ap : _aplist) {
         return ap->write(msgbuf.c_str(), msgbuf.size());
     }

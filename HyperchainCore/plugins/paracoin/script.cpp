@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -1061,7 +1061,8 @@ bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash
             // Sign
             const valtype& vchPubKey = item.second;
             CKey key;
-            //
+            
+
             if (!keystore.GetKey(Hash160(vchPubKey), key))
                 return false;
             if (key.GetPubKey() != vchPubKey)
@@ -1153,6 +1154,22 @@ bool static ExtractAddressInner(const CScript& scriptPubKey, const CKeyStore* ke
             addressRet.SetHash160((uint160)item.second);
         if (keystore == NULL || keystore->HaveKey(addressRet))
             return true;
+    }
+    return false;
+}
+
+bool ExtractAddress(const CScript& scriptPubKey, std::vector<unsigned char>& vchPubKey)
+{
+    vector<pair<opcodetype, valtype> > vSolution;
+    if (!Solver(scriptPubKey, vSolution))
+        return false;
+
+    BOOST_FOREACH(PAIRTYPE(opcodetype, valtype) & item, vSolution)
+    {
+        if (item.first == OP_PUBKEY) {
+            vchPubKey = item.second;
+            return true;
+        }
     }
     return false;
 }

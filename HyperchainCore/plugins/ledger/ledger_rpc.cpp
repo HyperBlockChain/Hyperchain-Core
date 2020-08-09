@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -157,7 +157,7 @@ Value help(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() > 1)
         throw runtime_error(
-            "Ledge help [command]\n"
+            "Ledger help [command]\n"
             "List commands, or get help for a command.");
 
     string strCommand;
@@ -347,7 +347,8 @@ CBitcoinAddress GetAccountAddress(string strAccount, bool bForceNew = false)
             throw JSONRPCError(-12, "Error: Keypool ran out, please call keypoolrefill first");
 
         pwalletMain->SetAddressBookName(CBitcoinAddress(account.vchPubKey), strAccount);
-        //
+        
+
         //walletdb.WriteAccount(strAccount, account);
     }
 
@@ -720,12 +721,12 @@ Value sendfrom(const Array& params, bool fHelp)
 {
     if (pwalletMain->IsCrypted() && (fHelp || params.size() < 3 || params.size() > 6))
         throw runtime_error(
-            "sendfrom <fromaccount> <tobitcoinaddress> <amount> [minconf=1] [comment] [comment-to]\n"
+            "sendfrom <fromaccount> <toaddress> <amount> [minconf=1] [comment] [comment-to]\n"
             "<amount> is a real and is rounded to the nearest 0.00000001\n"
             "requires wallet passphrase to be set with walletpassphrase first");
     if (!pwalletMain->IsCrypted() && (fHelp || params.size() < 3 || params.size() > 6))
         throw runtime_error(
-            "sendfrom <fromaccount> <tobitcoinaddress> <amount> [minconf=1] [comment] [comment-to]\n"
+            "sendfrom <fromaccount> <toaddress> <amount> [minconf=1] [comment] [comment-to]\n"
             "<amount> is a real and is rounded to the nearest 0.00000001");
 
     string strAccount = AccountFromValue(params[0]);
@@ -1234,7 +1235,10 @@ Value backupwallet(const Array& params, bool fHelp)
     string strDest = params[0].get_str();
     BackupWallet(*pwalletMain, strDest);
 
-    return Value::null;
+    Object entry;
+    entry.push_back(Pair("hashprefix", g_cryptoToken.GetHashPrefixOfGenesis()));
+
+    return entry;
 }
 
 
@@ -1478,8 +1482,10 @@ Value addamounttoaddress(const Array& params, bool fHelp)
             "Add the address the given value.");
 
     CBitcoinAddress address(params[1].get_str());
-    //
-    //
+    
+
+    
+
     if (!address.IsValid())
         throw JSONRPCError(-5, "Invalid address");
     // Amount
@@ -1592,7 +1598,7 @@ string HTTPPost(const string& strMsg, const map<string, string>& mapRequestHeade
 {
     ostringstream s;
     s << "POST / HTTP/1.1\r\n"
-        << "User-Agent: bitcoin-json-rpc/" << FormatFullVersion() << "\r\n"
+        << "User-Agent: ledger-json-rpc/" << FormatFullVersion() << "\r\n"
         << "Host: 127.0.0.1\r\n"
         << "Content-Type: application/json\r\n"
         << "Content-Length: " << strMsg.size() << "\r\n"
@@ -1622,7 +1628,7 @@ static string HTTPReply(int nStatus, const string& strMsg)
     if (nStatus == 401)
         return strprintf("HTTP/1.0 401 Authorization Required\r\n"
             "Date: %s\r\n"
-            "Server: bitcoin-json-rpc/%s\r\n"
+            "Server: ledger-json-rpc/%s\r\n"
             "WWW-Authenticate: Basic realm=\"jsonrpc\"\r\n"
             "Content-Type: text/html\r\n"
             "Content-Length: 296\r\n"
@@ -1648,7 +1654,7 @@ static string HTTPReply(int nStatus, const string& strMsg)
         "Connection: close\r\n"
         "Content-Length: %d\r\n"
         "Content-Type: application/json\r\n"
-        "Server: bitcoin-json-rpc/%s\r\n"
+        "Server: ledger-json-rpc/%s\r\n"
         "\r\n"
         "%s",
         nStatus,
@@ -1880,7 +1886,8 @@ private:
 
 void ThreadRPCServer(void* parg)
 {
-    //
+    
+
     //IMPLEMENT_RANDOMIZE_STACK(ThreadRPCServer(parg));
     fRPCServerRunning = true;
     try
@@ -1910,7 +1917,7 @@ void StartAccept(boost::asio::ip::tcp::acceptor& acceptor)
 {
     using boost::asio::ip::tcp;
     boost::shared_ptr< tcp::socket > socket(
-        new tcp::socket(acceptor.get_io_service()));
+        new tcp::socket(acceptor.get_executor()));
 
     // Add an accept call to the service.  This will prevent io_service::run()
     // from returning.
@@ -1927,7 +1934,7 @@ void ThreadRPCServer2(void* parg)
 
     if (mapArgs["-rpcuser"] == "" && mapArgs["-rpcpassword"] == "")
     {
-        string strWhatAmI = "To use Ledge";
+        string strWhatAmI = "To use Ledger";
         if (mapArgs.count("-server"))
             strWhatAmI = strprintf(_("To use the %s option"), "\"-server\"");
         else if (mapArgs.count("-daemon"))
@@ -1945,7 +1952,7 @@ void ThreadRPCServer2(void* parg)
     asio::ip::address bindAddress = mapArgs.count("-rpcallowip") ? asio::ip::address_v4::any() : asio::ip::address_v4::loopback();
 
     asio::io_service& io_service = *reinterpret_cast<asio::io_service*>(parg);
-    ip::tcp::endpoint endpoint(bindAddress, GetArg("-rpcledgerrport", 8119));
+    ip::tcp::endpoint endpoint(bindAddress, GetArg("-rpcledgerport", 8119));
     ip::tcp::acceptor acceptor(io_service, endpoint);
 
     acceptor.set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
@@ -1973,10 +1980,12 @@ void ThreadRPCServer2(void* parg)
         throw runtime_error("-rpcssl=1, but ledger compiled without full openssl libraries.");
 #endif
 
-    //
+    
+
     StartAccept(acceptor);
 
-    //
+    
+
     io_service.run();
 }
 
@@ -2114,7 +2123,7 @@ void HandleReadHttpHeader(boost::shared_ptr<asio::ip::tcp::socket> socket,
             throw JSONRPCError(-32600, "content-length too big or too small");
 
         int nLeft = stream->in_avail();
-       
+
         if (nLeft < content_length) {
             asio::async_read(*socket.get(), *stream.get(),
                 boost::asio::transfer_at_least(content_length - nLeft),
@@ -2129,7 +2138,8 @@ void HandleReadHttpHeader(boost::shared_ptr<asio::ip::tcp::socket> socket,
         //    return;
         //}
 
-        //
+        
+
         // Check authorization
         //if (mapHeaders.count("authorization") == 0)
         //{
@@ -2154,7 +2164,8 @@ void HandleAccept(const system::error_code& error,
     boost::shared_ptr< asio::ip::tcp::socket > socket,
     asio::ip::tcp::acceptor& acceptor)
 {
-    //
+    
+
     if (error) {
         printf("Error accepting connection: %s", error.message().c_str());
         return;
@@ -2217,14 +2228,16 @@ void HandleAccept(const system::error_code& error,
 
     } while (false);
 
-    //
+    
+
     StartAccept(acceptor);
 
 }
 
 void StartRPCServer()
 {
-    //
+    
+
     int n = 1;//std::thread::hardware_concurrency();
     for (int i = 0; i < n; i++) {
         std::shared_ptr<boost::asio::io_service> io(new boost::asio::io_service());
@@ -2258,13 +2271,13 @@ Object CallRPC(const string& strMethod, const Array& params)
     SSLStream sslStream(io_service, context);
     SSLIOStreamDevice d(sslStream, fUseSSL);
     iostreams::stream<SSLIOStreamDevice> stream(d);
-    if (!d.connect(GetArg("-rpcconnect", "127.0.0.1"), GetArg("-rpcledgerrport", "8119")))
+    if (!d.connect(GetArg("-rpcconnect", "127.0.0.1"), GetArg("-rpcledgerport", "8119")))
         throw runtime_error("couldn't connect to server");
 #else
     if (fUseSSL)
         throw runtime_error("-rpcssl=1, but ledger compiled without full openssl libraries.");
 
-    ip::tcp::iostream stream(GetArg("-rpcconnect", "127.0.0.1"), GetArg("-rpcledgerrport", "8119"));
+    ip::tcp::iostream stream(GetArg("-rpcconnect", "127.0.0.1"), GetArg("-rpcledgerport", "8119"));
     if (stream.fail())
         throw runtime_error("couldn't connect to server");
 #endif
@@ -2424,13 +2437,13 @@ Value issuetoken(const Array& params, bool fHelp)
     if (fHelp || params.size() < 2)
         throw runtime_error(
             "issuetoken {Name} [Genesis Block Description] [Initail Supply] [Logo] [Address]\n");
-            
+
     vector<string> key = { "name", "description", "supply", "logo", "address"};
     map<string, string> mapGenenisBlockParams;
     for (int i=0; i<params.size(); i++) {
         mapGenenisBlockParams[key[i]] = params[i].get_str();
     }
-    
+
     CKey keyPair;
     if (mapGenenisBlockParams.count("address")) {
         if (!pwalletMain) {
@@ -2452,7 +2465,8 @@ Value issuetoken(const Array& params, bool fHelp)
     newtoken.SetParas(mapGenenisBlockParams);
 
     CBlock genesis = newtoken.MineGenesisBlock(keyPair);
-    //
+    
+
 
     string hash = newtoken.GetHashPrefixOfGenesis();
     string errmsg;
@@ -2470,7 +2484,8 @@ Value issuetoken(const Array& params, bool fHelp)
     }
 
     string requestid;
-    //
+    
+
     UNCRITICAL_BLOCK(pwalletMain->cs_wallet)
     {
         UNCRITICAL_BLOCK(cs_main)
@@ -2614,7 +2629,8 @@ Value queryfundblock(const Array& params, bool fHelp)
     uint16 chainnum;
     uint16 localid;
 
-    //
+    
+
     T_LOCALBLOCKADDRESS addr;
     bool isfound = Singleton<DBmgr>::instance()->getOnChainStateFromRequestID(params[0].get_str(), addr);
     if (!isfound) {
@@ -2650,7 +2666,7 @@ Value importtoken(const Array& params, bool fHelp)
     }
 
     newtoken.SetGenesisAddr(addr.hid, addr.chainnum, addr.id);
-   
+
     Object result;
 
     result.push_back(Pair("name", newtoken.GetName()));

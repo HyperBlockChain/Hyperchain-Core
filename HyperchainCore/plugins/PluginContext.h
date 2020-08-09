@@ -2,7 +2,7 @@
 
 #include "node/Singleton.h"
 #include "node/NodeManager.h"
-#include "node/TaskThreadPool.h"
+#include "node/mdp.h"
 #include "HyperChain/HyperChainSpace.h"
 #include "db/dbmgr.h"
 #include "consensus/consensus_engine.h"
@@ -18,11 +18,11 @@ struct PluginContext
     int pc_argc = 0;
     char** pc_argv = nullptr;
     NodeManager* nodemgr = nullptr;
-    TaskThreadPool* taskpool = nullptr;
     CHyperChainSpace* hyperchainspace = nullptr;
     ConsensusEngine* consensuseng = nullptr;
 	DBmgr* dbmgr = nullptr;
     T_P2PMANAGERSTATUS* tP2pManagerStatus = nullptr;
+    zmq::context_t* inproc_context = nullptr;
 
 #ifdef WIN32
     std::shared_ptr<spdlog::logger> daily_logger;
@@ -31,20 +31,22 @@ struct PluginContext
     std::shared_ptr<spdlog::logger> console_logger;
     std::shared_ptr<spdlog::logger> consensus_console_logger;
 #endif
-  
-    //
+
+    
+
     void SetPluginContext()
     {
         Singleton<NodeManager>::setInstance(nodemgr);
-        Singleton<TaskThreadPool>::setInstance(taskpool);
         Singleton<CHyperChainSpace, string>::setInstance(hyperchainspace);
         Singleton<ConsensusEngine>::setInstance(consensuseng);
         Singleton<DBmgr>::setInstance(dbmgr);
         Singleton<T_P2PMANAGERSTATUS>::setInstance(tP2pManagerStatus);
 
+        g_inproc_context = inproc_context;
 
-        //
-        g_tP2pManagerStatus = tP2pManagerStatus;
+        
+
+        //g_tP2pManagerStatus = tP2pManagerStatus;
 
 #ifdef WIN32
         g_daily_logger = daily_logger;

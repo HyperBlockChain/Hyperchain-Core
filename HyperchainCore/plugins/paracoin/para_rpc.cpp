@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -34,7 +34,7 @@ DEALINGS IN THE SOFTWARE.
 #include "net.h"
 #include "init.h"
 #include "cryptocurrency.h"
-#include "ledgertask.h"
+#include "paratask.h"
 #include "db/dbmgr.h"
 
 #undef printf
@@ -84,6 +84,7 @@ Value getcoininfo(const Array& params, bool fHelp);
 Value importcoin(const Array& params, bool fHelp);
 Value startmining(const Array& params, bool fHelp);
 Value stopmining(const Array& params, bool fHelp);
+Value queryminingstatus(const Array& params, bool fHelp);
 
 Object JSONRPCError(int code, const string& message)
 {
@@ -439,8 +440,8 @@ Value getaccountaddress(const Array& params, bool fHelp)
     // Parse the account first so we don't generate a key if there's an error
     string strAccount = AccountFromValue(params[0]);
 
-	Object ret;
-	ret.push_back(Pair(strAccount, GetAccountAddress(strAccount).ToString()));
+    Object ret;
+    ret.push_back(Pair(strAccount, GetAccountAddress(strAccount).ToString()));
 
     return ret;
 }
@@ -795,12 +796,12 @@ Value sendfrom(const Array& params, bool fHelp)
 {
     if (pwalletMain->IsCrypted() && (fHelp || params.size() < 3 || params.size() > 6))
         throw runtime_error(
-            "sendfrom <fromaccount> <tobitcoinaddress> <amount> [minconf=1] [comment] [comment-to]\n"
+            "sendfrom <fromaccount> <toaddress> <amount> [minconf=1] [comment] [comment-to]\n"
             "<amount> is a real and is rounded to the nearest 0.00000001\n"
             "requires wallet passphrase to be set with walletpassphrase first");
     if (!pwalletMain->IsCrypted() && (fHelp || params.size() < 3 || params.size() > 6))
         throw runtime_error(
-            "sendfrom <fromaccount> <tobitcoinaddress> <amount> [minconf=1] [comment] [comment-to]\n"
+            "sendfrom <fromaccount> <toaddress> <amount> [minconf=1] [comment] [comment-to]\n"
             "<amount> is a real and is rounded to the nearest 0.00000001");
 
     string strAccount = AccountFromValue(params[0]);
@@ -1200,10 +1201,31 @@ Value listaccounts(const Array& params, bool fHelp)
     if (params.size() > 0)
         nMinDepth = params[0].get_int();
 
-    map<string, int64> mapAccountBalances;
+    typedef struct tagBalance
+    {
+        int64 nTotal = 0;
+        int64 nGeneratedMature = 0;
+
+        void operator +=(int64 nFee) {
+            nTotal += nFee;
+            nGeneratedMature += nFee;
+        }
+        void operator -=(int64 nFee) {
+            nTotal -= nFee;
+            nGeneratedMature -= nFee;
+        }
+        Array ToArray() const {
+            Array arr;
+            arr.push_back(ValueFromAmount(nTotal).get_real());
+            arr.push_back(ValueFromAmount(nGeneratedMature).get_real());
+            return arr;
+        }
+    } Balances;
+
+    map<string, Balances> mapAccountBalances;
     BOOST_FOREACH(const PAIRTYPE(CBitcoinAddress, string)& entry, pwalletMain->mapAddressBook) {
         if (pwalletMain->HaveKey(entry.first)) // This address belongs to me
-            mapAccountBalances[entry.second] = 0;
+            mapAccountBalances[entry.second] = Balances();
     }
 
     for (map<uint256, CWalletTx>::iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
@@ -1215,16 +1237,17 @@ Value listaccounts(const Array& params, bool fHelp)
         list<pair<CBitcoinAddress, int64> > listSent;
         wtx.GetAmounts(nGeneratedImmature, nGeneratedMature, listReceived, listSent, nFee, strSentAccount);
         mapAccountBalances[strSentAccount] -= nFee;
+        mapAccountBalances[strSentAccount].nTotal += nGeneratedImmature;
         BOOST_FOREACH(const PAIRTYPE(CBitcoinAddress, int64)& s, listSent)
             mapAccountBalances[strSentAccount] -= s.second;
         if (wtx.GetDepthInMainChain() >= nMinDepth)
         {
-            mapAccountBalances[""] += nGeneratedMature;
+            mapAccountBalances[""]+= nGeneratedMature;
             BOOST_FOREACH(const PAIRTYPE(CBitcoinAddress, int64)& r, listReceived)
                 if (pwalletMain->mapAddressBook.count(r.first))
-                    mapAccountBalances[pwalletMain->mapAddressBook[r.first]] += r.second;
+                    mapAccountBalances[pwalletMain->mapAddressBook[r.first]]+= r.second;
                 else
-                    mapAccountBalances[""] += r.second;
+                    mapAccountBalances[""]+= r.second;
         }
     }
 
@@ -1234,8 +1257,8 @@ Value listaccounts(const Array& params, bool fHelp)
         mapAccountBalances[entry.strAccount] += entry.nCreditDebit;
 
     Object ret;
-    BOOST_FOREACH(const PAIRTYPE(string, int64)& accountBalance, mapAccountBalances) {
-        ret.push_back(Pair(accountBalance.first, ValueFromAmount(accountBalance.second)));
+    BOOST_FOREACH(const PAIRTYPE(string, Balances)& accountBalance, mapAccountBalances) {
+        ret.push_back(Pair(accountBalance.first, accountBalance.second.ToArray()));
     }
     return ret;
 }
@@ -1256,7 +1279,7 @@ Value gettransactionaddr(const Array& params, bool fHelp)
         throw JSONRPCError(-5, "Invalid or non-wallet transaction id");
 
     CTxIndex txindex;
-    if (!CTxDB("r").ReadTxIndex(hash, txindex))
+    if (!CTxDB_Wrapper("r").ReadTxIndex(hash, txindex))
         throw JSONRPCError(-5, "Failed to read transaction");
 
     entry.push_back(Pair("address",txindex.pos.addr.tostring()));
@@ -1309,7 +1332,10 @@ Value backupwallet(const Array& params, bool fHelp)
     string strDest = params[0].get_str();
     BackupWallet(*pwalletMain, strDest);
 
-    return Value::null;
+    Object entry;
+    entry.push_back(Pair("hashprefix", g_cryptoCurrency.GetHashPrefixOfGenesis()));
+
+    return entry;
 }
 
 
@@ -1576,10 +1602,10 @@ Value getwork(const Array& params, bool fHelp)
         static CBlockIndex* pindexPrev;
         static int64 nStart;
         static CBlock* pblock;
-        if (pindexPrev != pindexBest ||
+        if (pindexPrev != pindexBest.get() ||
             (nTransactionsUpdated != nTransactionsUpdatedLast && GetTime() - nStart > 60))
         {
-            if (pindexPrev != pindexBest)
+            if (pindexPrev != pindexBest.get())
             {
                 // Deallocate old blocks since they're obsolete now
                 mapNewBlock.clear();
@@ -1588,7 +1614,7 @@ Value getwork(const Array& params, bool fHelp)
                 vNewBlock.clear();
             }
             nTransactionsUpdatedLast = nTransactionsUpdated;
-            pindexPrev = pindexBest;
+            pindexPrev = pindexBest.get();
             nStart = GetTime();
 
             // Create new block
@@ -1711,6 +1737,7 @@ pair<string, rpcfn_type> pCallTable[] =
     make_pair("importcoin",             &importcoin),
     make_pair("startmining",            &startmining),
     make_pair("stopmining",             &stopmining),
+    make_pair("queryminingstatus",      &queryminingstatus),
 };
 
 map<string, rpcfn_type> mapCallTable(pCallTable, pCallTable + sizeof(pCallTable) / sizeof(pCallTable[0]));
@@ -1754,7 +1781,7 @@ string HTTPPost(const string& strMsg, const map<string, string>& mapRequestHeade
 {
     ostringstream s;
     s << "POST / HTTP/1.1\r\n"
-        << "User-Agent: bitcoin-json-rpc/" << FormatFullVersion() << "\r\n"
+        << "User-Agent: paracoin-json-rpc/" << FormatFullVersion() << "\r\n"
         << "Host: 127.0.0.1\r\n"
         << "Content-Type: application/json\r\n"
         << "Content-Length: " << strMsg.size() << "\r\n"
@@ -1784,7 +1811,7 @@ static string HTTPReply(int nStatus, const string& strMsg)
     if (nStatus == 401)
         return strprintf("HTTP/1.0 401 Authorization Required\r\n"
             "Date: %s\r\n"
-            "Server: bitcoin-json-rpc/%s\r\n"
+            "Server: paracoin-json-rpc/%s\r\n"
             "WWW-Authenticate: Basic realm=\"jsonrpc\"\r\n"
             "Content-Type: text/html\r\n"
             "Content-Length: 296\r\n"
@@ -1810,7 +1837,7 @@ static string HTTPReply(int nStatus, const string& strMsg)
         "Connection: close\r\n"
         "Content-Length: %d\r\n"
         "Content-Type: application/json\r\n"
-        "Server: bitcoin-json-rpc/%s\r\n"
+        "Server: paracoin-json-rpc/%s\r\n"
         "\r\n"
         "%s",
         nStatus,
@@ -2051,7 +2078,8 @@ private:
 
 void ThreadRPCServer(void* parg)
 {
-    //
+    
+
     //IMPLEMENT_RANDOMIZE_STACK(ThreadRPCServer(parg));
     fRPCServerRunning = true;
     try
@@ -2081,7 +2109,7 @@ void StartAccept(boost::asio::ip::tcp::acceptor& acceptor)
 {
     using boost::asio::ip::tcp;
     boost::shared_ptr< tcp::socket > socket(
-        new tcp::socket(acceptor.get_io_service()));
+        new tcp::socket(acceptor.get_executor()));
 
     // Add an accept call to the service.  This will prevent io_service::run()
     // from returning.
@@ -2144,10 +2172,12 @@ void ThreadRPCServer2(void* parg)
         throw runtime_error("-rpcssl=1, but ledger compiled without full openssl libraries.");
 #endif
 
-    //
+    
+
     StartAccept(acceptor);
 
-    //
+    
+
     io_service.run();
 }
 
@@ -2219,13 +2249,41 @@ void HandleReadHttpBody(boost::shared_ptr<asio::ip::tcp::socket> socket,
             {
                 // Execute
                 Value result;
-                CRITICAL_BLOCK(cs_main)
-                    CRITICAL_BLOCK(pwalletMain->cs_wallet)
+                if ((*(*mi).second) == &help ||
+                    (*(*mi).second) == &queryminingstatus ||
+                    (*(*mi).second) == &getblockcount ||
+                    (*(*mi).second) == &getblocknumber ||
+                    (*(*mi).second) == &getconnectioncount ||
+                    (*(*mi).second) == &getcoininfo) {
+                    //Lock is unnecessary
                     result = (*(*mi).second)(params, false);
+                    string strReply = JSONRPCReply(result, Value::null, id);
+                    stream_out << HTTPReply(200, strReply) << std::flush;
+                }
+                else {
 
-                // Send reply
-                string strReply = JSONRPCReply(result, Value::null, id);
-                stream_out << HTTPReply(200, strReply) << std::flush;
+                    int nTry = 10;
+                    CCriticalBlockT<pcstName> criticalblock(cs_main, __FILE__, __LINE__);
+                    while (nTry-- > 0) {
+                        if (!criticalblock.TryEnter(__FILE__, __LINE__)) {
+                            boost::this_thread::sleep_for(boost::chrono::milliseconds(200));
+                            if (nTry == 0) {
+                                //Paracoin is busying , maybe it is backtracking or chain switching
+                                throw JSONRPCError(-3, "busying");
+                            }
+                        }
+                        else {
+
+                            CRITICAL_BLOCK(pwalletMain->cs_wallet)
+                                result = (*(*mi).second)(params, false);
+
+                            // Send reply
+                            string strReply = JSONRPCReply(result, Value::null, id);
+                            stream_out << HTTPReply(200, strReply) << std::flush;
+                            break;
+                        }
+                    }
+                }
             }
             catch (std::exception & e)
             {
@@ -2286,7 +2344,7 @@ void HandleReadHttpHeader(boost::shared_ptr<asio::ip::tcp::socket> socket,
             throw JSONRPCError(-32600, "content-length too big or too small");
 
         int nLeft = stream->in_avail();
-       
+
         if (nLeft < content_length) {
             asio::async_read(*socket.get(), *stream.get(),
                 boost::asio::transfer_at_least(content_length - nLeft),
@@ -2301,7 +2359,8 @@ void HandleReadHttpHeader(boost::shared_ptr<asio::ip::tcp::socket> socket,
         //    return;
         //}
 
-        //
+        
+
         // Check authorization
         //if (mapHeaders.count("authorization") == 0)
         //{
@@ -2326,7 +2385,8 @@ void HandleAccept(const system::error_code& error,
     boost::shared_ptr< asio::ip::tcp::socket > socket,
     asio::ip::tcp::acceptor& acceptor)
 {
-    //
+    
+
     if (error) {
         printf("Error accepting connection: %s", error.message().c_str());
         return;
@@ -2389,14 +2449,16 @@ void HandleAccept(const system::error_code& error,
 
     } while (false);
 
-    //
+    
+
     StartAccept(acceptor);
 
 }
 
 void StartRPCServer()
 {
-    //
+    
+
     int n = 1;//std::thread::hardware_concurrency();
     for (int i = 0; i < n; i++) {
         std::shared_ptr<boost::asio::io_service> io(new boost::asio::io_service());
@@ -2600,7 +2662,7 @@ Value issuecoin(const Array& params, bool fHelp)
     if (fHelp || params.size() < 2)
         throw runtime_error(
             "issuecoin {Name} [Genesis block message] [Model] [Logo]\n");
-            
+
     vector<string> key = { "name", "description", "model", "logo" };
     map<string, string> mapGenenisBlockParams;
     for (int i=0; i<params.size(); i++) {
@@ -2613,7 +2675,7 @@ Value issuecoin(const Array& params, bool fHelp)
     spNewCurrency->SetParas(mapGenenisBlockParams);
 
     string requestid = spNewCurrency->GetUUID();
-    
+
     std::thread t(&CryptoCurrency::RsyncMiningGenesiBlock, std::move(spNewCurrency));
     t.detach();
 
@@ -2637,11 +2699,11 @@ Value gid2rid(const Array& params, bool fHelp)
 /*
 Value issuecoin(const Array& params, bool fHelp)
 {
-    //name,time,type,nBits,consensus,ledgerr,maturity,coinBase,reward,fee,version,description
+    //name,time,type,nBits,consensus,ledger,maturity,coinBase,reward,fee,version,description
     if (fHelp || params.size() < 2)
         throw runtime_error(
             "issuecoin {name} [description] [reward] [bits] [version] [time]\n");
-            
+
     vector<string> key = { "name", "description", "reward", "bits", "version", "time" };
     map<string, string> mapGenenisBlockParams;
     for (int i=0; i<params.size(); i++) {
@@ -2697,10 +2759,11 @@ Value commitcoin(const Array& params, bool fHelp)
     }
 
     string requestid;
-    //
+    
+
     UNCRITICAL_BLOCK(pwalletMain->cs_wallet)
     {
-        UNCRITICAL_BLOCK(cs_main)
+        UNCRITICAL_BLOCK_T_MAIN(cs_main)
         {
             if (!CommitGenesisToConsensus(&genesis, requestid, errmsg)) {
                 throw JSONRPCError(-3, string("CommitGenesisToConsensus failed: ") + errmsg);
@@ -2764,8 +2827,9 @@ Value querygenesisblock(const Array& params, bool fHelp)
 
     string uuid = params[0].get_str();
     string requestid = CryptoCurrency::GetRequestID(uuid);
+
     
-    //
+
     T_LOCALBLOCKADDRESS addr;
     if (!requestid.empty())
     {
@@ -2804,7 +2868,7 @@ Value importcoin(const Array& params, bool fHelp)
     }
 
     newcurrency.SetGenesisAddr(addr.hid, addr.chainnum, addr.id);
-   
+
     Object result;
 
     result.push_back(Pair("name", newcurrency.GetName()));
@@ -2826,16 +2890,16 @@ Value startmining(const Array& params, bool fHelp)
         coinname = params[0].get_str();
     }
     else if(params.size() == 3) {
-        if (!CryptoCurrency::SearchCoinByTriple(std::stoi(params[0].get_str()), 
+        if (!CryptoCurrency::SearchCoinByTriple(std::stoi(params[0].get_str()),
                 std::stoi(params[1].get_str()),
                 std::stoi(params[2].get_str()), coinname, coinhash)) {
-            
+
             throw JSONRPCError(-1, string("cannot find the coin"));
         }
     }
 
     Object result;
-    if ((g_cryptoCurrency.GetName() == coinname && g_cryptoCurrency.GetHashPrefixOfGenesis() == coinhash) ||
+    if ((g_cryptoCurrency.GetName() == coinname || g_cryptoCurrency.GetHashPrefixOfGenesis() == coinhash) ||
             coinname.empty()) {
         if (!g_cryptoCurrency.AllowMining()) {
             g_cryptoCurrency.StartMining();
@@ -2856,11 +2920,12 @@ Value startmining(const Array& params, bool fHelp)
         currency.StartMining();
     }
 
-    //
+    
+
     g_cryptoCurrency.StopMining();
 
     std::shared_ptr<OPAPP> oppara = std::make_shared<OPAPP>(coinhash, mapArgs);
-    
+
     boost::thread op_thread(OperatorApplication, oppara);
     op_thread.detach();
 
@@ -2884,6 +2949,34 @@ Value stopmining(const Array& params, bool fHelp)
 
     Object result;
     result.push_back(Pair("result", "ok, stopped"));
+    return result;
+}
+
+extern MiningCondition g_miningCond;
+Value queryminingstatus(const Array& params, bool fHelp)
+{
+    if (fHelp)
+        throw runtime_error("queryminingstatus\n");
+
+    bool isAllowed;
+    string strDescription = g_miningCond.GetMiningStatus(&isAllowed);
+
+    Object result;
+    result.push_back(Pair("status", isAllowed ? "mining" : "stopped"));
+
+    result.push_back(Pair("statuscode", g_miningCond.MiningStatusCode()));
+
+    if (g_miningCond.IsBackTracking()) {
+        BackTrackingProgress progress = g_miningCond.GetBackTrackingProcess();
+        result.push_back(Pair("latestheight", progress.nLatestBlockHeight));
+        result.push_back(Pair("latesttripleaddr", progress.strLatestBlockTripleAddr));
+        result.push_back(Pair("backtrackingheight", progress.nBackTrackingBlockHeight));
+        result.push_back(Pair("backtrackinghash", progress.strBackTrackingBlockHash));
+    }
+
+    result.push_back(Pair("currentheight", (pindexBest ? pindexBest->nHeight : 0)));
+    result.push_back(Pair("statusdesc", strDescription));
+
     return result;
 }
 

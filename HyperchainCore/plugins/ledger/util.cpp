@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -177,16 +177,16 @@ bool TurnOnOffDebugOutput(const string& onoff, string& ret)
 
     if (optiononoff.empty()) {
         if (fPrintToConsole && fPrintToDebugFile) {
-            ret = "Ledge's debug setting is 'both'";
+            ret = "Ledger's debug setting is 'both'";
         }
         else if (!fPrintToConsole && !fPrintToDebugFile) {
-            ret = "Ledge's debug setting is 'off'";
+            ret = "Ledger's debug setting is 'off'";
         }
         else if (fPrintToConsole && !fPrintToDebugFile) {
-            ret = "Ledge's debug setting is 'con'";
+            ret = "Ledger's debug setting is 'con'";
         }
         else if (!fPrintToConsole && fPrintToDebugFile) {
-            ret = "Ledge's debug setting is 'file'";
+            ret = "Ledger's debug setting is 'file'";
         }
         return true;
     }
@@ -211,7 +211,7 @@ bool TurnOnOffDebugOutput(const string& onoff, string& ret)
         ret = "unknown debug option";
         return false;
     }
-    ret = string("Ledge's debug setting is '") + optiononoff + "'";
+    ret = string("Ledger's debug setting is '") + optiononoff + "'";
     return true;
 }
 
@@ -258,7 +258,7 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
         {
             char pszFile[MAX_PATH+100];
             GetDataDir(pszFile);
-            strlcat(pszFile, "/debug.log", sizeof(pszFile));
+            strlcat(pszFile, "/debug_ledger.log", sizeof(pszFile));
             fileout = fopen(pszFile, "a");
             if (fileout) setbuf(fileout, NULL); // unbuffered
         }
@@ -326,32 +326,21 @@ inline int OutputDebugStringF(const char* pszFormat, ...)
     return ret;
 }
 
-
-string strprintf(const char* format, ...)
+string strprintf(const char* fmt, ...)
 {
-    char buffer[50000];
-    char* p = buffer;
-    int limit = sizeof(buffer);
-    int ret;
-    loop
-    {
-        va_list arg_ptr;
-        va_start(arg_ptr, format);
-        ret = _vsnprintf(p, limit, format, arg_ptr);
-        va_end(arg_ptr);
-        if (ret >= 0 && ret < limit)
-            break;
-        if (p != buffer)
-            delete[] p;
-        limit *= 2;
-        p = new char[limit];
-        if (p == NULL)
-            throw std::bad_alloc();
-    }
-    string str(p, p+ret);
-    if (p != buffer)
-        delete[] p;
-    return str;
+    va_list args;
+
+    va_start(args, fmt);
+    int sz = std::vsnprintf(nullptr, 0, fmt, args);
+    va_end(args);
+
+    std::string buf(sz, 0);
+
+    va_start(args, fmt);
+    std::vsnprintf(&buf[0], sz + 1, fmt, args);
+    va_end(args);
+
+    return buf;
 }
 
 
@@ -584,7 +573,8 @@ void PrintException(std::exception* pex, const char* pszThread)
     printf("\n\n************************\n%s\n", pszMessage);
     fprintf(stderr, "\n\n************************\n%s\n", pszMessage);
     strMiscWarning = pszMessage;
-    //
+    
+
     //throw;
 }
 

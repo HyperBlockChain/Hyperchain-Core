@@ -1,4 +1,4 @@
-#Copyright 2016-2019 hyperchain.net (Hyperchain)
+#Copyright 2016-2020 hyperchain.net (Hyperchain)
 #Distributed under the MIT software license, see the accompanying
 #file COPYING or https://opensource.org/licenses/MIT.
 
@@ -35,10 +35,10 @@ SET(CMAKE_CXX_FLAGS_RELEASE "${HC_FLAG} -O3")
 
 elseif(WIN32)
 
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /MD")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Zi /Od /MDd")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /MD /EHsc")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Zi /Od /MDd /EHsc")
 
-ADD_DEFINITIONS(/D__WXMSW__ /DNOMINMAX)
+ADD_DEFINITIONS(/D__WXMSW__ /DNOMINMAX /DUDT_EXPORTS)
 
 endif()
 
@@ -77,8 +77,14 @@ if(cpprestsdk_FOUND)
     message(STATUS "Found cpprestsdk")
 endif()
 
+find_package(cppzmq CONFIG REQUIRED)
+if(cppzmq_FOUND)
+    message(STATUS "Found ZeroMQ")
+endif()
+
 #set(Boost_USE_STATIC_LIBS ON)
-find_package (Boost REQUIRED COMPONENTS system program_options date_time filesystem thread serialization)
+find_package (Boost REQUIRED COMPONENTS system program_options date_time filesystem thread serialization fiber)
+
 
 if(UNIX)
     find_package(breakpad REQUIRED)
@@ -122,6 +128,9 @@ FILE(GLOB spdlog_HEAD "spdlog/*")
 
 FILE(GLOB sqlite3_HEAD "thirdparty/sqlite3/*.h")
 
+FILE(GLOB udt_SRC "udt/*.cpp")
+FILE(GLOB udt_HEAD "udt/*.h")
+
 FILE(GLOB util_SRC "util/*.cpp")
 FILE(GLOB util_HEAD "util/*.h")
 
@@ -130,9 +139,6 @@ FILE(GLOB utility_HEAD "utility/*.h")
 
 FILE(GLOB wnd_SRC "wnd/*.cpp")
 FILE(GLOB wnd_HEAD "wnd/*.h")
-
-#FILE(GLOB ledger_SRC "ledger/*.cpp" "ledger/cryptopp/*.cpp")
-#FILE(GLOB ledger_HEAD "ledger/*.h" "ledger/cryptopp/*.h")
 
 FILE(GLOB consensus_SRC "consensus/*.cpp" "consensus/*.hpp")
 FILE(GLOB consensus_HEAD "consensus/*.h")
@@ -150,9 +156,9 @@ set(final_HEAD
 	${utility_HEAD}
 	${wnd_HEAD}
 	${db_HEAD}
+	${udt_HEAD}
 	${util_HEAD}
 	${sqlite3_HEAD}
-	#${ledger_HEAD}
 	${spdlog_HEAD}
 	${consensus_HEAD}
 	)
@@ -168,8 +174,8 @@ set(final_SRC
 	${utility_SRC}
 	${wnd_SRC}
 	${db_SRC}
+	${udt_SRC}
 	${util_SRC}
-	#${ledger_SRC}
 	${consensus_SRC}
 	)
 
@@ -196,8 +202,9 @@ endif()
 
 
 target_link_libraries(${PROJECT_NAME} cpprestsdk::cpprest OpenSSL::Crypto ${SQLITE3_LIBRARIES})
-target_link_libraries(${PROJECT_NAME} Boost::system Boost::program_options Boost::serialization Boost::filesystem Boost::thread)
+target_link_libraries(${PROJECT_NAME} Boost::system Boost::program_options Boost::serialization Boost::filesystem Boost::thread Boost::fiber)
 target_link_libraries(${PROJECT_NAME} unofficial::breakpad::libbreakpad_client)
+target_link_libraries(${PROJECT_NAME} cppzmq libzmq cppzmq-static libzmq-static)
 
 include(HyperChainCPack.cmake)
 

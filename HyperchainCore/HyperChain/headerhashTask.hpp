@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -27,7 +27,6 @@ using namespace std;
 #include "node/Singleton.h"
 #include "HyperChainSpace.h"
 #include "node/NodeManager.h"
-#include "node/TaskThreadPool.h"
 //#include "consensus/buddyinfo.h"
 //#include "headers/inter_public.h"
 //#include "consensus/p2pprotocol.h"
@@ -42,7 +41,7 @@ class GetHeaderHashByNoRspTask : public ITask, public std::integral_constant<TAS
 public:
     using ITask::ITask;
     GetHeaderHashByNoRspTask() {};
-    GetHeaderHashByNoRspTask(CUInt128 nodeid, uint64_t hid) : m_blockNum(hid), ITask() { _sentnodeid = nodeid; }
+    GetHeaderHashByNoRspTask(CUInt128 nodeid, uint64_t hid) : ITask(), m_blockNum(hid) { _sentnodeid = nodeid; }
     ~GetHeaderHashByNoRspTask() {};
 
     void exec() override
@@ -50,7 +49,8 @@ public:
         T_HYPERBLOCK hyperBlock;
         CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
         if (!sp->getHyperBlock(m_blockNum, hyperBlock)) {
-            //
+            
+
             return;
         }
 
@@ -68,10 +68,11 @@ public:
         string msgbuf(_payload, _payloadlen);
         string::size_type ns = msgbuf.find(":");
         if ((ns == string::npos) || (ns == 0)) {
-            //
+            
+
             return;
         }
-        
+
         uint64_t hid = stoull(msgbuf.substr(0, ns));
         T_SHA256 headerHash = T_SHA256(msgbuf.substr(ns + 1, msgbuf.length() - 1));
 
@@ -99,8 +100,8 @@ public:
     {
         string blockid(_payload, _payloadlen);
         uint64_t hid = stoull(blockid);
-        TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-        taskpool->put(std::make_shared<GetHeaderHashByNoRspTask>(_sentnodeid, hid));
+        GetHeaderHashByNoRspTask tsk(_sentnodeid, hid);
+        tsk.exec();
     }
 
     uint64_t m_blockNum;

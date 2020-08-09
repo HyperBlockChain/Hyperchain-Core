@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -21,53 +21,50 @@ DEALINGS IN THE SOFTWARE.
 */
 #pragma once
 
-#include <thread>
-using namespace std;
 
-#include "Singleton.h"
-#include "NodeManager.h"
-#include "SearchNeighbourTask.h"
-#include "TaskThreadPool.h"
+#include "zmsg.h"
+#include "mdp.h"
 
-class SeedCommunication
+
+class HCMQClient
 {
 public:
-    SeedCommunication() : _isExit(false)
-    {}
+    HCMQClient(int socktype = ZMQ_DEALER);
+    virtual ~HCMQClient();
 
-    ~SeedCommunication() {}
+    HCMQClient(const HCMQClient &) = delete;
+    HCMQClient & operator=(const HCMQClient &) = delete;
 
-    void pullPeerlistFromSeedServer()
-    {
-        TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
+    zmsg* synccall(const char *servicename, zmsg *request);
+    void rsynccall(const char *servicename, zmsg *request);
+    void* cocall(const char *servicename, zmsg *request);
 
-        int num = 0;
-        while (!_isExit) {
-            taskpool->put(std::make_shared<SearchNeighbourTask>());
+protected:
+    void connect_to_broker();
+    zmsg* send(std::string service, zmsg *request);
+    void rsyncsend(std::string service, zmsg *request);
 
-            num = 0;
-            while (num < 100 && !_isExit) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));
-                ++num;
-            }
-        }
-    }
+protected:
 
-    void start()
-    {
-        _thread.reset(new std::thread(&SeedCommunication::pullPeerlistFromSeedServer, this));
-    }
+    std::string m_mdptype = MDPC_CLIENT;
 
-    void stop()
-    {
-        _isExit = true;
-        if (_thread && _thread->joinable()) {
-            _thread->join();
-        }
-    }
+ private:
 
-private:
-    std::unique_ptr<std::thread> _thread;
-    bool _isExit;
+    zmq::context_t * m_context = nullptr;
+    int m_socktype;
+    int m_timeout;                
+
+    int m_retries;                
+
+    std::shared_ptr<zmq::socket_t> m_client;
 };
 
+
+class HCMQMonitor : public HCMQClient
+{
+public:
+    HCMQMonitor() : HCMQClient(ZMQ_REQ)
+    {
+        m_mdptype = MDP_MON;
+    }
+};

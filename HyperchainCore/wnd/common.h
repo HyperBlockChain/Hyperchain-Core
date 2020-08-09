@@ -1,4 +1,4 @@
-﻿/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+﻿/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -24,6 +24,8 @@ DEALINGS IN THE SOFTWARE.
 #define COMMON_H
 
 #include <string>
+
+#define _TURN_OFF_PLATFORM_STRING
 #include <cpprest/details/basic_types.h>
 using namespace std;
 

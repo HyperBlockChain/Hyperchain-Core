@@ -1256,9 +1256,9 @@ CppSQLite3DB& CppSQLite3DB::operator=(const CppSQLite3DB& db)
 
 void CppSQLite3DB::open(const char* szFile)
 {
-	sqlite3_config(SQLITE_CONFIG_SERIALIZED);
+    sqlite3_config(SQLITE_CONFIG_SERIALIZED);
 
-	int nRet = sqlite3_open(szFile, &mpDB);
+    int nRet = sqlite3_open(szFile, &mpDB);
     if (nRet != SQLITE_OK)
     {
         const char* szError = sqlite3_errmsg(mpDB);

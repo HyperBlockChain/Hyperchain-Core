@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -64,7 +64,8 @@ static const int64 MIN_TX_FEE = 50000;
 static const int64 MIN_RELAY_TX_FEE = 10000;
 static const int64 MAX_MONEY = 15500000000 * COIN;
 inline bool MoneyRange(int64 nValue) { return (nValue >= 0 && nValue <= MAX_MONEY); }
-//
+
+
 static const int COINBASE_MATURITY = 10;// 100;
 // Threshold for nLockTime: below this value it is interpreted as block number, otherwise as UNIX timestamp.
 static const int LOCKTIME_THRESHOLD = 500000000; // Tue Nov  5 00:53:20 1985 UTC
@@ -147,8 +148,10 @@ class CDiskTxPos
 public:
     T_LOCALBLOCKADDRESS addr;
     //unsigned int nFile;
-    //unsigned int nBlockPos;       //
-    unsigned int nTxPos = 0;        //
+    //unsigned int nBlockPos;       
+
+    unsigned int nTxPos = 0;        
+
 
     CDiskTxPos()
     {
@@ -439,11 +442,16 @@ public:
         return SerializeHash(*this);
     }
 
-//
-//
-//
-//
-//
+
+
+
+
+
+
+
+
+
+
 
     bool IsFinal(int nBlockHeight=0, int64 nBlockTime=0) const
     {
@@ -602,10 +610,12 @@ public:
     //    return true;
     //}
 
-    //
+    
+
     bool ReadFromDisk(CDiskTxPos pos)
     {
-        //
+        
+
         CHyperChainSpace *hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
 
         string payload;
@@ -808,7 +818,8 @@ class CBlock
 public:
     // header
     int nVersion;
-    uint256 hashPrevBlock; //
+    uint256 hashPrevBlock; 
+
     uint256 hashMerkleRoot;
     unsigned int nTime = 0;
 
@@ -980,7 +991,8 @@ public:
     {
         SetNull();
 
-        //
+        
+
         CHyperChainSpace *hyperchainspace = Singleton<CHyperChainSpace, string>::getInstance();
 
         string payload;
@@ -1056,7 +1068,8 @@ public:
     bool ReadFromDisk(const CBlockIndex* pindex, bool fReadTransactions=true);
     bool SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew);
 
-    //
+    
+
     //bool AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos);
     //bool AddToBlockIndex(const T_LOCALBLOCKADDRESS& addr);
     bool AddToBlockIndex(const T_LOCALBLOCKADDRESS& addr, CBlockIndex *prevSibling);
@@ -1081,15 +1094,21 @@ public:
 class CBlockIndex
 {
 public:
-    const uint256* phashBlock;  //
+    const uint256* phashBlock;  
+
     CBlockIndex* pprev;
     CBlockIndex* pnext;
-    CBlockIndex* pprevSibling = nullptr;  //
-    CBlockIndex* pnextSibling = nullptr;  //
-    unsigned int nFile;     //
-    unsigned int nBlockPos; //
+    CBlockIndex* pprevSibling = nullptr;  
 
-    T_LOCALBLOCKADDRESS addr; //
+    CBlockIndex* pnextSibling = nullptr;  
+
+    //unsigned int nFile;     
+
+    //unsigned int nBlockPos; 
+
+
+    T_LOCALBLOCKADDRESS addr; 
+
 
     // block header
     int nVersion;
@@ -1102,8 +1121,6 @@ public:
         phashBlock = NULL;
         pprev = NULL;
         pnext = NULL;
-        nFile = 0;
-        nBlockPos = 0;
 
         nVersion       = 0;
         hashMerkleRoot = 0;
@@ -1115,8 +1132,6 @@ public:
         phashBlock = NULL;
         pprev = NULL;
         pnext = NULL;
-        nFile = 0;
-        nBlockPos = 0;
         addr = addrIn;
 
         nVersion       = block.nVersion;
@@ -1129,8 +1144,6 @@ public:
         phashBlock = NULL;
         pprev = NULL;
         pnext = NULL;
-        nFile = nFileIn;
-        nBlockPos = nBlockPosIn;
 
         nVersion       = block.nVersion;
         hashMerkleRoot = block.hashMerkleRoot;
@@ -1139,7 +1152,8 @@ public:
 
     int64 Height() const {
         return addr.hid;
-    };                             //
+    };                             
+
     CBlock GetBlockHeader() const
     {
         CBlock block;
@@ -1168,21 +1182,6 @@ public:
 
     bool CheckIndex() const
     {
-        return true;
-    }
-
-    bool EraseBlockFromDisk()
-    {
-        // Open history file
-        CAutoFile fileout = OpenBlockFile(nFile, nBlockPos, "rb+");
-        if (!fileout)
-            return false;
-
-        // Overwrite with empty null block
-        CBlock block;
-        block.SetNull();
-        fileout << block;
-
         return true;
     }
 
@@ -1216,19 +1215,19 @@ public:
 
     std::string ToString() const
     {
-		return strprintf("CBlockIndex: \n"
-			"\tmyself=%08x"
-			"\tnprev=%08x"
-			"\tpnext=%08x\n"
-			"\tnHeight=%d"
-			"\tnTime=%d\n"
-			"\taddr=%s\n"
-			"\tmerkle=%s\n"
-			"\thashBlock=%s\n", this,
-			pprev, pnext, Height(), nTime, 
-			addr.tostring().c_str(),
-			hashMerkleRoot.ToString().c_str(),
-			GetBlockHash().ToString().c_str());
+        return strprintf("CBlockIndex: \n"
+            "\tmyself=%08x"
+            "\tnprev=%08x"
+            "\tpnext=%08x\n"
+            "\tnHeight=%u"
+            "\tnTime=%d\n"
+            "\taddr=%s\n"
+            "\tmerkle=%s\n"
+            "\thashBlock=%s\n", this,
+            pprev, pnext, Height(), nTime,
+            addr.tostring().c_str(),
+            hashMerkleRoot.ToString().c_str(),
+            GetBlockHash().ToString().c_str());
     }
 
     void print() const
@@ -1255,8 +1254,10 @@ class CDiskBlockIndex : public CBlockIndex
 public:
     uint256 hashPrev;
     uint256 hashNext;
-    uint256 hashPrevSibling;  //
-    uint256 hashNextSibling; //
+    uint256 hashPrevSibling;  
+
+    uint256 hashNextSibling; 
+
 
 
     CDiskBlockIndex()

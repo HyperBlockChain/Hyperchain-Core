@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -19,21 +19,17 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
-#include "../newLog.h"
-#include "NodeManager.h"
-#include "../db/dbmgr.h"
-#include "../wnd/common.h"
 #include "KBuckets.h"
-
-#include <cpprest/json.h>
-using namespace web;
-
-//
-int KBUCKRT_NUM = 128;
-int KNODE_NUM = 20;
+#include "HCNode.h"
+#include <random>
 
 
-CKBNode::CKBNode(CUInt128& id)
+
+int KBUCKRT_NUM = 256;
+int KNODE_NUM = 10;
+
+
+CKBNode::CKBNode(const CUInt128& id)
 {
     m_id = id;
     m_lastTime = system_clock::now();
@@ -41,244 +37,175 @@ CKBNode::CKBNode(CUInt128& id)
 
 CKBuckets::~CKBuckets()
 {
-    std::lock_guard<std::mutex> lck(_guard);
-    list<CKBNode>::iterator iter;
     for (int k = 0; k < KBUCKRT_NUM; k++)
-    {
-        for (iter = m_vecBuckets[k].begin(); iter != m_vecBuckets[k].end();)
-        {
-            m_vecBuckets[k].erase(iter);
-        }
-    }
+        m_vecBuckets[k].clear();
     m_vecBuckets.clear();
+    m_setNodes.clear();
 }
 
-int CKBuckets::LocateKBucker(CUInt128 nID)
-{
-    int k = 0;
-    CUInt128 r = m_localID ^ nID;
-    int kBit = r.GetNonZeroTopBit();
-    int K = kBit / (128 / KBUCKRT_NUM);
-
-    return K;
-}
 
 void CKBuckets::InitKbuckets(CUInt128 myID)
 {
     m_localID = myID;
     m_vecBuckets.resize(KBUCKRT_NUM);
-
 }
+
 bool CKBuckets::AddNode(CUInt128 nID, CUInt128& nRemoveID)
 {
-    int kBK = LocateKBucker(nID);
-    //
-    std::lock_guard<std::mutex> lck(_guard);
-    list<CKBNode>::iterator iter;
-    for (iter = m_vecBuckets[kBK].begin(); iter != m_vecBuckets[kBK].end();)
-    {
-        if ((*iter).m_id == nID)
-        {
+    int kBK = LocateKBucket(nID);
+    
+
+    for (auto iter = m_vecBuckets[kBK].begin(); iter != m_vecBuckets[kBK].end(); iter++) {
+        if (iter->m_id == nID) {
             m_vecBuckets[kBK].erase(iter);
             break;
         }
-        else
-            iter++;
     }
 
     m_vecBuckets[kBK].push_front(CKBNode(nID));
+    m_setNodes.insert(nID);
 
-    if (m_vecBuckets[kBK].size() > KNODE_NUM)
-    {
+    if (m_vecBuckets[kBK].size() > KNODE_NUM) {
         nRemoveID = m_vecBuckets[kBK].back().m_id;
         m_vecBuckets[kBK].pop_back();
+        m_setNodes.erase(nRemoveID);
         return false;
     }
-    else
-        return true;
+
+    return true;
 }
 
 void CKBuckets::RemoveNode(CUInt128 nID)
 {
-    int kBK = LocateKBucker(nID);
-    std::lock_guard<std::mutex> lck(_guard);
-    list<CKBNode>::iterator iter;
-    for (iter = m_vecBuckets[kBK].begin(); iter != m_vecBuckets[kBK].end();)
-    {
-        if ((*iter).m_id == nID)
-        {
+    int kBK = LocateKBucket(nID);
+    if (kBK >= m_vecBuckets.size()) {
+        return;
+    }
+    for (auto iter = m_vecBuckets[kBK].begin(); iter != m_vecBuckets[kBK].end(); iter++) {
+        if (iter->m_id == nID) {
             m_vecBuckets[kBK].erase(iter);
+            m_setNodes.erase(nID);
             break;
         }
-        else
-            iter++;
     }
 }
 
-//
-int  CKBuckets::PickNeighbourNodes2(int nNum, CUInt128 targetID, vector<CUInt128>& vecResult)
+std::set<CUInt128> CKBuckets::PickRandomNodes(int nNum)
 {
-    int kBK = LocateKBucker(targetID);
-    std::lock_guard<std::mutex> lck(_guard);
+    std::set<CUInt128> setResult;
+
+    if (m_setNodes.size() <= nNum)
+        return m_setNodes;
+
+    std::default_random_engine e(time(0));
+    std::uniform_int_distribution<int> u(0, m_setNodes.size() - 1);
+
+    while (setResult.size() < nNum){
+        auto iter = m_setNodes.begin();
+        advance(iter, u(e));
+        setResult.insert(*iter);
+    }
+    return setResult;
+}
+
+vector<CUInt128> CKBuckets::PickNeighbourNodes(CUInt128 targetID, int nNum)
+{
+    int kBK = LocateKBucket(targetID);
+    int rk = kBK;
+    int lk = kBK;
     int nActNum = 0;
-    list<CKBNode>::iterator iter;
-    int k = 0;
-    while (k < kBK)
-    {
-        for (iter = m_vecBuckets[k].begin(); iter != m_vecBuckets[k].end();)
-        {
-            if (nActNum < nNum)
-            {
-                vecResult.push_back((*iter).m_id);
+    vector<CUInt128> vecResult;
+
+    int nKBucket = m_vecBuckets.size();
+    while ((rk < KBUCKRT_NUM || lk > 0) && nActNum < nNum) {
+        
+
+        if (nKBucket > rk && rk < KBUCKRT_NUM) {
+            for (auto Riter = m_vecBuckets[rk].begin(); Riter != m_vecBuckets[rk].end() && nActNum < nNum; Riter++, nActNum++)
+                vecResult.push_back(Riter->m_id);
+        }
+        rk++;
+
+        
+
+        if (nKBucket > lk && lk > 0) {
+            lk--;
+            for (auto Liter = m_vecBuckets[lk].begin(); Liter != m_vecBuckets[lk].end() && nActNum < nNum; Liter++, nActNum++)
+                vecResult.push_back(Liter->m_id);
+        }
+        else {
+            lk--;
+        }
+    }
+
+    return vecResult;
+}
+
+vector<CUInt128> CKBuckets::PickLastActiveNodes(CUInt128 targetID, int nNum, int nMinutes)
+{
+    int kBK = LocateKBucket(targetID);
+    int rk = kBK;
+    int lk = kBK;
+    int nActNum = 0;
+    std::chrono::minutes timespan;
+    system_clock::time_point curr = system_clock::now();
+    vector<CUInt128> vecResult;
+
+    int nKBucket = m_vecBuckets.size();
+    while ((rk < KBUCKRT_NUM || lk > 0) && nActNum < nNum) {
+        
+
+        if (nKBucket > rk && rk < KBUCKRT_NUM) {
+            for (auto Riter = m_vecBuckets[rk].begin(); Riter != m_vecBuckets[rk].end() && nActNum < nNum; Riter++) {
+                timespan = std::chrono::duration_cast<std::chrono::minutes>(curr - Riter->m_lastTime);
+                if (timespan.count() > nMinutes)
+                    continue;
+
+                vecResult.push_back(Riter->m_id);
                 nActNum++;
-                ++iter;
             }
-            else
-                break;
         }
-        k++;
-    }
-    if (nActNum < nNum)
-    {
-        CUInt128 rs = m_localID ^ targetID;
-        for (iter = m_vecBuckets[kBK].begin(); iter != m_vecBuckets[kBK].end();)
-        {
-            CUInt128 r = (*iter).m_id ^ targetID;
-            if (r < rs)
-            {
-                if (nActNum < nNum)
-                {
-                    vecResult.push_back((*iter).m_id);
-                    nActNum++;
-                }
-                if (nActNum >= nNum)
-                    break;
-            }
-            ++iter;
-        }
-    }
-    return nActNum;
-}
+        rk++;
 
-int  CKBuckets::PickNeighbourNodes(int nNum, CUInt128 targetID, vector<CUInt128>& vecResult)
-{
-    CUInt128 rs = m_localID ^ targetID;
-    std::lock_guard<std::mutex> lck(_guard);
-    int nActNum = 0;
-    list<CKBNode>::iterator iter;
-    for (int k = 0; k < KBUCKRT_NUM; k++)
-    {
-        for (iter = m_vecBuckets[k].begin(); iter != m_vecBuckets[k].end();)
-        {
-            CUInt128 r = (*iter).m_id ^ targetID;
-            if (r < rs)
-            {
-                if (nActNum < nNum)
-                {
-                    vecResult.push_back((*iter).m_id);
-                    nActNum++;
-                }
-                if (nActNum >= nNum)
-                    break;
-            }
-            ++iter;
-        }
-        k++;
-    }
-    if (nActNum <= 0)
-    {
-        for (int k = 0; k < KBUCKRT_NUM; k++)
-        {
-            for (iter = m_vecBuckets[k].begin(); iter != m_vecBuckets[k].end();)
-            {
-                vecResult.push_back((*iter).m_id);
+        
+
+        if (nKBucket > lk && lk > 0) {
+            lk--;
+            for (auto Liter = m_vecBuckets[lk].begin(); Liter != m_vecBuckets[lk].end() && nActNum < nNum; Liter++) {
+                timespan = std::chrono::duration_cast<std::chrono::minutes>(curr - Liter->m_lastTime);
+                if (timespan.count() > nMinutes)
+                    continue;
+
+                vecResult.push_back(Liter->m_id);
                 nActNum++;
-                ++iter;
-                if (nActNum >= nNum)
-                    break;
             }
-            if (nActNum >= nNum)
-                break;
+        }
+        else {
+            lk--;
         }
     }
-    return nActNum;
-}
-//
-int CKBuckets::PickPullNodes(int nNum, vector<CUInt128>& vecResult)
-{
-    //
-    string str = HCNode::generateNodeId();
-    CUInt128 targetID = CUInt128(str);
-    return PickNeighbourNodes(nNum, targetID, vecResult);
-}
-int CKBuckets::GetAllNodes(vector<CUInt128>& vecResult)
-{
-    std::lock_guard<std::mutex> lck(_guard);
-    int nActNum = 0;
-    list<CKBNode>::iterator iter;
-    for (int k = 0; k < KBUCKRT_NUM; k++)
-    {
-        for (iter = m_vecBuckets[k].begin(); iter != m_vecBuckets[k].end(); iter++)
-        {
-            vecResult.push_back((*iter).m_id);
-            nActNum++;
-        }
-        // cout << "k = " << k << "   total nodes = " << nActNum << endl;
-    }
-    return nActNum;
+
+    return vecResult;
 }
 
-size_t CKBuckets::GetNodesNum()
+std::set<CUInt128> CKBuckets::GetAllNodes()
 {
-    size_t nActNum = 0;
-    for (int k = 0; k < KBUCKRT_NUM; k++)
-        nActNum += m_vecBuckets[k].size();
-    return nActNum;
+    return m_setNodes;
+}
+
+int CKBuckets::GetNodesNum()
+{
+    return m_setNodes.size();
 }
 
 bool CKBuckets::IsNodeInKBuckets(CUInt128 nID)
 {
-    int kBK = LocateKBucker(nID);
-    std::lock_guard<std::mutex> lck(_guard);
-    list<CKBNode>::iterator iter;
-    for (iter = m_vecBuckets[kBK].begin(); iter != m_vecBuckets[kBK].end(); iter++)
-    {
-        if ((*iter).m_id == nID)
-            return true;
-    }
-    return false;
+    return m_setNodes.count(nID);
 }
 
-//
-int CKBuckets::PickNodesRandomly(int nNum, vector<CUInt128>& vecResult)
+int CKBuckets::LocateKBucket(CUInt128 nID)
 {
-    return 0;
-}
-
-//
-int CKBuckets::PickLastActiveNodes(int nMinutes, int nNum, vector<CUInt128>& vecResult)
-{
-    using minutes = std::chrono::duration<double, ratio<60>>;
-    system_clock::time_point curr = system_clock::now();
-
-    std::lock_guard<std::mutex> lck(_guard);
-    int nActNum = 0;
-    list<CKBNode>::iterator iter;
-    for (int k = 0; k < KBUCKRT_NUM; k++)
-    {
-        for (iter = m_vecBuckets[k].begin(); iter != m_vecBuckets[k].end(); iter++)
-        {
-            minutes timespan = std::chrono::duration_cast<minutes>(curr - (*iter).m_lastTime);
-            if (timespan.count() < nMinutes)
-            {
-                vecResult.push_back((*iter).m_id);
-                nActNum++;
-                if (nActNum >= nNum)
-                    break;
-            }
-        }
-        if (nActNum >= nNum)
-            break;
-    }
-    return nActNum;
+    CUInt128 r = m_localID ^ nID;
+    r >>= 120;
+    return r.Lower64();
 }

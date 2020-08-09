@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -21,14 +21,13 @@ DEALINGS IN THE SOFTWARE.
 */
 #pragma once
 #include "node/ITask.hpp"
-//#include "node/Singleton.h"
+#include "node/Singleton.h"
 #include "HyperChainSpace.h"
 #include "node/NodeManager.h"
 #include "consensus/buddyinfo.h"
 #include "headers/inter_public.h"
-//#include "headers/commonstruct.h"
-#include "consensus/p2pprotocol.h"
 #include "headers/lambda.h"
+#include "consensus/consensus_engine.h"
 #include "../crypto/sha2.h"
 
 #include <openssl/evp.h>
@@ -39,8 +38,25 @@ DEALINGS IN THE SOFTWARE.
 #include <iostream>
 using namespace std;
 
-
 extern void putStream(boost::archive::binary_oarchive& oa, const T_HYPERBLOCK& hyperblock);
+extern void getFromStream(boost::archive::binary_iarchive &ia, T_HYPERBLOCK& hyperblock, T_SHA256& hash);
+
+class NoHyperBlockRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::NO_HYPERBLOCK_RSP> {
+public:
+    using ITask::ITask;
+    NoHyperBlockRspTask() {};
+    ~NoHyperBlockRspTask() {};
+
+    void exec() override {};
+
+    void execRespond() override
+    {
+        string msgbuf(_payload, _payloadlen);
+        uint64_t hid = stoull(msgbuf);
+        CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+        sp->NoHyperBlock(hid, _sentnodeid.ToHexString());
+    }
+};
 
 class BoardcastHyperBlockTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::BOARDCAST_HYPER_BLOCK> {
 public:
@@ -50,17 +66,18 @@ public:
 
     void exec() override
     {
-        vector<CUInt128> sendNodes = g_tP2pManagerStatus->GetMulticastNodes();
+        CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+        vector<CUInt128> sendNodes;
+        sp->GetMulticastNodes(sendNodes);
         if (sendNodes.empty())
             return;
 
-        CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
         stringstream ssBuf;
         T_HYPERBLOCK hyperblock;
 
         boost::archive::binary_oarchive oa(ssBuf, boost::archive::archive_flags::no_header);
         {
-            hyperblock = sp->GetLatestHyperBlock();
+            sp->GetLatestHyperBlock(hyperblock);
             putStream(oa, hyperblock);
         }
         DataBuffer<BoardcastHyperBlockTask> msgbuf(std::move(ssBuf.str()));
@@ -72,8 +89,6 @@ public:
             g_consensus_console_logger->info("Broadcast Latest HyperBlock [{}] to neighbors [{}]", hyperblock.GetID(), (*iter).ToHexString());
             nodemgr->sendTo(*iter, msgbuf);
         }
-
-        g_tP2pManagerStatus->ClearMulticastNodes();
     }
 
     void execRespond() override
@@ -85,20 +100,8 @@ public:
         T_HYPERBLOCK hyperblock;
         try {
             boost::archive::binary_iarchive ia(ssBuf, boost::archive::archive_flags::no_header);
-            ia >> hash;
-            ia >> hyperblock;
-            uint32 count = hyperblock.GetChildChainsCount();
-            for (uint32 i = 0; i < count; i++) {
-                LIST_T_LOCALBLOCK childchain;
-                uint32 blocknum;
-                ia >> blocknum;
-                for (uint32 j = 0; j < blocknum; j++) {
-                    T_LOCALBLOCK block;
-                    ia >> block;
-                    childchain.push_back(std::move(block));
-                }
-                hyperblock.AddChildChain(std::move(childchain));
-            }
+            getFromStream(ia, hyperblock, hash);
+
             ostringstream oss;
             hyperblock.calculateHashSelf();
             if (hash != hyperblock.GetHashSelf()) {
@@ -120,34 +123,13 @@ public:
         }
         catch (...) {
             g_consensus_console_logger->error("unknown exception occurs");
-        }
-
-        CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
-        CHECK_RESULT ret = sp->CheckDependency(hyperblock);
-        if (CHECK_RESULT::VALID_DATA != ret) {
-
-            if (CHECK_RESULT::INVALID_DATA == ret) {
-                g_consensus_console_logger->warn("Received invalid hyper block: {} for dependency check failed", hyperblock.GetID());
-            }
-
-            if (CHECK_RESULT::INCOMPATIBLE_DATA == ret) {
-                //
-                uint64 maxblockid = sp->GetMaxBlockID();
-                uint64 hyperblockid = hyperblock.GetID() - 1;
-                if ((maxblockid > MATURITY_SIZE) && (hyperblockid <= maxblockid - MATURITY_SIZE)) {
-                    sp->PullHyperDataByHID(hyperblockid, _sentnodeid.ToHexString());
-                    g_consensus_console_logger->warn("pull hyper block:[{}] from:[{}] for dependency check", hyperblockid, _sentnodeid.ToHexString());
-                }
-            }
-            
             return;
         }
 
-        //
-        sp->updateHyperBlockCache(hyperblock);
-
-        CAutoMutexLock muxTask(g_tP2pManagerStatus->MuxCycleQueueTask);
-        g_tP2pManagerStatus->CycleQueueTask.push(TASKTYPE::BOARDCAST_HYPER_BLOCK);
+        string nodeid = _sentnodeid.ToHexString();
+        vector<CUInt128> multicastnodes;
+        CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+        sp->PutHyperBlock(hyperblock, nodeid, multicastnodes);
     }
 };
 
@@ -164,6 +146,9 @@ public:
 
     void exec() override
     {
+        if (m_blockNum == -1)
+            return;
+
         DataBuffer<GetHyperBlockByNoReqTask> msgbuf(sizeof(T_P2PPROTOCOLGETHYPERBLOCKBYNOREQ));
         T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ tGetHyperBlockByNoReq = reinterpret_cast<T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ>(msgbuf.payload());
         tGetHyperBlockByNoReq->SetP2pprotocolgethyperblockbynoreq(
@@ -178,29 +163,98 @@ public:
         T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ pP2pProtocolGetHyperBlockByNoReq = (T_PP2PPROTOCOLGETHYPERBLOCKBYNOREQ)(_payload);
         uint64 reqblockNum = pP2pProtocolGetHyperBlockByNoReq->GetBlockNum();
 
-        T_HYPERBLOCK hyperBlock;
-        CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
-        if (!sp->getHyperBlock(reqblockNum, hyperBlock)) {
-            //
+        if (reqblockNum == -1) {
+            g_daily_logger->info("GetHyperBlockByNoReqTask, ignore invalid hyperblock id: [-1]");
             return;
         }
 
-        //
+        CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+        NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+
+        T_HYPERBLOCK hyperBlock;
+        if (!sp->getHyperBlock(reqblockNum, hyperBlock)) {
+            
+
+            DataBuffer<NoHyperBlockRspTask> msgbuf(std::move(to_string(reqblockNum)));
+            nodemgr->sendTo(_sentnodeid, msgbuf);
+            g_daily_logger->info("GetHyperBlockByNoReqTask, I haven't hyperblock: [{}], sentnodeid: [{}]", reqblockNum, _sentnodeid.ToHexString());
+            return;
+        }
+
+        
+
         stringstream ssBuf;
         boost::archive::binary_oarchive oa(ssBuf, boost::archive::archive_flags::no_header);
 
         putStream(oa, hyperBlock);
         DataBuffer<BoardcastHyperBlockTask> msgbuf(std::move(ssBuf.str()));
 
-        //
-        NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+        
+
         nodemgr->sendTo(_sentnodeid, msgbuf);
     }
 
+private:
     uint64_t m_blockNum;
     string m_nodeid;
 };
 
+class GetHyperBlockByPreHashReqTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::GET_HYPERBLOCK_BY_PREHASH_REQ> {
+public:
+    using ITask::ITask;
+    GetHyperBlockByPreHashReqTask(uint64 blockNum, T_SHA256 prehash, string nodeid)
+    {
+        m_blockNum = blockNum;
+        m_prehash = prehash;
+        m_nodeid = nodeid;
+    }
+
+    ~GetHyperBlockByPreHashReqTask() {};
+
+    void exec() override
+    {
+        string datamsg = m_prehash.toHexString();
+        DataBuffer<GetHyperBlockByPreHashReqTask> msgbuf(std::move(datamsg));
+
+        NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+        nodemgr->sendTo(CUInt128(m_nodeid), msgbuf);
+    }
+
+    void execRespond() override
+    {
+        string msg(_payload, _payloadlen);
+        T_SHA256 PreHash = CCommonStruct::StrToHash256(msg);
+        NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+
+        T_HYPERBLOCK hyperBlock;
+        CHyperChainSpace * sp = Singleton<CHyperChainSpace, string>::getInstance();
+        if (!sp->getHyperBlockByPreHash(PreHash, hyperBlock)) {
+            
+
+            DataBuffer<NoHyperBlockRspTask> msgbuf(std::move(to_string(m_blockNum)));
+            nodemgr->sendTo(_sentnodeid, msgbuf);
+            g_daily_logger->info("GetHyperBlockByPreHashReqTask, I haven't hyper block: [{}], sentnodeid: [{}]", m_blockNum, _sentnodeid.ToHexString());
+            return;
+        }
+
+        
+
+        stringstream ssBuf;
+        boost::archive::binary_oarchive oa(ssBuf, boost::archive::archive_flags::no_header);
+
+        putStream(oa, hyperBlock);
+        DataBuffer<BoardcastHyperBlockTask> msgbuf(std::move(ssBuf.str()));
+
+        
+
+        nodemgr->sendTo(_sentnodeid, msgbuf);
+    }
+
+private:
+    uint64_t m_blockNum;
+    T_SHA256 m_prehash;
+    string m_nodeid;
+};
 
 
 

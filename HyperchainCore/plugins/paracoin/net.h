@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -39,18 +39,27 @@ SOFTWARE.
 #endif
 
 #include "protocol.h"
+#include "block.h"
 
 class CAddrDB;
 class CRequestTracker;
 class CNode;
 class CBlockIndex;
+
+template<class T>
+class shared_ptr_proxy;
+
 extern int nBestHeight;
 extern int nConnectTimeout;
 
+#if !defined CBlockIndexSP
+using CBlockIndexSP = shared_ptr_proxy<CBlockIndex>;
+#endif
 
 
-inline unsigned int ReceiveBufferSize() { return 1000*GetArg("-maxreceivebuffer", 10*1000); }
-inline unsigned int SendBufferSize() { return 1000*GetArg("-maxsendbuffer", 10*1000); }
+
+inline unsigned int ReceiveBufferSize() { return 1000 * GetArg("-maxreceivebuffer", 10 * 1000); }
+inline unsigned int SendBufferSize() { return 1000 * GetArg("-maxsendbuffer", 10 * 1000); }
 static const unsigned int PUBLISH_HOPS = 5;
 
 bool ConnectSocket(const CAddress& addrConnect, SOCKET& hSocketRet, int nTimeout=nConnectTimeout);
@@ -104,6 +113,7 @@ extern CAddress addrLocalHost;
 extern uint64 nLocalHostNonce;
 extern boost::array<int, 10> vnThreadsRunning;
 
+extern CCriticalSection cs_main;
 extern std::vector<CNode*> vNodes;
 extern CCriticalSection cs_vNodes;
 extern std::map<std::vector<unsigned char>, CAddress> mapAddresses;
@@ -131,6 +141,9 @@ public:
     int64 nLastRecv;
     int64 nLastSendEmpty;
     int64 nTimeConnected;
+    
+
+    int64 nLastGetchkblk = 0;
     unsigned int nHeaderStart;
     unsigned int nMessageStart;
     CAddress addr;
@@ -149,8 +162,9 @@ public:
     std::map<uint256, CRequestTracker> mapRequests;
     CCriticalSection cs_mapRequests;
     uint256 hashContinue;
-    CBlockIndex* pindexLastGetBlocksBegin;
+    CBlockIndexSP pindexLastGetBlocksBegin;
     uint256 hashLastGetBlocksEnd;
+    time_t tmRequest = 0;
     int nStartingHeight;
 
     // flood relay
@@ -163,11 +177,22 @@ public:
     std::set<CInv> setInventoryKnown;
     std::vector<CInv> vInventoryToSend;
     CCriticalSection cs_inventory;
+
+    
+
     std::multimap<int64, CInv> mapAskFor;
 
     // publish and subscription
     std::vector<char> vfSubscribe;
 
+    
+
+    std::map<uint256, std::tuple<int64, uint256>> mapBlockSent;
+
+    
+
+    uint256 hashCheckPointBlock = 0;
+    uint32_t nHeightCheckPointBlock  = 0;
 
     CNode(SOCKET hSocketIn, CAddress addrIn, bool fInboundIn=false): nodeid("")
     {
@@ -200,7 +225,6 @@ public:
         nRefCount = 0;
         nReleaseTime = 0;
         hashContinue = 0;
-        pindexLastGetBlocksBegin = 0;
         hashLastGetBlocksEnd = 0;
         nStartingHeight = -1;
         fGetAddr = false;
@@ -223,8 +247,10 @@ public:
 private:
     CNode(const CNode&);
     void operator=(const CNode&);
+
 public:
 
+    void GetChkBlock();
 
     int GetRefCount()
     {
@@ -264,6 +290,9 @@ public:
 
     void AddInventoryKnown(const CInv& inv)
     {
+        
+
+        return;
         CRITICAL_BLOCK(cs_inventory)
             setInventoryKnown.insert(inv);
     }
@@ -271,8 +300,12 @@ public:
     void PushInventory(const CInv& inv)
     {
         CRITICAL_BLOCK(cs_inventory)
-            if (!setInventoryKnown.count(inv))
+        {
+            
+
+            //if (!setInventoryKnown.count(inv))
                 vInventoryToSend.push_back(inv);
+        }
     }
 
     void AskFor(const CInv& inv)
@@ -583,7 +616,8 @@ public:
 
 
 
-    void PushGetBlocks(CBlockIndex* pindexBegin, uint256 hashEnd);
+    void PushGetBlocks(CBlockIndexSP pindexBegin, uint256 hashEnd);
+    void PushGetBlocksReversely(uint256 hashEnd);
     bool IsSubscribed(unsigned int nChannel);
     void Subscribe(unsigned int nChannel, unsigned int nHops=0);
     void CancelSubscribe(unsigned int nChannel);

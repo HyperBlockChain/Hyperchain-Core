@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -26,35 +26,36 @@ using namespace std;
 
 #include "ITask.hpp"
 
-class SearchRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_SEARCH_RSP> {
+class SearchRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_SEARCH_RSP>
+{
 public:
-	using ITask::ITask;
+    using ITask::ITask;
 
-	SearchRspTask(CUInt128 nodeid) {};
-	~SearchRspTask() {};
-	void exec() override
-	{
-		cout << "SearchRspTask respond.";
-	}
-	void execRespond() override
-	{
+    SearchRspTask(CUInt128 nodeid) {};
+    ~SearchRspTask() {};
+    void exec() override
+    {
+        cout << "SearchRspTask respond.";
+    }
 
-	}
+    void execRespond() override
+    { }
 };
 
-class SearchTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_SEARCH> {
+class SearchTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::HYPER_CHAIN_SEARCH>
+{
 public:
-	using ITask::ITask;
-	~SearchTask() {}
-	void exec() override
-	{
-		cout << "SearchTask request.";
-	}
-	void execRespond() override
-	{
-		TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-		taskpool->put(std::make_shared<SearchRspTask>(_sentnodeid));
-	}
+    using ITask::ITask;
+    ~SearchTask() {}
+    void exec() override
+    {
+        cout << "SearchTask request.";
+    }
+    void execRespond() override
+    {
+        SearchRspTask tsk(_sentnodeid);
+        tsk.exec();
+    }
 };
 
 

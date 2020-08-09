@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -81,8 +81,9 @@ public:
         _nodeid.SetHexString(id);
     }
 
+    bool getUDPAP(string& ip, int& nport);
 
-    int send(string& msgbuf) const;
+    int send(const string& msgbuf) const;
 
     string serialize();
     static void parse(const string& nodeinfo, HCNode& node);
@@ -121,7 +122,7 @@ private:
     CUInt128 _nodeid;
     APList _aplist;
 
-    //Access point object factory 
+    //Access point object factory
     objectFactory _apFactory;
     bool _isReg = false;
 };

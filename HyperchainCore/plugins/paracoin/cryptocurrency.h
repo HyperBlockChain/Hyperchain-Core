@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -36,6 +36,7 @@ using namespace std;
 
 
 
+bool DoMining(CBlock& block, progpow::search_result& r);
 CBlock CreateGenesisBlock(uint32_t nTime, const char* pszTimestamp, uint64 nNonce,
     const std::vector<unsigned char>& nSolution, uint32_t nBits, int32_t nVersion, const int64_t& genesisReward);
 
@@ -62,7 +63,9 @@ public:
     uint16_t GetChainNum() { return std::stoul(mapSettings["chainnum"]); }
     uint16_t GetLocalID() { return std::stoul(mapSettings["localid"]); }
     uint32_t GetBits() { return std::stol(mapSettings["bits"], 0, 16); }
+    uint32_t GetGenesisBits() { return std::stol(mapSettings["genesisbits"], 0, 16); }
 
+    int GetMaxMultiCoinBaseBlockHeight() { return std::stoul(mapSettings["maxcoinbaseblkheight"]); }
 
     std::string GetName() { return mapSettings["name"]; }
     std::string GetDesc() { return mapSettings["description"]; }
@@ -115,7 +118,8 @@ public:
         return GetHID() == hid && GetChainNum() == chainnum && GetLocalID() == localid;
     }
 
-    //
+    
+
     bool ReadCoinFile(const string& name, string& shorthash, string& errormsg);
 
     static bool SearchCoinByName(const string& coinname, string& coinshorthash, string& errormsg);
@@ -125,6 +129,7 @@ public:
     bool CheckGenesisBlock();
 
     CBlock MineGenesisBlock();
+    CBlock GetPanGuGenesisBlock();
     CBlock GetGenesisBlock();
 
     void clear() {
@@ -158,17 +163,22 @@ private:
 
     bool ParseTimestamp(const CBlock& genesis);
     string GetCurrencyConfigFile();
+    std::map<std::string, std::string> GetPanGuSettings();
 
 private:
-    //
-    //
-    //
-    //
+    
+
+    
+
+    
+
+    
+
 
     std::map<std::string, std::string> mapSettings;
     static std::mutex muxUUID;
     static std::map<std::string, std::string> mapUUIDRequestID;
-    
+
 };
 
 extern CryptoCurrency g_cryptoCurrency;

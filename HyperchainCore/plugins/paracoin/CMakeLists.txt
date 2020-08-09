@@ -1,4 +1,4 @@
-#Copyright 2016-2019 hyperchain.net (Hyperchain)
+#Copyright 2016-2020 hyperchain.net (Hyperchain)
 #Distributed under the MIT software license, see the accompanying
 #file COPYING or https://opensource.org/licenses/MIT.
 
@@ -35,7 +35,7 @@ elseif(WIN32)
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /MD")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Zi /Od /MDd")
 
-ADD_DEFINITIONS(/D__WXMSW__ /DNOMINMAX)
+ADD_DEFINITIONS(/D__WXMSW__ /DNOMINMAX /DUDT_EXPORTS)
 
 endif()
 
@@ -73,6 +73,12 @@ find_package (Boost REQUIRED COMPONENTS system program_options date_time filesys
 
 set(HYPERCHAIN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../common)
+
+FILE(GLOB common_SRC "../common/*.cpp")
+FILE(GLOB common_HEAD "../common/*.h")
+
 FILE(GLOB paracoin_sp_SRC "support/*.cpp")
 FILE(GLOB paracoin_sp_HEAD "support/*.h")
 
@@ -88,15 +94,19 @@ set(paracoin_HEAD ${paracoin_HEAD} ${paracoin_pp_HEAD} ${paracoin_sp_HEAD})
 
 #All source files
 set(final_HEAD
+	${common_HEAD}
     ${paracoin_HEAD}
 	${HyperChain_HEAD}
 	${node_HEAD}
+	${udt_HEAD}
 	${db_HEAD}
 	)
 
 set(final_SRC
+	${common_SRC}
     ${paracoin_SRC}
 	${node_SRC}
+	${udt_SRC}
 	${db_SRC}
 	)
 
@@ -105,11 +115,14 @@ add_library(${PROJECT_NAME} SHARED ${final_SRC} ${final_HEAD})
 
 
 target_link_libraries(${PROJECT_NAME} Oracle::BerkeleyDB OpenSSL::Crypto hyperchainspace)
-target_link_libraries(${PROJECT_NAME} Boost::system Boost::program_options Boost::serialization Boost::filesystem Boost::thread)
+target_link_libraries(${PROJECT_NAME} Boost::system Boost::program_options Boost::serialization Boost::filesystem Boost::thread Boost::fiber)
 target_link_libraries(${PROJECT_NAME} ethash)
+target_link_libraries(${PROJECT_NAME} cppzmq libzmq cppzmq-static libzmq-static)
 
 configure_file (
 "${PROJECT_SOURCE_DIR}/../../config.h.in"
 "${PROJECT_BINARY_DIR}/config.h")
+
+add_subdirectory(tools)
 
 install( TARGETS ${PROJECT_NAME} DESTINATION bin COMPONENT ${CORECOMPONET})

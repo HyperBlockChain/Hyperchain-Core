@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -34,6 +34,17 @@ using namespace std;
 #include "protocol.h"
 #include "net.h"
 
+#define LEDGER_T_SERVICE "LEDGER_task"
+
+
+enum class LEDGER_TASKTYPE : unsigned char
+{
+    BASETYPE = 0,
+    LEDGER,
+    LEDGER_PING_NODE,
+    LEDGER_PING_NODE_RSP,
+};
+
 void pingNode(const CAddress &addrConnect);
 void sendToNode(CNode* pnode);
 const CUInt128 * FindNodeId(const CAddress &addrConnect);
@@ -43,28 +54,30 @@ using OPAPP = std::tuple <std::string, std::map<string, string >> ;
 
 int OperatorApplication(std::shared_ptr<OPAPP> parg);
 
-class LedgeRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::LEDGE_RSP> {
+void StartMQHandler();
+void StopMQHandler();
+
+
+
+class ILedgerTask : public ITask
+{
 public:
     using ITask::ITask;
+    ILedgerTask() {}
+    ILedgerTask(TASKBUF && recvbuf) : ITask(std::forward<TASKBUF>(recvbuf))
+    {
+        
 
-    LedgeRspTask(CUInt128 &&fromNodeId, const char *requestNode) : ITask(), _nodemgr(Singleton<NodeManager>::getInstance()),
-        _fromNodeId(std::move(fromNodeId)), _msg(requestNode) {}
-    ~LedgeRspTask() {}
-
-    void exec() override;
-    void execRespond() override;
-
-private:
-    NodeManager *_nodemgr;
-    CUInt128 _fromNodeId;
-    string _msg;
+        _payload++;
+        _payloadlen--;
+    }
 };
 
-class LedgeTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::LEDGE> {
+class LedgerTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::LEDGER> {
 public:
     using ITask::ITask;
 
-    explicit LedgeTask(const string &nodeid, const char *databuf, size_t len) :ITask(), _nodeid(nodeid), _msg(databuf, len),
+    explicit LedgerTask(const string &nodeid, const char *databuf, size_t len) :ITask(), _nodeid(nodeid), _msg(databuf, len),
         _nodemgr(Singleton<NodeManager>::getInstance()) {}
     void exec() override;
     void execRespond() override;
@@ -75,9 +88,9 @@ private:
     NodeManager *_nodemgr;
 };
 
-class PingRspTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::LEDGE_PING_NODE_RSP> {
+class PingRspTask : public ILedgerTask, public std::integral_constant<TASKTYPE, TASKTYPE::LEDGER> {
 public:
-    PingRspTask(TASKBUF && recvbuf) : ITask(std::forward<TASKBUF>(recvbuf)), _nodemgr(Singleton<NodeManager>::getInstance()) {}
+    PingRspTask(TASKBUF && recvbuf) : ILedgerTask(std::forward<TASKBUF>(recvbuf)), _nodemgr(Singleton<NodeManager>::getInstance()) {}
 
     PingRspTask(CUInt128 &&toNodeId, const char *requestNode) : _nodemgr(Singleton<NodeManager>::getInstance()), _msg(requestNode) {
         _sentnodeid = toNodeId;
@@ -93,17 +106,16 @@ private:
     string _msg;
 };
 
-class PingTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::LEDGE_PING_NODE> {
+class PingTask : public ILedgerTask, public std::integral_constant<TASKTYPE, TASKTYPE::LEDGER> {
 public:
-    using ITask::ITask;
+    using ILedgerTask::ILedgerTask;
 
-    explicit PingTask(const CAddress &addr) : _addrConnect(addr), _nodemgr(Singleton<NodeManager>::getInstance()) {}
+    explicit PingTask() : _nodemgr(Singleton<NodeManager>::getInstance()) {}
     void exec() override;
     void execRespond() override;
 
 private:
-    NodeManager *_nodemgr;
-    CAddress _addrConnect;
+    NodeManager* _nodemgr;
 };
 
 

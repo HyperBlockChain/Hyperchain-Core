@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -1061,7 +1061,8 @@ bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash
             // Sign
             const valtype& vchPubKey = item.second;
             CKey key;
-            //
+            
+
             if (!keystore.GetKey(Hash160(vchPubKey), key))
                 return false;
             if (key.GetPubKey() != vchPubKey)

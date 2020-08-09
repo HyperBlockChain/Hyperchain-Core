@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or https://opensource.org/licenses/MIT.
@@ -244,31 +244,31 @@ CUInt128& CUInt128::ShiftLeft(unsigned bits) throw()
     return *this;
 }
 
-//
-int CUInt128::GetNonZeroTopBit()
+CUInt128& CUInt128::ShiftRight(unsigned bits) throw()
 {
-    if (IsZero())
-        return 0;
-    int kBit1 = 64;
-    uint64_t t = m_data.u64_data[1];
-    if (m_data.u64_data[1] == 0)
-    {
-        t = m_data.u64_data[0];
-        kBit1 = 0;
+    if ((bits == 0) || IsZero())
+        return *this;
+
+    if (bits > 127) {
+        setValue((uint32_t)0);
+        return *this;
     }
 
-
-    int k = 0;
-    int kBit = 0;
-    while (k < 64)
+    union {
+        uint32_t u32_data[4];
+        uint64_t u64_data[2];
+    } result = { { 0, 0, 0, 0 } };
+    int indexShift = (int)bits / 32;
+    int64_t shifted = 0;
+    for (int i = 3; i >= indexShift; i--)
     {
-        if (t & 0x01)
-            kBit = k;
-        t = t >> 1;
-        k++;
-        if (t == 0)
-            break;
+        shifted += ((int64_t)m_data.u32_data[i]) << (32 - (bits % 32));
+        result.u32_data[i - indexShift] = shifted >>32;
+        shifted = shifted << 32;
     }
-    return kBit + kBit1;
+    m_data.u64_data[0] = result.u64_data[0];
+    m_data.u64_data[1] = result.u64_data[1];
+
+    return *this;
 }
 // File_checked_for_headers

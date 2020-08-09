@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -19,6 +19,7 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
+#pragma once
 
 #include <iostream>
 using namespace std;
@@ -31,7 +32,6 @@ using namespace std;
 #include "../node/Singleton.h"
 #include "../node/NodeManager.h"
 #include "buddyinfo.h"
-#include "../node/TaskThreadPool.h"
 #include "headers/lambda.h"
 
 

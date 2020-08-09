@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -24,6 +24,7 @@ DEALINGS IN THE SOFTWARE.
 
 #include "headers/commonstruct.h"
 #include "utility/MutexObj.h"
+#include "node/MsgHandler.h"
 
 #include <iostream>
 #include <string>
@@ -37,12 +38,38 @@ DEALINGS IN THE SOFTWARE.
 using namespace std;
 using std::chrono::system_clock;
 
-#define MATURITY_SIZE	12
+#define MATURITY_SIZE	50
+#define MAX_BLOCKHEADER_NUMS  100
+#define INFORMALNET_GENESISBLOCKID  48600
+#define INFORMALNET_GENESISBLOCK_HEADERHASH CCommonStruct::StrToHash256("91bc676065c8613c130050e14c9fd9bd287501e934ac1b7f40894c9c9781c5c1")
+
+typedef struct _difficultyinfo
+{
+    uint64 startid;  
+
+    uint16 count;    
+
+    _difficultyinfo(uint64 id, uint16 num) {
+        startid = id;
+        count = num;
+    }
+
+    uint64 GetStartid()const {
+        return startid;
+    }
+
+    uint16 GetCount()const {
+        return count;
+    }
+
+}T_DIFFICULTYINFO, *T_PDIFFICULTYINFO;
 
 typedef struct _theaderhashinfo
 {
-    T_SHA256 headerhash;   //
-    set<string> nodeids;   //
+    T_SHA256 headerhash;   
+
+    set<string> nodeids;   
+
     _theaderhashinfo(T_SHA256 hash, string nodeid) {
         headerhash = hash;
         nodeids.insert(nodeid);
@@ -72,6 +99,11 @@ typedef MAP_T_UNCONFIRMEDHEADERHASH::iterator ITR_MAP_T_UNCONFIRMEDHEADERHASH;
 typedef map<uint64, LIST_T_HYPERBLOCK> MAP_T_UNCONFIRMEDBLOCK;
 typedef MAP_T_UNCONFIRMEDBLOCK::iterator ITR_MAP_T_UNCONFIRMEDBLOCK;
 
+typedef map<string, LIST_T_HYPERBLOCKHEADER> MAP_T_UNCONFIRMEDBLOCKHEADER;
+typedef MAP_T_UNCONFIRMEDBLOCKHEADER::iterator ITR_MAP_T_UNCONFIRMEDBLOCKHEADER;
+
+typedef vector<list<T_SHA256>>::iterator ITR_HASH_LIST;
+
 enum class CHECK_RESULT :char {
     INVALID_DATA = 0,
     VALID_DATA,
@@ -89,137 +121,230 @@ public:
     void start(DBmgr* db);
     void stop() {
         _isstop = true;
-        if (m_threadpull->joinable()) {
-            m_threadpull->join();
+        _msghandler.stop();
+
+        for (auto& t : m_threads) {
+            t.join();
         }
+        m_threads.clear();
+
         if (m_threadPullAppBlocks && m_threadPullAppBlocks->joinable()) {
             m_threadPullAppBlocks->join();
         }
     }
 
+    void NoHyperBlock(uint64 hid, string nodeid);
+    void NoHyperBlockHeader(uint64 hid, string nodeid);
+    void PutHyperBlock(T_HYPERBLOCK &hyperblock, string from_nodeid, vector<CUInt128> &multicastnodes);
+    bool GetHyperBlockHeader(uint64 hid, uint16 range, vector<T_HYPERBLOCKHEADER>& blockheader);
+    void PutHyperBlockHeader(vector<T_HYPERBLOCKHEADER>& blockheader, string from_nodeid);
+    void PutHyperBlockHeader(T_HYPERBLOCKHEADER& blockheader, string from_nodeid);
+    void GetHyperBlockHeaderHash(uint64 hid, uint16 range, vector<T_SHA256> &vecheaderhash);
     bool GetHyperBlockHeaderHash(uint64 hid, T_SHA256 &headerhash);
+    void PutHyperBlockHeaderHash(uint64 hid, T_SHA256 headerhash);
     void PutHyperBlockHeaderHash(uint64 hid, T_SHA256 headerhash, string from_nodeid);
     void GetHyperBlockHealthInfo(map<uint64, uint32> &out_BlockHealthInfo);
-    void GetUnconfirmedBlockMapShow(map<uint64, string>& out_UnconfirmedBlockMap);
-    void GetHyperChainData(map<uint64, set<string>>& out_HyperChainData);
-    void GetHyperChainShow(map<string, string>& out_HyperChainShow);
-    void GetLocalChainShow(vector<string> & out_LocalChainShow);
-    size_t GetLocalChainIDSize() { return m_localHID.size(); }
-    uint64 GetGlobalLatestHyperBlockNo();
     int GetRemoteHyperBlockByID(uint64 globalHID);
     int GetRemoteHyperBlockByID(uint64 globalHID, const string& nodeid);
+    int GetRemoteHyperBlockByPreHash(uint64 globalHID, T_SHA256 prehash);
     int GetRemoteHyperBlockHeaderHash(uint64 globalHID);
+    int GetRemoteBlockHeader(uint64 startHID, uint16 range, string nodeid);
     int GetRemoteLocalBlockByAddr(const T_LOCALBLOCKADDRESS& addr);
 
     void GetAppBlocksByAddr(const T_LOCALBLOCKADDRESS& low_addr, const T_LOCALBLOCKADDRESS& high_addr, const T_APPTYPE& app);
 
     bool GetLocalBlocksByHID(uint64 globalHID, const T_APPTYPE& app, T_SHA256& hhash, vector<T_PAYLOADADDR>& vecPA);
-    bool GetLocalBlocksByHID(uint64 globalHID, const T_APPTYPE& app, vector<T_PAYLOADADDR>& vecPA);
+    //bool GetLocalBlocksByHID(uint64 globalHID, const T_APPTYPE& app, vector<T_PAYLOADADDR>& vecPA);
 
     bool GetLocalBlockPayload(const T_LOCALBLOCKADDRESS& addr, string& payload);
     bool GetLocalBlock(const T_LOCALBLOCKADDRESS& addr, T_LOCALBLOCK& localblock);
 
-    //
+    
+
     bool getHyperBlock(uint64 hid, T_HYPERBLOCK &hyperblock);
-    bool getHyperBlockFromDB(uint64 hid, T_HYPERBLOCK& hyperblock);
     bool getHyperBlock(const T_SHA256 &hhash, T_HYPERBLOCK &hyperblock);
-    bool getHyperBlockwithoutMutexLock(uint64 hid, T_HYPERBLOCK &hyperblock);
-    bool IsLatestHyperBlockReady() { return m_LatestBlockReady; }
+    bool getHyperBlockByPreHash(T_SHA256 &prehash, T_HYPERBLOCK &hyperblock);
     bool updateHyperBlockCache(T_HYPERBLOCK &hyperblock);
-    void PullHyperDataByHID(uint64 hid, string nodeid);
+    void PullHyperDataByPreHash(uint64 globalHID, T_SHA256 prehash, string nodeid);
     void PullHeaderHashByHID(uint64 hid, string nodeid);
 
-    CHECK_RESULT CheckDependency(const T_HYPERBLOCK &hyperblock);
+    void CheckLocalData();
+    void SaveHyperblock(const T_HYPERBLOCK &hyperblock);
 
-    T_HYPERBLOCK& GetLatestHyperBlock() {
-        return m_LatestHyperBlock;
-    }
+    void GetHyperChainData(map<uint64, set<string>>& chainspacedata);
+    void GetHyperChainShow(map<string, string>& chainspaceshow);
+    void GetLocalHIDsection(vector <string>& hidsection);
+    T_SHA256 GetLatestHyperBlockHash() { return m_LatestHyperBlock.GetHashSelf(); }
+    size_t GetLocalChainIDSize();
 
-    uint64 GetMaxBlockID() const {
-        return uiMaxBlockNum;
-    }
-
-    T_SHA256 GetLatestHyperBlockHash() {
-        CAutoMutexLock muxAuto(m_MuxHchainBlockList);
-        return m_LatestHyperBlock.GetHashSelf();
-    }
-
-    void GetLatestHyperBlockIDAndHash(uint64 &id, T_SHA256 &hash) {
-        CAutoMutexLock muxAuto(m_MuxHchainBlockList);
-        hash = m_LatestHyperBlock.GetHashSelf();
-        id = m_LatestHyperBlock.GetID();
-    }
-
-    void SyncLatestHyperBlock();
-    bool GetLocalHIDsection(string & mes);
+    uint64 GetMaxBlockID();
+    void GetLatestHyperBlockIDAndHash(uint64 &id, T_SHA256 &hash);
+    bool IsLatestHyperBlockReady();
+    void GetLatestHyperBlock(T_HYPERBLOCK& hyperblock);
+    void GetLocalHIDs(uint64 nStartHID, set<uint64>& setHID);
+    void GetMulticastNodes(vector<CUInt128> &MulticastNodes);
     void AnalyzeChainSpaceData(string strbuf, string nodeid);
 
-    uint64 GetLocalLatestHID() { return m_localHID.empty() ? 0 : *m_localHID.rbegin(); }
+    uint64 GetLocalLatestHID() { return m_localHID.empty() ? -1 : *m_localHID.rbegin(); }
+    uint64 GetHeaderHashCacheLatestHID();
+    uint64 GetGlobalLatestHyperBlockNo();
+
+    std::thread::id MQID()
+    {
+        return _msghandler.getID();
+    }
 
 private:
-    void PullDataThread();
-    void PullAppDataThread(const T_LOCALBLOCKADDRESS& low_addr, const T_LOCALBLOCKADDRESS& high_addr, const T_APPTYPE& app);
-    void PullChainSpaceData();
     int  GenerateHIDSection();
+    void SyncBlockHeaderData();
+    void SyncHyperBlockData();
     void loadHyperBlockCache();
     void loadHyperBlockIDCache();
     void loadHyperBlockHashCache();
+    void CollatingChainSpaceDate();
+    void PullHyperDataByHID(uint64 hid, string nodeid);
     void SaveToLocalStorage(const T_HYPERBLOCK &tHyperBlock);
-    void SaveHashToLocalStorage(uint64 currblockid, T_SHA256 headerhash, T_SHA256 blockhash);
     void RehandleUnconfirmedBlock(uint64 hid, T_SHA256 headerhash);
-    void PutUnconfirmedCache(const T_HYPERBLOCK &hyperblock);
-    bool isInUnconfirmedCache(uint64 hid, T_SHA256 blockhash); 
+    bool isInUnconfirmedCache(uint64 hid, T_SHA256 blockhash);
     bool isAcceptHyperBlock(uint64 blockNum, const T_HYPERBLOCK &remoteHyperBlock, bool isAlreadyExisted);
     bool isMoreWellThanLocal(const T_HYPERBLOCK &localHyperBlock, uint64 blockid, uint64 blockcount, const T_SHA256& hhashself);
+    bool isBetterThanLocalChain(const T_HEADERINDEX &localHeaderIndex, const T_HEADERINDEX &HeaderIndex);
     void SplitString(const string& s, vector<std::string>& v, const std::string& c);
+    bool SaveHeaderIndex(T_SHA256 headerhash, T_SHA256 preheaderhash, T_HYPERBLOCKHEADER header, string from_nodeid, bool &Flag);
+    bool SwitchLocalBestChain();
+
+    void startMQHandler();
+    CHECK_RESULT CheckDependency(const T_HYPERBLOCK &hyperblock, string nodeid);
+    void publishNewHyperBlock(uint32_t hidFork, const T_HYPERBLOCK &hyperblock, bool isLatest, bool needSwitch);
+    void PullBlockHeaderData(uint64 hid, uint16 range, string nodeid);
+    int  GetRemoteBlockHeader(uint64 startHID, uint16 range);
+    void DispatchService(void *wrk, zmsg *msg);
+    void PullChainSpace();
+    void PullHyperBlock();
+    void CollatingChainSpace();
 
 private:
 
-    string m_mynodeid;						//
-    set<uint64> m_localHID;					//
-    bool m_localHIDReady;					//
-    vector <string> m_localHIDsection;		//
-    mutex m_listlock;
+    bool m_FullNode;                        
+
+    string m_mynodeid;                      
+
+    std::set<uint64> m_localHID;            
+
+    vector <string> m_localHIDsection;      
+
+    vector<CUInt128> m_MulticastNodes;      
+
 
     DBmgr* m_db = nullptr;
 
-    uint64 sync_hid;                        //
-    system_clock::time_point sync_time;     //
-    
-    bool m_LatestBlockReady;				//
-    T_HYPERBLOCK m_LatestHyperBlock;        //
-    std::atomic<uint64> uiMaxBlockNum;      //
-    
-    LIST_T_HYPERBLOCK m_HchainBlockList;	//
-    CMutexObj m_MuxHchainBlockList;
+    uint64 sync_hid;                        
 
-    map<uint64, T_SHA256> m_BlockHashMap;    //
-    CMutexObj m_MuxBlockHashMap;
+    system_clock::time_point sync_time;     
 
-    map<uint64, T_SHA256> m_HeaderHashMap;    //
-    CMutexObj m_MuxHeaderHashMap;
 
-    map<uint64, set<string>> m_ReqBlockNodes;       //
-    CMutexObj m_MuxReqBlockNodes;
+    bool m_LatestBlockReady;                 
 
-    map<uint64, set<string>> m_ReqHeaderHashNodes;  //
-    CMutexObj m_MuxReqHeaderHashNodes;
+    T_HYPERBLOCK m_LatestHyperBlock;         
 
-    MAP_T_UNCONFIRMEDBLOCK m_UnconfirmedBlockMap;         //
-    CMutexObj m_MuxUnconfirmedBlockMap;
+    std::atomic<uint64> uiMaxBlockNum;       
 
-    MAP_T_UNCONFIRMEDHEADERHASH m_UnconfirmedHashMap;     //
-    CMutexObj m_MuxUnconfirmedHashMap;
+    std::atomic<uint64> uiGlobalMaxBlockNum; 
 
-    map<uint64, set<string>> m_Chainspace;	//
-    mutex m_datalock;
 
-    map<uint64, uint32> m_BlockHealthInfo;	//
+    map<uint64, T_SHA256> m_BlockHashMap;    
 
-    map<string, string> m_chainspaceshow;	//
-    mutex m_showlock;
 
-    unique_ptr<thread> m_threadpull;
+    bool m_localHeaderReady;                 
+
+    std::atomic<uint64> uiMaxHeaderID;       
+
+
+    map<uint64, T_SHA256> m_HeaderHashMap;   
+
+
+    uint64 sync_header_hid;                     
+
+    system_clock::time_point sync_header_time;  
+
+    bool sync_header_furcated;
+    bool sync_header_ready;
+
+    ITR_HASH_LIST m_HashChain;
+    vector<list<T_SHA256>> m_BlocksHeaderHash;  
+
+
+    MAP_T_HEADERINDEX m_HeaderIndexMap;      
+
+
+    map<uint64, std::set<string>> m_ReqHeaderHashNodes;  
+
+
+    map<T_SHA256, T_SINGLEHEADER> m_SingleHeaderMap;      
+
+
+    MAP_T_UNCONFIRMEDBLOCK m_UnconfirmedBlockMap;         
+
+
+    MAP_T_UNCONFIRMEDHEADERHASH m_UnconfirmedHashMap;     
+
+
+    bool m_ChainspaceReady;
+    map<uint64, std::set<string>> m_Chainspace; 
+
+
+    map<uint64, uint32> m_BlockHealthInfo;      
+
+
+    map<string, string> m_chainspaceshow;       
+
+
+    map<string, uint64> m_chainspaceheader;     
+
+
+    std::list<thread>  m_threads;
     unique_ptr<thread> m_threadPullAppBlocks;
     bool _isstop;
+
+    
+
+    MsgHandler _msghandler;
+    zmq::socket_t *_hyperblock_pub = nullptr;
+
+    enum class SERVICE : short
+    {
+        GetMaxBlockID = 1,
+        GetLatestHyperBlockIDAndHash,
+        IsLatestHyperBlockReady,
+        GetLatestHyperBlock,
+        GetHyperBlockByID,
+        GetHyperBlockByHash,
+        GetHyperBlockByPreHash,
+        GetLocalBlocksByHID,
+        GetLocalBlockPayload,
+        GetLocalHIDs,
+
+        AnalyzeChainSpaceData,
+        UpdateHyperBlockCache,
+        GetMulticastNodes,
+        SaveHyperblock,
+        PutHyperBlock,
+        NoHyperBlock,
+
+        GetHyperChainShow,
+        GetHyperChainData,
+        GetLocalHIDsection,
+        GetLocalChainIDSize,
+        GetHyperBlockHealthInfo,
+        GetHeaderHashCacheLatestHID,
+        GetGlobalLatestHyperBlockNo,
+
+        GetRemoteHyperBlockByID,
+        GetRemoteHyperBlockByIDFromNode,
+        GetRemoteBlockHeaderFromNode,
+        GetHyperBlockHeader,
+        PutHyperBlockHeader,
+        PutHyperBlockHeaderList,
+        NoHyperBlockHeader,
+    };
 };

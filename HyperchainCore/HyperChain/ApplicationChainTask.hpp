@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -44,26 +44,26 @@ public:
 
     void exec() override
     {
-        vector<string> vpath;
-        CBRET ret = g_tP2pManagerStatus->appCallback<cbindex::GETVPATHIDX>(_app, _sAddr, _eAddr, vpath);
-        if (ret == CBRET::REGISTERED_TRUE) {
-            stringstream ssBuf;
-            boost::archive::binary_oarchive oa(ssBuf, boost::archive::archive_flags::no_header);
-            try {
-                uint32 vpathnum = static_cast<uint32>(vpath.size());
-                oa << vpathnum;
-                oa << boost::serialization::make_array(vpath.data(), vpathnum);
-            }
-            catch (runtime_error& e) {
-                g_console_logger->warn("{} : {}", __FUNCTION__, e.what());
-                return;
-            }
+        //vector<string> vpath;
+        //CBRET ret = g_tP2pManagerStatus->appCallback<cbindex::GETVPATHIDX>(_app, _sAddr, _eAddr, vpath);
+        //if (ret == CBRET::REGISTERED_TRUE) {
+        //    stringstream ssBuf;
+        //    boost::archive::binary_oarchive oa(ssBuf, boost::archive::archive_flags::no_header);
+        //    try {
+        //        uint32 vpathnum = static_cast<uint32>(vpath.size());
+        //        oa << vpathnum;
+        //        oa << boost::serialization::make_array(vpath.data(), vpathnum);
+        //    }
+        //    catch (runtime_error& e) {
+        //        g_console_logger->warn("{} : {}", __FUNCTION__, e.what());
+        //        return;
+        //    }
 
-            DataBuffer<ApplicationChainRspTask> msgbuf(std::move(ssBuf.str()));
+        //    DataBuffer<ApplicationChainRspTask> msgbuf(std::move(ssBuf.str()));
 
-            NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-            nodemgr->sendTo(_peerid, msgbuf);
-        }
+        //    NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
+        //    nodemgr->sendTo(_peerid, msgbuf);
+        //}
     }
 
     void execRespond() override
@@ -94,11 +94,10 @@ public:
     }
 
 private:
+    CUInt128 _peerid;
     T_LOCALBLOCKADDRESS _sAddr;
     T_LOCALBLOCKADDRESS _eAddr;
     T_APPTYPE _app;
-
-    CUInt128 _peerid;
 };
 
 class ApplicationChainTask : public ITask, public std::integral_constant<TASKTYPE, TASKTYPE::APP_CHAIN> {
@@ -127,7 +126,7 @@ public:
         DataBuffer<ApplicationChainTask> msgbuf(std::move(ssBuf.str()));
 
         NodeManager *nodemgr = Singleton<NodeManager>::getInstance();
-        //
+
         nodemgr->sendToAllNodes(msgbuf);
     }
 
@@ -147,8 +146,8 @@ public:
             return;
         }
 
-        TaskThreadPool *taskpool = Singleton<TaskThreadPool>::getInstance();
-        taskpool->put(std::make_shared<ApplicationChainRspTask>(_sentnodeid, _sAddr, _eAddr, _app));
+        ApplicationChainRspTask tsk(_sentnodeid, _sAddr, _eAddr, _app);
+        tsk.exec();
     }
 
 private:

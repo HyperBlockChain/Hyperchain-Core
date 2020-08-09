@@ -5,7 +5,7 @@
 
 #include <boost/function.hpp>
 #include <boost/dll/shared_library.hpp>
-using namespace boost;
+
 
 #include <iostream>
 #include <vector>
@@ -79,7 +79,7 @@ public:
             auto & f = _mapAppFunc[appname];
 
             while (first != last) {
-                //
+
                 if ((*first)[0] != '-') {
                     string param = *first;
                     param.insert(0, "-");
@@ -100,7 +100,7 @@ public:
     void StartAllApp();
     void StopAllApp();
     void GetAllAppStatus(map<string, string>& mapappstatus);
-    void RegisterAllAppTasks(objectFactory& objFactory);
+    void RegisterAllAppTasks(void* objFactory);
 
     typedef struct _appfunc {
 
@@ -182,7 +182,7 @@ private:
 
 private:
     int _argc;
-    char** _argv;          //
+    char** _argv;
 
 
     unordered_map<string, APPFUNC> _mapAppFunc;

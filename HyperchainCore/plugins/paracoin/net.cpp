@@ -1,4 +1,4 @@
-/*Copyright 2016-2019 hyperchain.net (Hyperchain)
+/*Copyright 2016-2020 hyperchain.net (Hyperchain)
 
 Distributed under the MIT software license, see the accompanying
 file COPYING or?https://opensource.org/licenses/MIT.
@@ -28,7 +28,7 @@ SOFTWARE.
 
 
 #include "headers.h"
-#include "ledgertask.h"
+#include "paratask.h"
 #include "irc.h"
 #include "db.h"
 #include "net.h"
@@ -98,17 +98,84 @@ unsigned short GetListenPort()
     return (unsigned short)(GetArg("-port", GetDefaultPort()));
 }
 
-void CNode::PushGetBlocks(CBlockIndex* pindexBegin, uint256 hashEnd)
+std::map<CBlockIndexSP, std::tuple<CBlockLocator, int64>> g_mapblkindexLocator;
+
+void CNode::PushGetBlocks(CBlockIndexSP pindexBegin, uint256 hashEnd)
 {
     // Filter out duplicate requests
-    if (pindexBegin == pindexLastGetBlocksBegin && hashEnd == hashLastGetBlocksEnd)
-        return;
-    pindexLastGetBlocksBegin = pindexBegin;
-    hashLastGetBlocksEnd = hashEnd;
+    //TRY_CRITICAL_BLOCK(cs_vSend)
+    {
+        if (pindexBegin == pindexLastGetBlocksBegin && hashEnd == hashLastGetBlocksEnd && time(nullptr) - tmRequest < 5)
+            return;
 
-    PushMessage("getblocks", CBlockLocator(pindexBegin), hashEnd);
+        pindexLastGetBlocksBegin = pindexBegin;
+        hashLastGetBlocksEnd = hashEnd;
+        tmRequest = time(nullptr);
+
+        printf("\n*****************************************************************\n");
+        printf("PushGetBlocks: getblocks %d %s to: %s\n\n",
+            (pindexBegin ? pindexBegin->nHeight : -1),
+            (pindexBegin ? pindexBegin->GetBlockHash().ToPreViewString().c_str() : "null"),
+            nodeid.c_str());
+
+        std::tuple<CBlockLocator, int64> *blkloc = nullptr;
+        if (g_mapblkindexLocator.count(pindexBegin) > 0) {
+            blkloc = &g_mapblkindexLocator[pindexBegin];
+        }
+        else {
+            if (g_mapblkindexLocator.size() > 3) {
+                
+
+                int64 mintm = time(nullptr);
+                auto bil = g_mapblkindexLocator.begin();
+                auto it = g_mapblkindexLocator.begin();
+
+                for (; it != g_mapblkindexLocator.end(); ++ it) {
+                    if (std::get<1>(it->second) < mintm ) {
+                        bil = it;
+                    }
+                }
+                g_mapblkindexLocator.erase(bil);
+            }
+
+            auto loc = std::tuple<CBlockLocator, int64>{ CBlockLocator(pindexBegin), time_t() };
+            g_mapblkindexLocator.insert(std::make_pair(pindexBegin, std::move(loc)));
+            blkloc = &g_mapblkindexLocator[pindexBegin];
+
+        }
+        PushMessage("getblocks", std::get<0>(*blkloc), hashEnd);
+    }
 }
 
+void CNode::GetChkBlock()
+{
+    auto now = time(nullptr);
+    
+
+    if (nLastGetchkblk + 150 < now) {
+        TRY_CRITICAL_BLOCK(cs_vSend)
+        {
+            nLastGetchkblk = time(nullptr);
+            PushMessage("getchkblock");
+        }
+    }
+}
+
+void CNode::PushGetBlocksReversely(uint256 hashEnd)
+{
+    // Filter out duplicate requests
+    
+
+    //TRY_CRITICAL_BLOCK(cs_vSend)
+    {
+        LogBacktracking("\n*****************************************************************\n");
+        LogBacktracking("PushGetBlocksReversely: rgetblocks %s to: %s\n\n",
+            hashEnd.ToPreViewString().c_str(),
+            nodeid.c_str());
+
+        PushMessage("rgetblocks", hashEnd);
+    }
+}
 
 bool ConnectSocket(const CAddress& addrConnect, SOCKET& hSocketRet, int nTimeout)
 {
@@ -123,7 +190,8 @@ bool ConnectSocket(const CAddress& addrConnect, SOCKET& hSocketRet, int nTimeout
 
 
     hSocketRet = hSocket;
-	//
+	
+
 
     return false;
 }
@@ -729,6 +797,7 @@ void ThreadSocketHandler2(void* parg)
         // Service each socket
         //
         vector<CNode*> vNodesCopy;
+
         CRITICAL_BLOCK(cs_vNodes)
         {
             vNodesCopy = vNodes;
@@ -750,7 +819,7 @@ void ThreadSocketHandler2(void* parg)
             //
             if (pnode->vSend.empty())
                 pnode->nLastSendEmpty = GetTime();
-            if (GetTime() - pnode->nTimeConnected > 60)
+            if (GetTime() - pnode->nTimeConnected > 300)
             {
                 if (pnode->nLastRecv == 0 || pnode->nLastSend == 0)
                 {
@@ -769,6 +838,7 @@ void ThreadSocketHandler2(void* parg)
                 }
             }
         }
+
         CRITICAL_BLOCK(cs_vNodes)
         {
             BOOST_FOREACH(CNode* pnode, vNodesCopy)
@@ -1252,7 +1322,9 @@ void ThreadMessageHandler2(void* parg)
                 return;
 
             // Send messages
-            TRY_CRITICAL_BLOCK(pnode->cs_vSend)
+            
+
+            //TRY_CRITICAL_BLOCK(pnode->cs_vSend)
                 SendMessages(pnode, pnode == pnodeTrickle);
             if (fShutdown)
                 return;
@@ -1414,7 +1486,8 @@ void StartNode(void* parg)
 #endif
     printf("addrLocalHost = %s\n", addrLocalHost.ToString().c_str());
 
-	//
+	
+
     //if (fUseProxy || mapArgs.count("-connect") || fNoListen)
     //{
     //    // Proxies can't take incoming connections
@@ -1435,7 +1508,8 @@ void StartNode(void* parg)
         MapPort(fUseUPnP);
 
     // Get addresses from IRC and advertise ours
-	//
+	
+
     //if (!CreateThread(ThreadIRCSeed, NULL))
         //printf("Error: CreateThread(ThreadIRCSeed) failed\n");
 
@@ -1443,7 +1517,8 @@ void StartNode(void* parg)
     CreateThread(ThreadSocketHandler, NULL);
 
     // Initiate outbound connections
-	//
+	
+
     //if (!CreateThread(ThreadOpenConnections, NULL))
         //printf("Error: CreateThread(ThreadOpenConnections) failed\n");
 
@@ -1504,7 +1579,7 @@ public:
 
 #ifdef __WXMSW__
         // Shutdown Windows Sockets
-        WSACleanup();
+        //WSACleanup();
 #endif
     }
 }
