@@ -83,23 +83,28 @@ public:
     void blockToJsonValue(const T_HYPERBLOCK& hyperblock, size_t hyperBlockSize, json::value& val);
 
     json::value MakeRegistration(string strdata);
-    bool Upqueue(string strdata, vector<string>& out_vc);
+    json::value MakeBatchRegistration(string strdata);
+    static bool Upqueue(string strdata, vector<string>& out_vc);
 
     json::value getLocalblock(uint64_t hid, uint16 id, uint16 chain_num);
     json::value getLocalblockHead(uint64_t hid, uint16 id, uint16 chain_num);
     json::value getLocalblockBody(uint64_t hid, uint16 id, uint16 chain_num);
 
     json::value getHyperblocks(uint64_t nStartId, uint64_t nNum);		
-
     json::value getHyperblockInfo(uint64_t hid);								
-
     json::value getHyperblockHead(uint64_t hid);
     json::value getHyperblockBody(uint64_t hid);
 
     json::value getLocalchain(uint64_t hid, uint64_t chain_num);
 
     json::value getOnchainState(const string & requestID);
-    //int getLatestHyperBlockNo();
+    json::value getBatchOnchainState(const string & batchID);
+
+    static string GetOnchainState(const string & requestID);
+    static void SubmitBatchRegistration();
+    static void SubmitBatchRegistrationThread();
+    static void RetrySubmit();
+    static void RetrySubmitThread();
 };
 
 

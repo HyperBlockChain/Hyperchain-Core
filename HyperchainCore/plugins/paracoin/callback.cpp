@@ -24,6 +24,7 @@ SOFTWARE.
 
 #include "headers/commonstruct.h"
 #include "consensus/consensus_engine.h"
+#include "node/defer.h"
 
 #include "headers.h"
 #include "db.h"
@@ -42,7 +43,10 @@ SOFTWARE.
 
 using namespace std;
 
+boost::fibers::mutex g_fibermtx;
+
 #define FIBER_SWITCH_CRITICAL_BLOCK_T_MAIN(t) \
+    std::lock_guard<boost::fibers::mutex> lk(g_fibermtx); \
     CCriticalBlockT<pcstName> criticalblock(cs_main, __FILE__, __LINE__); \
     while (!criticalblock.TryEnter(__FILE__, __LINE__)) { \
         boost::this_fiber::sleep_for(std::chrono::milliseconds(t)); \
@@ -63,8 +67,6 @@ extern void ProcessOrphanBlocks(const uint256& hash);
 bool ResolveBlock(CBlock &block, const char *payload, size_t payloadlen);
 
 
-
-
 std::map<uint32_t, time_t> mapPullingHyperBlock;
 CCriticalSection cs_pullingHyperBlock;
 void RSyncRemotePullHyperBlock(uint32_t hid, string nodeid = "")
@@ -77,8 +79,6 @@ void RSyncRemotePullHyperBlock(uint32_t hid, string nodeid = "")
         }
         else {
             if (now - mapPullingHyperBlock[hid] < 20) {
-                
-
                 return;
             }
             else {
@@ -137,8 +137,6 @@ bool UpdateAppAddress(const CBlock& genesisblock, const T_LOCALBLOCKADDRESS& add
     string currencyhash = cryptoCurrency.GetHashPrefixOfGenesis();
     string errmsg;
     if (!cryptoCurrencyFromLocal.ReadCoinFile("", currencyhash, errmsg)) {
-        
-
         return ERROR_FL("%s", errmsg.c_str());
     }
 
@@ -188,8 +186,6 @@ bool GetNeighborNodes(list<string>& listNodes)
     }
     return true;
 }
-
-
 
 bool CheckChainCb(vector<T_PAYLOADADDR>& vecPA)
 {
@@ -248,8 +244,6 @@ bool AcceptBlocks(vector<T_PAYLOADADDR>& vecPA, bool isLatest)
         }
     }
 
-    
-
     auto& lastblock = vecBlock.back();
     uint32_t hid = lastblock.nPrevHID;
     uint256 hash = lastblock.GetHash();
@@ -260,8 +254,6 @@ bool AcceptBlocks(vector<T_PAYLOADADDR>& vecPA, bool isLatest)
     }
 
     pindexLast = mapBlockIndex[hash];
-
-    
 
     bool bchainSwitch = true;
     if (pindexBest->nPrevHID > hid && !isLatest) {
@@ -285,16 +277,22 @@ bool AcceptBlocks(vector<T_PAYLOADADDR>& vecPA, bool isLatest)
     return true;
 }
 
+extern HyperBlockMsgs hyperblockMsgs;
+bool AcceptChainCb(map<T_APPTYPE, vector<T_PAYLOADADDR>>& mapPayload, uint32_t& hidFork, uint32_t& hid, T_SHA256& thhash, bool isLatest)
+{
+    CHAINCBDATA cbdata(std::move(mapPayload), hidFork, hid, thhash, isLatest);
+    hyperblockMsgs.insert(std::move(cbdata));
+    return true;
+}
 
-
-
-
-bool AcceptChainCb(map<T_APPTYPE,vector<T_PAYLOADADDR>>& mapPayload, uint32_t& hidFork, uint32_t& hid, T_SHA256& thhash, bool isLatest)
+bool ProcessChainCb(map<T_APPTYPE,vector<T_PAYLOADADDR>>& mapPayload, uint32_t& hidFork, uint32_t& hid, T_SHA256& thhash, bool isLatest)
 {
     //CSpentTime spentt;
-    
+    //defer {
+    //    cout << strprintf("Para ProcessChainCb spent million seconds : %ld\n", spentt.Elapse());
+    //};
 
-    FIBER_SWITCH_CRITICAL_BLOCK_T_MAIN(50)
+    //FIBER_SWITCH_CRITICAL_BLOCK_T_MAIN(50)
     {
         LatestHyperBlock::CompareAndUpdate(hid, thhash, isLatest);
         T_APPTYPE meApp(APPTYPE::paracoin, g_cryptoCurrency.GetHID(),
@@ -306,8 +304,6 @@ bool AcceptChainCb(map<T_APPTYPE,vector<T_PAYLOADADDR>>& mapPayload, uint32_t& h
         }
 
         if (isLatest) {
-            
-
             CBlockIndexSP pStart = pindexBest;
             while (pStart && pStart->nPrevHID >= hidFork) {
                 pStart = pStart->pprev();
@@ -321,10 +317,6 @@ bool AcceptChainCb(map<T_APPTYPE,vector<T_PAYLOADADDR>>& mapPayload, uint32_t& h
             if (!pStart) {
                 return true;
             }
-
-            
-
-            
 
             uint256 hhash(thhash.toHexString());
             CBlockIndexSP pEnd = pStart;
@@ -340,10 +332,28 @@ bool AcceptChainCb(map<T_APPTYPE,vector<T_PAYLOADADDR>>& mapPayload, uint32_t& h
             }
         }
     }
-    //uint64 diff = spentt.Elapse();
-    //cout << strprintf("Para AcceptChainCb : %ld\n", diff);
 
     return true;
+}
+
+void HyperBlockMsgs::insert(CHAINCBDATA &&cb)
+{
+    CRITICAL_BLOCK(m_cs_list)
+    {
+        m_list.push_back(std::move(cb));
+    }
+}
+
+void HyperBlockMsgs::process()
+{
+    CRITICAL_BLOCK(m_cs_list)
+    {
+        auto it = m_list.begin();
+        for (; it != m_list.end(); ) {
+            ProcessChainCb(it->m_mapPayload, it->m_hidFork, it->m_hid, it->m_thhash, it->m_isLatest);
+            m_list.erase(it++);
+        }
+    }
 }
 
 bool CheckChainCbWhenOnChaining(vector<T_PAYLOADADDR>& vecPA, uint32_t prevhid, T_SHA256& tprevhhash)
@@ -384,10 +394,6 @@ namespace boost {
     }
 }
 
-
-
-
-
 bool ValidateLedgerDataCb(T_PAYLOADADDR& payloadaddr,
                         map<boost::any,T_LOCALBLOCKADDRESS>& mapOutPt,
                         boost::any& hashPrevBlock)
@@ -403,7 +409,6 @@ bool ValidateLedgerDataCb(T_PAYLOADADDR& payloadaddr,
         return ERROR_FL("hashPrevBlock is different");
     }
 
-    // Preliminary checks
     FIBER_SWITCH_CRITICAL_BLOCK_T_MAIN(50)
     {
         if (!block.CheckBlock())
@@ -412,13 +417,11 @@ bool ValidateLedgerDataCb(T_PAYLOADADDR& payloadaddr,
         if (!block.CheckTrans())
             return ERROR_FL("CheckTrans FAILED");
 
-        CTxDB_Wrapper txdb("r");
+        CTxDB_Wrapper txdb;
         for (auto tx : block.vtx) {
             if (tx.IsCoinBase()) {
                 continue;
             }
-
-            
 
             map<uint256, CTxIndex> mapUnused;
             int64 nFees = 0;
@@ -428,8 +431,6 @@ bool ValidateLedgerDataCb(T_PAYLOADADDR& payloadaddr,
             }
         }
     }
-
-    
 
     for (auto tx : block.vtx) {
         if (tx.IsCoinBase()) {
@@ -451,22 +452,12 @@ bool ValidateLedgerDataCb(T_PAYLOADADDR& payloadaddr,
 }
 
 
-
-
 bool BlockUUIDCb(string& payload, string& uuidpayload)
 {
-    
-
-    
-
     uuidpayload = payload.substr(0, sizeof(int));
-    
-
     uuidpayload += payload.substr(sizeof(int) + sizeof(uint256));
     return true;
 }
-
-
 
 bool PutParaCoinChainCb()
 {
@@ -477,8 +468,6 @@ bool PutParaCoinChainCb()
     CBlockIndexSP pindexValidStarting;
 
     if (mapArgs.count("-importtx")) {
-        
-
         if (!g_isBuiltInBlocksReady) {
             return false;
         }
@@ -499,12 +488,8 @@ bool PutParaCoinChainCb()
         CBlockIndexSP pStart = LatestBlockIndexOnChained();
         pStart = pStart->pnext();
         if (!pStart) {
-            
-
             return false;
         }
-
-        
 
         CBlockIndexSP pEnd = pStart;
         while (pEnd && pEnd->nPrevHID == nHID && pEnd->hashPrevHyperBlock == hhash)
@@ -517,13 +502,9 @@ bool PutParaCoinChainCb()
         }
 
         if (!deqblock.size()) {
-            
-
             isSwithBestToValid = true;
             pindexValidStarting = pStart->pprev();
         }
-
-        
 
         if (isSwithBestToValid) {
             for (; pindexValidStarting; pindexValidStarting = pindexValidStarting->pprev()) {
@@ -534,12 +515,8 @@ bool PutParaCoinChainCb()
         }
     }
 
-    
-
     auto tail_block = deqblock.back();
     if (!tail_block.IsMine()) {
-        
-
         return false;
     }
 
@@ -562,8 +539,6 @@ bool GetVPath(T_LOCALBLOCKADDRESS& sAddr, T_LOCALBLOCKADDRESS& eAddr, vector<str
                 p = p->pprev();
                 continue;
             } else if (p->addr.hid < sAddr.hid) {
-                
-
                 return false;
             }
             else {
@@ -589,14 +564,12 @@ std::function<void(int)> SleepFn = [](int sleepseconds) {
     }
 };
 
-#define one_day 24 * 60 * 60
+#define one_hour 60 * 60
 void ThreadBlockPool(void* parg)
 {
-    
-
     while (!fShutdown) {
 
-        SleepFn(one_day);
+        SleepFn(one_hour);
         if (fShutdown) {
             break;
         }
@@ -606,23 +579,16 @@ void ThreadBlockPool(void* parg)
         std::vector<uint256> vWillBeRemoved;
         CRITICAL_BLOCK_T_MAIN(cs_main)
         {
-            mapBlocks.clear();
+            CSpentTime spentt;
+            CBlockDB_Wrapper blockdb;
 
-            CBlockDB blockdb;
-
-            
-
-            
-
-            blockdb.LoadBlockUnChained(uint256(0), [&vWillBeRemoved](CDataStream& ssKey, CDataStream& ssValue) -> bool{
+            blockdb.LoadBlockUnChained(uint256(0), [&vWillBeRemoved, &spentt](CDataStream& ssKey, CDataStream& ssValue) -> bool {
 
                 CBlock block;
                 ssValue >> block;
 
                 uint256 hash;
                 ssKey >> hash;
-
-                
 
                 if (block.nHeight + 5000 < pindexBest->nHeight && mapBlockIndex.count(hash)) {
                     auto p = mapBlockIndex[hash];
@@ -634,12 +600,11 @@ void ThreadBlockPool(void* parg)
                         }
                     }
                 }
-
-                mapBlocks.insert(hash);
+                if (spentt.Elapse() > 10) {
+                    return false;
+                }
                 return true;
             } );
-
-            
 
             for (auto& elm: vWillBeRemoved) {
                 blockdb.EraseBlock(elm);
@@ -673,11 +638,8 @@ void UpdateMaxBlockAddr(const T_LOCALBLOCKADDRESS& addr)
         if (!txdb.WriteAddrMaxChain(addrMaxChain)) {
             ERROR_FL("WriteAddrMaxChain failed");
         }
-        txdb.Close();
     }
 }
-
-
 void UpdateBlockIndex()
 {
     CRITICAL_BLOCK_T_MAIN(cs_main)
@@ -689,11 +651,7 @@ void UpdateBlockIndex()
             T_SHA256 thhash;
             uint64 hid = pindexBest->addr.hid + 1;
             while (hid <= addrMaxChain.hid) {
-                
-
                 if (!hyperchainspace->GetLocalBlocksByHID(hid++, app, thhash, vecPA)) {
-                    
-
                     break;
                 }
                 CheckChainCb(vecPA);
@@ -751,15 +709,9 @@ void ThreadGetNeighbourChkBlockInfo(void* parg)
                 }
             }
         }
-        
-
         SleepFn(60);
     }
 }
-
-
-
-
 
 void ThreadRSyncGetBlock(void* parg)
 {
@@ -788,8 +740,6 @@ void ThreadRSyncGetBlock(void* parg)
         SleepFn(20);
     }
 }
-
-
 
 
 void RSyncGetBlock(const T_LOCALBLOCKADDRESS& addr)
@@ -863,6 +813,7 @@ void AppRunningArg(int& app_argc, string& app_argv)
     }
 }
 
+extern MsgHandler paramsghandler;
 
 void AppInfo(string& info)
 {
@@ -891,6 +842,8 @@ void AppInfo(string& info)
         << g_cryptoCurrency.GetLocalID() << endl
         << "Neighbor node amounts: " << vNodes.size() << endl
         << strNodes << endl;
+
+    oss << "MQID: " << paramsghandler.details() << endl << endl;
 
     bool isAllowed;
     string reason = g_miningCond.GetMiningStatus(&isAllowed);
@@ -946,29 +899,44 @@ bool ResolveBlock(CBlock &block, const char *payload, size_t payloadlen)
 
 bool ResolveHeight(int height, string& info)
 {
-    CBlockIndexSP p = pindexBest;
-    while (p) {
-        if (p->nHeight == height) {
-            break;
+    TRY_CRITICAL_BLOCK_T_MAIN(cs_main)
+    {
+        if (height > pindexBest->nHeight) {
+            info = strprintf("Invalid height value, which should <= Best block height: %d\n", nBestHeight);
+            return false;
         }
-        p = p->pprev();
-    }
-    if (!p) {
-        return false;
+
+        CTxDB_Wrapper txdb;
+
+        CBlockIndexSP p = pindexBest;
+        while (p) {
+            if (p->nHeight == height) {
+                break;
+            }
+            p = p->pprev();
+        }
+        if (!p) {
+            return false;
+        }
+
+        CBlock block;
+        T_LOCALBLOCKADDRESS addrblock;
+        if (GetBlockData(p->GetBlockHash(), block, addrblock)) {
+            info = block.ToString();
+            info += p->ToString();
+        }
+        else {
+            info = p->ToString();
+        }
+
+        return true;
     }
 
-    CBlock block;
-    T_LOCALBLOCKADDRESS addrblock;
-    if (GetBlockData(p->GetBlockHash(), block, addrblock)) {
-        info = block.ToString();
-        info += p->ToString();
-    }
-    else {
-        info = p->ToString();
-    }
-
-    return true;
-}
+    info += strprintf("Best block height: %d, Latest Para block height: %d\n", nBestHeight, LatestParaBlock::GetHeight());
+    info += strprintf("Cannot retrieve the details informations for best block and latest Para block,\n\tbecause the lock: %s, try again after a while",
+        CCriticalBlockT<pcstName>::ToString().c_str());
+    return false;
+  }
 
 
 bool ResolvePayload(const string& payload, string& info)

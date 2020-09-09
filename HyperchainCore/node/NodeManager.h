@@ -36,14 +36,9 @@ using namespace std;
 class UdpAccessPoint;
 enum class NodeType :char {
     Normal = 0,     
-
     Bootstrap,      
-
     LedgerRPCClient  
-
 };
-
-
 
 const uint16_t SAND_BOX = 0xD000;
 const uint16_t INFORMAL_NET = 0xE000;
@@ -174,8 +169,6 @@ public:
         msgbuf.setHeader(b);
 
         if (_msghandler.getID() == std::this_thread::get_id()) {
-            
-
             if (!IsNodeInKBuckets(targetNodeid))
                 return;
 
@@ -216,11 +209,7 @@ public:
     void EnableNodeActive(const CUInt128 &nodeid, bool bEnable);
 
 
-    
-
     void ParseNodeList(const string &nodes, vector<CUInt128> &vecNewNode);
-
-    
 
     void loadNeighbourNodes_New();
 
@@ -238,9 +227,9 @@ public:
         _msghandler.stop();
     }
 
-    std::thread::id MQID()
+    std::string MQID()
     {
-        return _msghandler.getID();
+        return _msghandler.details();
     }
 
 
@@ -252,8 +241,6 @@ private:
     void DispatchService(void *wrk, zmsg *msg);
 
     void ToAllNodes(const string& data);
-
-    
 
     bool SaveNodeToDB(const CUInt128 &nodeid, system_clock::time_point  lastActTime);
 

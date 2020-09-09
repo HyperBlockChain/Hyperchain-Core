@@ -51,10 +51,11 @@ public:
         m_msghandler.stop();
     }
 
-    std::thread::id MQID()
+    std::string MQID()
     {
-        return m_msghandler.getID();
+        return m_msghandler.details();
     }
+
 
 private:
 
@@ -68,9 +69,7 @@ private:
 
     zmq::context_t * m_context = nullptr;
     zmq::socket_t * m_client = nullptr;     
-
     int m_verbose;                          
-
     zmq::socket_t *m_dispatch_inner = nullptr;
     std::string m_dispatch_endpoint_i;
 

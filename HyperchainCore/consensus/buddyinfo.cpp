@@ -280,8 +280,6 @@ bool _tp2pmanagerstatus::ApplicationCheck(T_HYPERBLOCK &hyperblock)
     map<T_APPTYPE, vector<T_PAYLOADADDR>> mapPayload;
     ToAppPayloads(hyperblock, mapPayload);
 
-    
-
     for (auto& a : mapPayload) {
         CBRET ret = AppCallback<cbindex::VALIDATECHAINIDX>(a.first, a.second);
         if (ret == CBRET::REGISTERED_FALSE) {
@@ -295,8 +293,6 @@ bool _tp2pmanagerstatus::ApplicationAccept(uint32_t hidFork, T_HYPERBLOCK &hyper
 {
     map<T_APPTYPE, vector<T_PAYLOADADDR>> mapPayload;
     ToAppPayloads(hyperblock, mapPayload);
-
-    
 
     T_APPTYPE genesisledger(APPTYPE::ledger, 0, 0, 0);
     if (mapPayload.count(genesisledger)) {
@@ -312,8 +308,6 @@ bool _tp2pmanagerstatus::ApplicationAccept(uint32_t hidFork, T_HYPERBLOCK &hyper
 
     T_SHA256 thash = hyperblock.GetHashSelf();
     uint32_t hid = hyperblock.GetID();
-
-    
 
     AllAppCallback<cbindex::ACCEPTCHAINIDX>(mapPayload, hidFork, hid, thash, isLatest);
     return true;
@@ -350,8 +344,6 @@ void _tp2pmanagerstatus::UpdateLocalBuddyBlockToLatest(uint64 prehyperblockid, c
 {
     if (listLocalBuddyChainInfo.size() == ONE_LOCAL_BLOCK) {
 
-        
-
         auto itr = listLocalBuddyChainInfo.begin();
         T_LOCALBLOCK& localblock = itr->GetLocalBlock();
         string newPayload;
@@ -362,13 +354,9 @@ void _tp2pmanagerstatus::UpdateLocalBuddyBlockToLatest(uint64 prehyperblockid, c
             localblock.CalculateHashSelf();
         }
 
-        
-
         localblock.updatePreHyperBlockInfo(prehyperblockid, preHyperBlockHash);
     }
 }
-
-
 
 void _tp2pmanagerstatus::CleanConsensusEnv()
 {
@@ -446,8 +434,6 @@ void _tp2pmanagerstatus::GetMulticastNodes(vector<CUInt128> &MulticastNodes)
     itrList = (*itr).begin();
     T_APPTYPE localapptype = (*itrList).GetLocalBlock().GetAppType();
     if (localapptype.isParaCoin() == true) {
-        
-
         std::list<string> nodelist;
         CBRET ret = AppCallback<cbindex::GETNEIGHBORNODESIDX>(localapptype, nodelist);
         if (ret == CBRET::REGISTERED_TRUE) {
@@ -466,5 +452,11 @@ void _tp2pmanagerstatus::GetMulticastNodes(vector<CUInt128> &MulticastNodes)
     }
 
     g_consensus_console_logger->info("GetMulticastNodes() MulticastNodes.size: [{}]", MulticastNodes.size());
+}
+
+void _tp2pmanagerstatus::SetLatestHyperBlock(uint64 hyperid, const T_SHA256 &hhash)
+{
+    latestHyperblockId = hyperid;
+    latestHyperBlockHash = hhash;
 }
 

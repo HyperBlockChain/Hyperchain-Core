@@ -46,9 +46,7 @@ using std::chrono::system_clock;
 typedef struct _difficultyinfo
 {
     uint64 startid;  
-
     uint16 count;    
-
     _difficultyinfo(uint64 id, uint16 num) {
         startid = id;
         count = num;
@@ -67,9 +65,7 @@ typedef struct _difficultyinfo
 typedef struct _theaderhashinfo
 {
     T_SHA256 headerhash;   
-
     set<string> nodeids;   
-
     _theaderhashinfo(T_SHA256 hash, string nodeid) {
         headerhash = hash;
         nodeids.insert(nodeid);
@@ -159,8 +155,6 @@ public:
     bool GetLocalBlockPayload(const T_LOCALBLOCKADDRESS& addr, string& payload);
     bool GetLocalBlock(const T_LOCALBLOCKADDRESS& addr, T_LOCALBLOCK& localblock);
 
-    
-
     bool getHyperBlock(uint64 hid, T_HYPERBLOCK &hyperblock);
     bool getHyperBlock(const T_SHA256 &hhash, T_HYPERBLOCK &hyperblock);
     bool getHyperBlockByPreHash(T_SHA256 &prehash, T_HYPERBLOCK &hyperblock);
@@ -189,10 +183,11 @@ public:
     uint64 GetHeaderHashCacheLatestHID();
     uint64 GetGlobalLatestHyperBlockNo();
 
-    std::thread::id MQID()
+    std::string MQID()
     {
-        return _msghandler.getID();
+        return _msghandler.details();
     }
+
 
 private:
     int  GenerateHIDSection();
@@ -226,87 +221,58 @@ private:
 private:
 
     bool m_FullNode;                        
-
     string m_mynodeid;                      
-
     std::set<uint64> m_localHID;            
-
     vector <string> m_localHIDsection;      
-
-    vector<CUInt128> m_MulticastNodes;      
-
+    vector<CUInt128> m_MulticastNodes;     
 
     DBmgr* m_db = nullptr;
 
     uint64 sync_hid;                        
-
     system_clock::time_point sync_time;     
 
-
     bool m_LatestBlockReady;                 
-
     T_HYPERBLOCK m_LatestHyperBlock;         
-
     std::atomic<uint64> uiMaxBlockNum;       
-
     std::atomic<uint64> uiGlobalMaxBlockNum; 
-
 
     map<uint64, T_SHA256> m_BlockHashMap;    
 
-
     bool m_localHeaderReady;                 
-
     std::atomic<uint64> uiMaxHeaderID;       
-
 
     map<uint64, T_SHA256> m_HeaderHashMap;   
 
-
     uint64 sync_header_hid;                     
-
     system_clock::time_point sync_header_time;  
-
     bool sync_header_furcated;
     bool sync_header_ready;
 
     ITR_HASH_LIST m_HashChain;
     vector<list<T_SHA256>> m_BlocksHeaderHash;  
 
-
     MAP_T_HEADERINDEX m_HeaderIndexMap;      
-
 
     map<uint64, std::set<string>> m_ReqHeaderHashNodes;  
 
-
     map<T_SHA256, T_SINGLEHEADER> m_SingleHeaderMap;      
-
 
     MAP_T_UNCONFIRMEDBLOCK m_UnconfirmedBlockMap;         
 
-
     MAP_T_UNCONFIRMEDHEADERHASH m_UnconfirmedHashMap;     
-
 
     bool m_ChainspaceReady;
     map<uint64, std::set<string>> m_Chainspace; 
 
-
     map<uint64, uint32> m_BlockHealthInfo;      
-
 
     map<string, string> m_chainspaceshow;       
 
-
     map<string, uint64> m_chainspaceheader;     
-
 
     std::list<thread>  m_threads;
     unique_ptr<thread> m_threadPullAppBlocks;
     bool _isstop;
-
-    
 
     MsgHandler _msghandler;
     zmq::socket_t *_hyperblock_pub = nullptr;

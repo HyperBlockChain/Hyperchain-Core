@@ -36,6 +36,7 @@ DEALINGS IN THE SOFTWARE.
 #include <map>
 #include <vector>
 #include <string>
+#include <thread>
 
 #include <boost/thread/thread.hpp>
 #include <boost/interprocess/sync/interprocess_recursive_mutex.hpp>
@@ -169,7 +170,11 @@ extern std::map<std::string, std::vector<std::string> > mapMultiArgs;
 extern bool fDebug;
 extern bool fPrintToConsole;
 extern bool fPrintToDebugFile;
+
 extern bool fPrintBacktracking;
+extern bool fPrintBacktracking_node;
+extern std::string strBacktracking_node;
+
 extern bool fPrintToDebugger;
 extern char pszSetDataDir[MAX_PATH];
 extern bool fRequestShutdown;
@@ -192,6 +197,7 @@ int OutputDebugStringF(const char* pszFormat, ...);
 std::string strprintf(const char* format, ...);
 
 void LogBacktracking(const char* format, ...);
+void LogBacktrackingFromNode(const string &fromnode, const char* format, ...);
 
 #define __format(fmt) "(%s:%d) " fmt
 
@@ -367,6 +373,7 @@ public:
     CCriticalSection* _pcs;
     static string _file;
     static int _nLine;
+    static std::thread::id _tid;
     bool _isLocked = false;
 
 public:
@@ -384,6 +391,7 @@ public:
         _pcs->Enter(NAME, pszFile, nLine);
         _file = pszFile;
         _nLine = nLine;
+        _tid = std::this_thread::get_id();
         _isLocked = true;
         return true;
     }
@@ -404,14 +412,18 @@ public:
         if (_pcs->TryEnter(NAME, pszFile, nLine)) {
             _file = pszFile;
             _nLine = nLine;
+            _tid = std::this_thread::get_id();
             _isLocked = true;
             return true;
         }
         return false;
     }
+
     static string ToString()
     {
-        return strprintf("%s is taken by (%s %d)", NAME, _file.c_str(), _nLine);
+        stringstream ss;
+        ss << _tid;
+        return strprintf("%s is taken by TID:%s (%s %d)", NAME, ss.str().c_str(), _file.c_str(), _nLine);
     }
 };
 

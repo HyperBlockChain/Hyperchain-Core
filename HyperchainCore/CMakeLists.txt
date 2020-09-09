@@ -22,7 +22,7 @@
 
 CMAKE_MINIMUM_REQUIRED(VERSION 3.7)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
 if(UNIX)
 
@@ -38,11 +38,14 @@ elseif(WIN32)
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /MD /EHsc")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Zi /Od /MDd /EHsc")
 
-ADD_DEFINITIONS(/D__WXMSW__ /DNOMINMAX /DUDT_EXPORTS)
+ADD_DEFINITIONS(/D__WXMSW__ /DNOMINMAX /DUDT_EXPORTS -DWIN32 -D_HAS_STD_BYTE=0)
+
 
 endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules")
+
+
 
 PROJECT(hc)
 
@@ -194,10 +197,11 @@ add_subdirectory(plugins/ledger)
 
 add_executable(${PROJECT_NAME} ${final_SRC} ${final_HEAD} ${WRAP_FILES})
 
+
 if(WIN32)
 target_link_libraries(${PROJECT_NAME} bcrypt.lib)
 else()
-target_link_libraries(${PROJECT_NAME} dl)
+target_link_libraries(${PROJECT_NAME} dl ssl)
 endif()
 
 

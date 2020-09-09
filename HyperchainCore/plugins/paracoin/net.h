@@ -56,8 +56,6 @@ extern int nConnectTimeout;
 using CBlockIndexSP = shared_ptr_proxy<CBlockIndex>;
 #endif
 
-
-
 inline unsigned int ReceiveBufferSize() { return 1000 * GetArg("-maxreceivebuffer", 10 * 1000); }
 inline unsigned int SendBufferSize() { return 1000 * GetArg("-maxsendbuffer", 10 * 1000); }
 static const unsigned int PUBLISH_HOPS = 5;
@@ -141,8 +139,6 @@ public:
     int64 nLastRecv;
     int64 nLastSendEmpty;
     int64 nTimeConnected;
-    
-
     int64 nLastGetchkblk = 0;
     unsigned int nHeaderStart;
     unsigned int nMessageStart;
@@ -154,7 +150,11 @@ public:
     bool fNetworkNode;
     bool fSuccessfullyConnected;
     bool fDisconnect;
-	std::string nodeid;
+    std::string nodeid;
+
+    int nScore = 0;
+
+
 protected:
     int nRefCount;
 public:
@@ -178,18 +178,12 @@ public:
     std::vector<CInv> vInventoryToSend;
     CCriticalSection cs_inventory;
 
-    
-
     std::multimap<int64, CInv> mapAskFor;
 
     // publish and subscription
     std::vector<char> vfSubscribe;
 
-    
-
     std::map<uint256, std::tuple<int64, uint256>> mapBlockSent;
-
-    
 
     uint256 hashCheckPointBlock = 0;
     uint32_t nHeightCheckPointBlock  = 0;
@@ -290,8 +284,6 @@ public:
 
     void AddInventoryKnown(const CInv& inv)
     {
-        
-
         return;
         CRITICAL_BLOCK(cs_inventory)
             setInventoryKnown.insert(inv);
@@ -301,8 +293,6 @@ public:
     {
         CRITICAL_BLOCK(cs_inventory)
         {
-            
-
             //if (!setInventoryKnown.count(inv))
                 vInventoryToSend.push_back(inv);
         }
@@ -725,5 +715,31 @@ void AdvertRemoveSource(CNode* pfrom, unsigned int nChannel, unsigned int nHops,
     if (obj.setSources.empty())
         AdvertStopPublish(pfrom, nChannel, nHops, obj);
 }
+
+
+typedef map<T_APPTYPE, vector<T_PAYLOADADDR>> M_APP_PAYLOADADDR;
+typedef struct tagCHAINCBDATA
+{
+    tagCHAINCBDATA(M_APP_PAYLOADADDR &&m, uint32_t hidFork, uint32_t hid, const T_SHA256 &thhash, bool isLatest) :
+        m_mapPayload(std::move(m)), m_hidFork(hidFork), m_hid(hid), m_thhash(thhash), m_isLatest(isLatest)
+    {
+    }
+
+    M_APP_PAYLOADADDR m_mapPayload;
+    uint32_t m_hidFork;
+    uint32_t m_hid;
+    T_SHA256 m_thhash;
+    bool m_isLatest;
+} CHAINCBDATA;
+
+class HyperBlockMsgs
+{
+public:
+    void insert(CHAINCBDATA &&cb);
+    void process();
+private:
+    CCriticalSection m_cs_list;
+    std::list<CHAINCBDATA> m_list;
+};
 
 #endif

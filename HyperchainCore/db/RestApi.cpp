@@ -55,23 +55,28 @@ using std::chrono::system_clock;
 #define MAX_BUF_LEN 512
 #define LOCAL_BLOCK_BASE_LEN	sizeof(T_LOCALBLOCK)
 
+#define BATCH_BUFFER_MAXIMUM  5
+#define BATCH_DATA_MAXIMUM (1024 * 1024)
+
+list<T_BATCHBUFFER> m_BatchBufferList;
+CMutexObj m_MuxBatchBufferList;
+T_PBATCHBUFFER input = nullptr;
+
 std::map<uint64, system_clock::time_point> g_mapDownLoad;
 std::mutex _guard;
 
 
 std::shared_ptr<CommandHandler> g_spRestHandler;
 
+list<thread>  m_threads;
+bool _isstop = false;
 
 string tstringToUtf8(const utility::string_t& str)
 {
 #ifdef _UTF16_STRINGS
-    
-
     wstring_convert<codecvt_utf8<wchar_t> > strCnv;
     return strCnv.to_bytes(str);
 #else
-    
-
     return str;
 #endif
 }
@@ -79,13 +84,9 @@ string tstringToUtf8(const utility::string_t& str)
 utility::string_t stringToTstring(const string& str)
 {
 #ifdef _UTF16_STRINGS
-    
-
     std::wstring_convert<std::codecvt<wchar_t, char, std::mbstate_t>> strCnv;
     return strCnv.from_bytes(str);
 #else
-    
-
     return str;
 #endif
 }
@@ -258,8 +259,6 @@ void CommandHandler::handle_get(http_request message)
                     system_clock::time_point curr = system_clock::now();
                     seconds timespan = std::chrono::duration_cast<seconds>(curr - it->second);
                     if (timespan.count() < 30) {
-                        
-
                         vRet = json::value::string(_XPLATSTR("downloading"));
                         goto REPLY;
                     }
@@ -341,6 +340,22 @@ void CommandHandler::handle_get(http_request message)
 
                 RestApi api;
                 vRet = api.getOnchainState(strid);
+            }
+        }
+
+        else if (path[0] == _XPLATSTR("GetBatchOnchainState"))
+        {
+            auto id = query.find(_XPLATSTR("batchid"));
+            if (id == query.end()) {
+                BADPARAMETER(requestid);
+                return;
+            }
+
+            if (id != query.end() && !id->second.empty()) {
+                string strid = tstringToUtf8(id->second);
+
+                RestApi api;
+                vRet = api.getBatchOnchainState(strid);
             }
         }
 
@@ -486,7 +501,7 @@ void CommandHandler::handle_get(http_request message)
         else if (path[0] == _XPLATSTR("GetNodeRuntimeEnv"))
         {
             NodeManager* nodemgr = Singleton<NodeManager>::getInstance();
-            if (nodemgr == nullptr)                 {
+            if (nodemgr == nullptr) {
                 vRet[_XPLATSTR("NodeEnv")] = json::value::string(_XPLATSTR("initializing"));
             }
             else {
@@ -499,7 +514,7 @@ void CommandHandler::handle_get(http_request message)
         else if (path[0] == _XPLATSTR("GetStateOfCurrentConsensus"))
         {
             ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
-            if (consensuseng == nullptr)                 {
+            if (consensuseng == nullptr) {
                 vRet[_XPLATSTR("consensusState")] = json::value::string(_XPLATSTR("initializing"));
             }
             else {
@@ -791,10 +806,52 @@ void CommandHandler::handle_post(http_request message)
                     vRet = api.MakeRegistration(struserdefined);
                 }
                 else if (struserdefined.length() > MAX_USER_DEFINED_DATA) {
-                    vRet[_XPLATSTR("returnValue")] = json::value::string(stringToTstring("SubmitRegistration data length >= 16KB"));
+                    vRet[_XPLATSTR("returnValue")] = json::value::string(stringToTstring("SubmitRegistration data length >= 2MB"));
                 }
                 else {
                     vRet[_XPLATSTR("returnValue")] = json::value::string(stringToTstring("SubmitRegistration data length empty"));
+                }
+
+                http_response response(status_codes::OK);
+                response.set_body(vRet);
+                response.headers().add(_XPLATSTR("Access-Control-Allow-Origin"), _XPLATSTR("*"));
+                message.reply(response).then([](pplx::task<void> t)
+                {
+                    try {
+                        t.get();
+                    }
+                    catch (...) {
+                    }
+                });
+            }).then([=](pplx::task<void>t) {
+                try {
+                    t.get();
+                }
+                catch (...) {
+                    message.reply(status_codes::InternalError, _XPLATSTR("INTERNAL ERROR "));
+                }
+            });
+
+            return;
+        }
+        else if (path[0] == _XPLATSTR("BatchRegistration")) {
+            Concurrency::streams::istream inStream = message.body();
+            concurrency::streams::container_buffer<std::string> inStringBuffer;
+
+            inStream.read_line(inStringBuffer).then([=](std::size_t bytesRead)
+            {
+                string struserdefined = inStringBuffer.collection();
+                json::value vRet;
+
+                if (!struserdefined.empty() && struserdefined.length() <= BATCH_DATA_MAXIMUM) {
+                    RestApi api;
+                    vRet = api.MakeBatchRegistration(struserdefined);
+                }
+                else if (struserdefined.length() > BATCH_DATA_MAXIMUM) {
+                    vRet[_XPLATSTR("returnValue")] = json::value::string(stringToTstring("BatchRegistration data length >= 1MB"));
+                }
+                else {
+                    vRet[_XPLATSTR("returnValue")] = json::value::string(stringToTstring("BatchRegistration data length empty"));
                 }
 
                 http_response response(status_codes::OK);
@@ -933,8 +990,6 @@ void RestApi::blockHeadToJsonValue(const T_LOCALBLOCK& localblock, json::value& 
     val[_XPLATSTR("root_block_body_hash")] = json::value::string(stringToTstring(localblock.GetRootHash().toHexString()));
     val[_XPLATSTR("script_hash")] = json::value::string(stringToTstring(localblock.GetScriptHash().toHexString()));
 
-    
-
     val[_XPLATSTR("payload_size")] = json::value::number(localblock.GetPayload().size());
     val[_XPLATSTR("block_size")] = json::value::number(localblock.GetSize());
 }
@@ -976,7 +1031,6 @@ void RestApi::blockHeadToJsonValue(const T_HYPERBLOCK& hyperblock, size_t hyperB
     }
     val[_XPLATSTR("childchain_blockscount")] = obj;     
 
-
     obj = json::value::array();
     const list<T_SHA256>& tailhashlist = hyperblock.GetChildTailHashList();
     uint16 i = 0;
@@ -984,7 +1038,6 @@ void RestApi::blockHeadToJsonValue(const T_HYPERBLOCK& hyperblock, size_t hyperB
         obj[i++] = json::value::string(stringToTstring(tailhash.toHexString()));
     }
     val[_XPLATSTR("tailblockshash")] = obj;       
-
 
     //val[_XPLATSTR("hyperBlockHashVersion")] = json::value::number(1);
     val[_XPLATSTR("hyperBlockSize")] = json::value::number(hyperBlockSize);
@@ -1006,7 +1059,6 @@ void RestApi::blockBodyToJsonValue(const T_HYPERBLOCK& hyperblock, json::value& 
         vObj[j++] = lObj;
     }
     val[_XPLATSTR("local_blocks_header_hash")] = vObj;     
-
 
     int k = 0;
     json::value obj = json::value::array();
@@ -1153,15 +1205,10 @@ json::value RestApi::getLocalchain(uint64_t hid, uint64_t chain_num)
     int nRet = Singleton<DBmgr>::instance()->getLocalchain(hid, chain_num, blocks, chain_difficulty);
     if (nRet == 0) {
         LocalChain[_XPLATSTR("chain_num")] = json::value::number(chain_num);	
-
         LocalChain[_XPLATSTR("blocks")] = json::value::number(blocks);			
-
         LocalChain[_XPLATSTR("block_chain")] = json::value::string(_XPLATSTR("unknown")); 
-
         LocalChain[_XPLATSTR("difficulty")] = json::value::number(chain_difficulty);	  
-
         LocalChain[_XPLATSTR("consensus")] = json::value::string(_XPLATSTR("buddy"));	  
-
     }
 
     return LocalChain;
@@ -1190,6 +1237,7 @@ static unordered_map<ONCHAINSTATUS, string, HashFunc, EqualKey> mapstatus = {
     {ONCHAINSTATUS::failed,"failed"},
     {ONCHAINSTATUS::nonexistent,"nonexistent"},
     {ONCHAINSTATUS::unknown,"unknown"},
+    {ONCHAINSTATUS::pending,"pending"},
 };
 
 json::value RestApi::getOnchainState(const string& requestID)
@@ -1204,8 +1252,6 @@ json::value RestApi::getOnchainState(const string& requestID)
         status = consensuseng->GetOnChainState(requestID, queuenum);
 
         if (status == ONCHAINSTATUS::unknown) {
-            
-
             if (consensuseng->CheckSearchOnChainedPool(requestID, addr)) {
                 status = ONCHAINSTATUS::failed;
                 if (addr.isValid()) {
@@ -1213,8 +1259,6 @@ json::value RestApi::getOnchainState(const string& requestID)
                 }
             }
             else {
-                
-
                 bool isfound = Singleton<DBmgr>::instance()->getOnChainStateFromRequestID(requestID, addr);
                 if (!isfound) {
                     status = ONCHAINSTATUS::nonexistent;
@@ -1242,6 +1286,241 @@ json::value RestApi::getOnchainState(const string& requestID)
     return vHyperBlocks;
 }
 
+string RestApi::GetOnchainState(const string& requestID)
+{
+    T_LOCALBLOCKADDRESS addr;
+    size_t queuenum;
+    ONCHAINSTATUS status = ONCHAINSTATUS::unknown;
+
+    ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
+    if (!consensuseng)
+        return mapstatus[status];
+
+    status = consensuseng->GetOnChainState(requestID, queuenum);
+    if (status != ONCHAINSTATUS::unknown)
+        return mapstatus[status];
+
+    if (consensuseng->CheckSearchOnChainedPool(requestID, addr)) {
+        status = ONCHAINSTATUS::failed;
+        if (addr.isValid()) {
+            status = ONCHAINSTATUS::onchained;
+        }
+        return mapstatus[status];
+    }
+
+    bool isfound = Singleton<DBmgr>::instance()->getOnChainStateFromRequestID(requestID, addr);
+    if (!isfound) {
+        status = ONCHAINSTATUS::nonexistent;
+        return mapstatus[status];
+    }
+
+    status = ONCHAINSTATUS::matured;
+    if (!addr.isValid()) {
+        status = ONCHAINSTATUS::failed;
+    }
+
+    return mapstatus[status];
+}
+
+json::value RestApi::getBatchOnchainState(const string& batchID)
+{
+    string requestID;
+    json::value vHyperBlocks;
+    ONCHAINSTATUS status = ONCHAINSTATUS::unknown;
+
+    CAutoMutexLock muxAuto(m_MuxBatchBufferList);
+    for (auto it = m_BatchBufferList.begin(); it != m_BatchBufferList.end(); it++) {
+        if (0 == batchID.compare((it->id).c_str())) {
+            status = ONCHAINSTATUS::pending;
+            break;
+        }
+    }
+
+    if (status == ONCHAINSTATUS::unknown) {
+        bool isfound = Singleton<DBmgr>::instance()->getRequestID(batchID, requestID);
+        if (!isfound) {
+            status = ONCHAINSTATUS::nonexistent;
+        }
+    }
+
+    if (status != ONCHAINSTATUS::unknown) {
+        vHyperBlocks[_XPLATSTR("onChainState")] = json::value::string(stringToTstring(mapstatus[status]));
+        return vHyperBlocks;
+    }
+
+    return getOnchainState(requestID);
+}
+
+json::value RestApi::MakeBatchRegistration(string strdata)
+{
+    json::value valQueueID;
+
+    CAutoMutexLock muxAuto(m_MuxBatchBufferList);
+    if (input != nullptr && !(input->full) &&
+        (input->len + strdata.length()) > MAX_USER_DEFINED_DATA) {
+        input->full = true;
+    }
+
+    if (input == nullptr || input->full == true) {
+        if (m_BatchBufferList.size() >= BATCH_BUFFER_MAXIMUM) {
+            valQueueID[_XPLATSTR("batchid")] = json::value::string(stringToTstring(""));
+            valQueueID[_XPLATSTR("state")] = json::value::string(stringToTstring("failed"));
+
+            return valQueueID;
+        }
+
+        T_BATCHBUFFER newbuf;
+        m_BatchBufferList.emplace_back(std::move(newbuf));
+        auto ir = m_BatchBufferList.rbegin();
+        input = &(*ir);
+    }
+
+    input->data.append(strdata.c_str());
+    input->len += strdata.length();
+
+    size_t n = m_BatchBufferList.size();
+    valQueueID[_XPLATSTR("batchid")] = json::value::string(stringToTstring((input->id).c_str()));
+    valQueueID[_XPLATSTR("state")] = json::value::string(stringToTstring("submitted"));
+
+    return valQueueID;
+}
+
+void RestApi::SubmitBatchRegistration()
+{
+    CAutoMutexLock muxAuto(m_MuxBatchBufferList);
+    if (m_BatchBufferList.empty())
+        return;
+
+    using seconds = std::chrono::duration<double, ratio<1>>;
+    system_clock::time_point curr = system_clock::now();
+    vector<string> vcdata;
+
+    for (auto it = m_BatchBufferList.begin(); it != m_BatchBufferList.end();) {
+
+        seconds timespan = std::chrono::duration_cast<seconds>(curr - it->ctime);
+        if (!it->full && timespan.count() < 180) {
+            return;
+        }
+
+        if (&(*it) == input) {
+            input = nullptr;
+        }
+
+        vcdata.clear();
+
+        if (Upqueue(it->data, vcdata)) {
+            Singleton<DBmgr>::instance()->updateBatchOnChainState(it->id, vcdata[0], it->data);
+            m_BatchBufferList.erase(it++);
+        }
+        else {
+            g_daily_logger->error("RestApi::SubmitBatchRegistration, Upqueue() failed");
+            return;
+        }
+    }
+}
+
+void RestApi::SubmitBatchRegistrationThread()
+{
+    std::function<void(int)> sleepfn = [](int sleepseconds) {
+        int i = 0;
+        int maxtimes = sleepseconds * 1000 / 200;
+        while (i++ < maxtimes) {
+            if (_isstop) {
+                break;
+            }
+            this_thread::sleep_for(chrono::milliseconds(200));
+        }
+    };
+
+    while (!_isstop) {
+        sleepfn(60);
+        SubmitBatchRegistration();
+    }
+}
+
+void RestApi::RetrySubmit()
+{
+    vector<string> requestidvec;
+    vector<string> succeedvec;
+    vector<string> failedvec;
+
+    int ret = Singleton<DBmgr>::instance()->getRequestIDs(requestidvec);
+    if (ret != 0)
+        return;
+
+    if (requestidvec.empty())
+        return;
+
+    for (auto &requestid : requestidvec) {
+        string status = GetOnchainState(requestid);
+        if (status.compare("matured") == 0) {
+            succeedvec.push_back(requestid);
+            continue;
+        }
+
+        if (status.compare("nonexistent") == 0 || status.compare("failed") == 0) {
+            failedvec.push_back(requestid);
+            continue;
+        }
+
+        if (status.compare("queueing") == 0) {
+            break;
+        }
+    }
+
+    if (succeedvec.size() > 0) {
+        for (auto &succeedid : succeedvec) {
+            Singleton<DBmgr>::instance()->updateSucceedRequestIDs(succeedid);
+        }
+    }
+
+    if (failedvec.size() > 0) {
+        int ret;
+        vector<string> vcdata;
+
+        for (auto &failedid : failedvec) {
+            string data;
+            ret = Singleton<DBmgr>::instance()->getBatchOnChainData(failedid, data);
+            if (ret != 0 || data.empty()) {
+                g_daily_logger->error("RestApi::RetrySubmit, getBatchOnChainData() failed, requestid: {}", failedid);
+                continue;
+            }
+
+            vcdata.clear();
+
+            if (Upqueue(data, vcdata)) {
+                Singleton<DBmgr>::instance()->updateBatchOnChainState(failedid, vcdata[0]);
+            }
+            else {
+                g_daily_logger->error("RestApi::RetrySubmit, Upqueue() failed");
+                return;
+            }
+
+        }
+    }
+
+}
+
+void RestApi::RetrySubmitThread()
+{
+    std::function<void(int)> sleepfn = [](int sleepseconds) {
+        int i = 0;
+        int maxtimes = sleepseconds * 1000 / 200;
+        while (i++ < maxtimes) {
+            if (_isstop) {
+                break;
+            }
+            this_thread::sleep_for(chrono::milliseconds(200));
+        }
+    };
+
+    while (!_isstop) {
+        sleepfn(30);
+        RetrySubmit();
+        sleepfn(570);
+    }
+}
+
 json::value RestApi::MakeRegistration(string strdata)
 {
     vector<string> vcdata;
@@ -1266,6 +1545,7 @@ bool RestApi::Upqueue(string strdata, vector<string>& out_vc)
     string requestid;
     ConsensusEngine* consensuseng = Singleton<ConsensusEngine>::getInstance();
     if (consensuseng == nullptr) {
+        g_daily_logger->error("RestApi::Upqueue(), ConsensusEngine is stopped");
         g_console_logger->error("ConsensusEngine is stopped");
         return false;
     }
@@ -1287,7 +1567,7 @@ int RestApi::startRest(int nport)
     ss << "http://0.0.0.0:" << nport;
 #endif
 
-    cout << "Start RestServer: " << ss.str() <<  endl;
+    cout << "Start RestServer: " << ss.str() << endl;
 
     utility::string_t address = s2t(ss.str());
 
@@ -1305,6 +1585,10 @@ int RestApi::startRest(int nport)
         g_spRestHandler->close().wait();
     }
 
+    _isstop = false;
+    m_threads.emplace_back(&RestApi::SubmitBatchRegistrationThread);
+    m_threads.emplace_back(&RestApi::RetrySubmitThread);
+
     return 0;
 }
 
@@ -1316,6 +1600,12 @@ int RestApi::stopRest()
     catch (std::exception & ex) {
         cout << "RestServer exception:" << __FUNCTION__ << " " << ex.what() << endl;
     }
+
+    _isstop = true;
+    for (auto& t : m_threads) {
+        t.join();
+    }
+    m_threads.clear();
 
     return 0;
 }

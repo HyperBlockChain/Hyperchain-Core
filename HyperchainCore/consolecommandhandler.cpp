@@ -33,6 +33,7 @@ DEALINGS IN THE SOFTWARE.
 
 #include "node/Singleton.h"
 #include "node/UdpAccessPoint.hpp"
+#include "node/UdpRecvDataHandler.hpp"
 #include "HyperChain/HyperChainSpace.h"
 #include "node/NodeManager.h"
 #include "consensus/buddyinfo.h"
@@ -237,9 +238,10 @@ void ConsoleCommandHandler::showNeighborNode()
 void ConsoleCommandHandler::showMQBroker()
 {
     cout << "MQ Thread ID:" << endl;
-    cout << "\t  Consensus: " << Singleton<ConsensusEngine>::getInstance()->MQID() << endl;
-    cout << "\t ChainSpace: " << Singleton<CHyperChainSpace, string>::getInstance()->MQID() << endl;
-    cout << "\tNodeManager: " << Singleton<NodeManager>::getInstance()->MQID() << endl << endl;
+    cout << "\t     Consensus: " << Singleton<ConsensusEngine>::getInstance()->MQID() << endl;
+    cout << "\t    ChainSpace: " << Singleton<CHyperChainSpace, string>::getInstance()->MQID() << endl;
+    cout << "\t   NodeManager: " << Singleton<NodeManager>::getInstance()->MQID() << endl ;
+    cout << "\tUdpDataHandler: " << Singleton<UdpRecvDataHandler>::getInstance()->MQID() << endl << endl;
 
     HCMQMonitor mon;
 
@@ -573,8 +575,6 @@ void ConsoleCommandHandler::resolveAppData(const list<string> &paralist)
         }
 
         if (paralist.size() == 3) {
-            
-
             int32 height = std::stoi(*(++para));
             f->appResolveHeight(height, info);
             std::printf("%s\n", info.c_str());
@@ -585,8 +585,6 @@ void ConsoleCommandHandler::resolveAppData(const list<string> &paralist)
             std::printf("format error\n");
             return;
         }
-
-        
 
         int64 hID = std::stol(*(++para));
         int16 chainID = std::stoi(*(++para));
@@ -711,8 +709,6 @@ void ConsoleCommandHandler::setLoggerLevelHelp(std::shared_ptr<spdlog::logger> &
         }
         return false;
     });
-
-    
 
     std::printf("%s log level is %s (trace,debug,info,warn,err,critical,off)\n",
         logger->name().c_str(), levelname.c_str());

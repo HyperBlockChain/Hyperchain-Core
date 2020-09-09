@@ -34,6 +34,8 @@ DEALINGS IN THE SOFTWARE.
 #include <thread>
 using namespace std;
 
+class priority_scheduler;
+
 class MsgHandler
 {
 public:
@@ -57,17 +59,15 @@ public:
     void registerWorker(const char* servicename, std::function<void(void*, zmsg*)> func);
     size_t registerTimer(int delaymilliseconds, std::function<void()> func, bool isticket = false);
 
-    
-
     void registerSocket(std::function<zmq::socket_t*()> sockcreatefunc, std::function<void(void*, zmsg*)> func);
 
     void start();
     void stop();
 
-    std::thread::id getID()
-    {
-        return _eventloopthread->get_id();
-    }
+    inline void addfiber() { _fiber_count_created_++; }
+
+    std::thread::id getID();
+    string details();
 
 private:
     void dispatchMQEvent();
@@ -117,6 +117,9 @@ private:
 
     std::vector<pendingsock> _pending_sock;
 
+    int _fiber_count_created_ = 0;
+
+    priority_scheduler * _my_scheduler_algo = nullptr;
  };
 
 

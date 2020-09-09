@@ -76,6 +76,8 @@ uint64 nLocalHostNonce = 0;
 boost::array<int, 10> vnThreadsRunning;
 static SOCKET hListenSocket = INVALID_SOCKET;
 
+HyperBlockMsgs hyperblockMsgs;
+
 vector<CNode*> vNodes;
 CCriticalSection cs_vNodes;
 map<vector<unsigned char>, CAddress> mapAddresses;
@@ -89,7 +91,6 @@ map<CInv, int64> mapAlreadyAskedFor;
 int fUseProxy = false;
 int nConnectTimeout = 5000;
 CAddress addrProxy("127.0.0.1",9050);
-
 
 
 
@@ -124,8 +125,6 @@ void CNode::PushGetBlocks(CBlockIndexSP pindexBegin, uint256 hashEnd)
         }
         else {
             if (g_mapblkindexLocator.size() > 3) {
-                
-
                 int64 mintm = time(nullptr);
                 auto bil = g_mapblkindexLocator.begin();
                 auto it = g_mapblkindexLocator.begin();
@@ -150,8 +149,6 @@ void CNode::PushGetBlocks(CBlockIndexSP pindexBegin, uint256 hashEnd)
 void CNode::GetChkBlock()
 {
     auto now = time(nullptr);
-    
-
     if (nLastGetchkblk + 150 < now) {
         TRY_CRITICAL_BLOCK(cs_vSend)
         {
@@ -164,15 +161,14 @@ void CNode::GetChkBlock()
 void CNode::PushGetBlocksReversely(uint256 hashEnd)
 {
     // Filter out duplicate requests
-    
-
     //TRY_CRITICAL_BLOCK(cs_vSend)
     {
         LogBacktracking("\n*****************************************************************\n");
-        LogBacktracking("PushGetBlocksReversely: rgetblocks %s to: %s\n\n",
+        LogBacktracking("PushGetBlocksReversely: rgetblocks %s to: %s(score:%d)\n\n",
             hashEnd.ToPreViewString().c_str(),
-            nodeid.c_str());
+            nodeid.c_str(), nScore);
 
+        nScore -= 300;
         PushMessage("rgetblocks", hashEnd);
     }
 }
@@ -190,8 +186,6 @@ bool ConnectSocket(const CAddress& addrConnect, SOCKET& hSocketRet, int nTimeout
 
 
     hSocketRet = hSocket;
-	
-
 
     return false;
 }
@@ -1322,8 +1316,6 @@ void ThreadMessageHandler2(void* parg)
                 return;
 
             // Send messages
-            
-
             //TRY_CRITICAL_BLOCK(pnode->cs_vSend)
                 SendMessages(pnode, pnode == pnodeTrickle);
             if (fShutdown)
@@ -1486,8 +1478,6 @@ void StartNode(void* parg)
 #endif
     printf("addrLocalHost = %s\n", addrLocalHost.ToString().c_str());
 
-	
-
     //if (fUseProxy || mapArgs.count("-connect") || fNoListen)
     //{
     //    // Proxies can't take incoming connections
@@ -1508,8 +1498,6 @@ void StartNode(void* parg)
         MapPort(fUseUPnP);
 
     // Get addresses from IRC and advertise ours
-	
-
     //if (!CreateThread(ThreadIRCSeed, NULL))
         //printf("Error: CreateThread(ThreadIRCSeed) failed\n");
 
@@ -1517,8 +1505,6 @@ void StartNode(void* parg)
     CreateThread(ThreadSocketHandler, NULL);
 
     // Initiate outbound connections
-	
-
     //if (!CreateThread(ThreadOpenConnections, NULL))
         //printf("Error: CreateThread(ThreadOpenConnections) failed\n");
 

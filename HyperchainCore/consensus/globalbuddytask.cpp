@@ -35,8 +35,6 @@ void MergeChainsWithMine(T_P2PPROTOCOLGLOBALBUDDYHEADER &globalBuddyHeader, boos
 
     ConsensusEngine *pEng = Singleton<ConsensusEngine>::getInstance();
 
-    
-
     for (uint64 i = 0; i < globalBuddyHeader.GetBlockCount(); i++) {
         T_GLOBALCONSENSUS  localBlockInfo;
         try {
@@ -54,8 +52,6 @@ void MergeChainsWithMine(T_P2PPROTOCOLGLOBALBUDDYHEADER &globalBuddyHeader, boos
         if (uiChainCountNum != localBlockInfo.GetChainNo()) {
             uiChainCountNum = localBlockInfo.GetChainNo();
             if (listLocalConsensusInfo.size() != 0) {
-                
-
                 pEng->MergeToGlobalBuddyChains(listLocalConsensusInfo);
                 listLocalConsensusInfo.clear();
             }
@@ -64,8 +60,6 @@ void MergeChainsWithMine(T_P2PPROTOCOLGLOBALBUDDYHEADER &globalBuddyHeader, boos
         listLocalConsensusInfo.emplace_back(localInfo);
 
         if (i == globalBuddyHeader.GetBlockCount() - 1) {
-            
-
             pEng->MergeToGlobalBuddyChains(listLocalConsensusInfo);
             listLocalConsensusInfo.clear();
         }
@@ -82,8 +76,6 @@ void GlobalBuddyStartTask::exec()
     T_SHA256 preHyperblockHash = pConsensusStatus->GetConsensusPreHyperBlockHash();
     uint32_t blockNum = static_cast<uint32>(pConsensusStatus->listLocalBuddyChainInfo.size());
     if (blockNum <= 1) {
-        
-
         return;
     }
 
@@ -91,12 +83,8 @@ void GlobalBuddyStartTask::exec()
     HCNodeSH & me = nodemgr->myself();
 
     auto itr = pConsensusStatus->listLocalBuddyChainInfo.end();
-    
-
     itr--;
     if ((*itr).GetPeer().GetPeerAddr() == me->getNodeId<CUInt128>()) {
-        
-
 
         T_P2PPROTOCOLGLOBALBUDDYHEADER P2pProtocolGlobalBuddyReq;
 
@@ -159,21 +147,15 @@ void GlobalBuddyRspTask::exec()
     if (isEndNodeBuddyChain) {
         T_SHA256 hyperblockhash = pConsensusStatus->GetConsensusPreHyperBlockHash();
         if (globalBuddyHeader.uiHyperBlockHash != hyperblockhash) {
-            g_consensus_console_logger->error("GlobalBuddyReq is refused for different hyper block hash");
+            g_consensus_console_logger->warn("GlobalBuddyReq is refused for different hyper block hash");
             return;
         }
 
         MergeChainsWithMine(globalBuddyHeader, ia);
 
-        
-
-        
-
         replyChildChains(globalBuddyHeader);
     }
     else {
-        
-
         auto endItr = pConsensusStatus->listLocalBuddyChainInfo.end();
         endItr--;
 
@@ -221,8 +203,6 @@ void GlobalBuddyRspTask::replyChildChains(T_P2PPROTOCOLGLOBALBUDDYHEADER &global
             oa << PeerInfos;
         }
     }
-    
-
     DataBuffer<GlobalBuddyRspTask> msgbuf(move(ssBuf.str()));
 
     if (globalBuddyHeader.GetPeerAddr()._nodeid != me->getNodeId<CUInt128>()) {

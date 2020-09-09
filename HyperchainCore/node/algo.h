@@ -64,6 +64,8 @@ public:
     {
     }
 
+    ~priority_props();
+
     int get_priority() const
     {
         return priority_;
@@ -93,6 +95,7 @@ private:
     std::condition_variable     cnd_{};
     bool                        flag_{ false };
     boost::fibers::context      *main_context_ = nullptr;
+    int                         nfibers_terminated_ = 0;
 public:
     priority_scheduler() :
         rqueue_()
@@ -111,6 +114,9 @@ public:
     virtual void suspend_until(std::chrono::steady_clock::time_point const& time_point) noexcept;
 
     virtual void notify() noexcept;
+
+    void count_terminated() { nfibers_terminated_++; }
+    int fibers_count();
 };
 
 template< typename Fn , typename ... Arg>

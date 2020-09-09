@@ -60,8 +60,6 @@ int OperatorApplication(std::shared_ptr<OPAPP> parg)
 
     ShutdownExcludeRPCServer();
 
-    
-
     std::deque<string> appli;
 
     appli.push_front("hc");
@@ -312,7 +310,7 @@ void UnregisterTask(void* objFac)
     datahandler->unregisterAppTask(TASKTYPE::LEDGER);
 }
 
-static MsgHandler ledgermsghandler;
+MsgHandler ledgermsghandler;
 
 static void handleLedgerTask(void *wrk, zmsg *msg)
 {

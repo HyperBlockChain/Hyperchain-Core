@@ -109,8 +109,9 @@ void MsgHandler::stop()
 using co_tasks= std::list<boost::fibers::fiber>;
 
 inline
-void co_create_start(void *sck, zmsg &&msg, std::function<void(void*, zmsg*)> f)
+void co_create_start(MsgHandler *h, void *sck, zmsg &&msg, std::function<void(void*, zmsg*)> f)
 {
+    h->addfiber();
     boost::fibers::fiber fb(Newfiber([](void *sck, zmsg &&msg, std::function<void(void*, zmsg*)> fn) {
         fn(sck, &msg);
     }, "child_task", 0, sck, msg, f));
@@ -119,8 +120,9 @@ void co_create_start(void *sck, zmsg &&msg, std::function<void(void*, zmsg*)> f)
 }
 
 inline
-void co_create_start(std::function<void()> f)
+void co_create_start(MsgHandler *h, std::function<void()> f)
 {
+    h->addfiber();
     boost::fibers::fiber fb(Newfiber([](std::function<void()> fn) {
         fn();
     }, "timer_child_task", 0, f));
@@ -128,14 +130,32 @@ void co_create_start(std::function<void()> f)
     return;
 }
 
+std::thread::id MsgHandler::getID()
+{
+     if(_eventloopthread)
+         return _eventloopthread->get_id();
+     return std::thread::id();
+}
+
+string MsgHandler::details()
+{
+    int nfiber_terminated = 0;
+    if (_my_scheduler_algo) {
+        nfiber_terminated = _my_scheduler_algo->fibers_count();
+    }
+    ostringstream oss;
+    oss << getID() << " fibers Created: " << _fiber_count_created_
+        << " terminated: " << nfiber_terminated;
+    return oss.str();
+}
+
 
 void MsgHandler::dispatchMQEvent()
 {
-    
-
-	
-
     boost::fibers::use_scheduling_algorithm<priority_scheduler>();
+    _my_scheduler_algo = new priority_scheduler();
+    boost::fibers::context::active()->get_scheduler()->set_algo(_my_scheduler_algo);
+
     boost::this_fiber::properties< priority_props >().name = "main";
     boost::fibers::fiber fdispatch(Newfiber([&]() {
         dispatchMQEvent_fb();
@@ -172,8 +192,6 @@ void MsgHandler::dispatchMQEvent_fb()
                 continue;
             }
 
-            
-
             for (auto &w : _wrks) {
                 w->idle();
             }
@@ -187,13 +205,9 @@ void MsgHandler::dispatchMQEvent_fb()
                     size_t j = i - wrkcount;
                     zmsg recvmsg(*_socks[j]);
 
-                    
-
-                    co_create_start(_socks[j], std::move(recvmsg), _poll_funcs_s[j]);
+                    co_create_start(this, _socks[j], std::move(recvmsg), _poll_funcs_s[j]);
                 }
                 else {
-                    
-
                     zmsg recvmsg(*_wrks[i]->getsocket());
                     msg = &recvmsg;
 
@@ -207,9 +221,7 @@ void MsgHandler::dispatchMQEvent_fb()
 
                     std::string command = msg->pop_front();
                     if (command.compare(MDPW_REQUEST) == 0) {
-                        
-
-                        co_create_start(_wrks[i], std::move(recvmsg), _poll_funcs[i]);
+                        co_create_start(this, _wrks[i], std::move(recvmsg), _poll_funcs[i]);
                     }
                     else {
                         s_console("MsgHandler: invalid input message (%d)", (int) *(command.c_str()));
@@ -218,17 +230,13 @@ void MsgHandler::dispatchMQEvent_fb()
                 }
             }
         }
-        
-
         auto now = s_clock();
         for (auto &t : _poll_func_timers) {
             if (t.when < now) {
-                co_create_start(t.func);
+                co_create_start(this, t.func);
                 t.when += t.delay;
             }
         }
-
-        
 
         now = s_clock();
         auto a_ticket = _poll_func_tickets.begin();
@@ -237,9 +245,8 @@ void MsgHandler::dispatchMQEvent_fb()
                 timer t = *a_ticket;
 
                 a_ticket = _poll_func_tickets.erase(a_ticket);
-                co_create_start(t.func);
 
-                
+                co_create_start(this, t.func);
 
                 break;
             }
@@ -261,10 +268,6 @@ void MsgHandler::handleTask(void *wrk, zmsg *msg)
 
     std::shared_ptr<ITask> task = _taskFactory.CreateShared<ITask>(static_cast<uint32_t>(tt), std::move(taskbuf));
     if (!task) {
-        
-
-        
-
         return;
     }
 

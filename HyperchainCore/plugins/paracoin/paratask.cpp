@@ -60,8 +60,6 @@ int OperatorApplication(std::shared_ptr<OPAPP> parg)
 
     ShutdownExcludeRPCServer();
 
-    
-
     std:;deque<string> appli;
 
     appli.push_front("hc");
@@ -174,8 +172,6 @@ bool PickupMessages(CDataStream& vSendStream, uint32_t nLimitSize, string &tskms
         //        outputlog(strprintf("Block message:  height is %d", 0));
         //}
 
-        
-
         unsigned int nMessageSize = hdr.nMessageSize;
         if (nMessageSize > MAX_SIZE) {
             printf("PickupMessages(%u bytes) : nMessageSize > MAX_SIZE\n", nMessageSize);
@@ -183,14 +179,10 @@ bool PickupMessages(CDataStream& vSendStream, uint32_t nLimitSize, string &tskms
         }
 
         if (nMessageSize > vSendStream.size() || (nSize > 0 && nSize + nMessageSize > nLimitSize)) {
-            
-
             ERROR_FL("Rewind and wait for rest of message or reach size limit if append next message ");
             vSendStream.insert(vSendStream.begin(), vHeaderSave.begin(), vHeaderSave.end());
             break;
         }
-
-        
 
         tskmsg.append(vHeaderSave.begin(), vHeaderSave.end());
         tskmsg.append(vSendStream.begin(), vSendStream.begin() + nMessageSize);
@@ -212,20 +204,10 @@ void sendToNode(CNode* pnode)
             int nBytes = vSend.size();
             if (nBytes > 0) {
 
-                
-
-                
-
-                
-
-                
-
 
                 sndbuf = string(vSend.begin(), vSend.begin() + nBytes);
                 vSend.erase(vSend.begin(), vSend.begin() + nBytes);
                 pnode->nLastSend = GetTime();
-
-                
 
                 //if (PickupMessages(vSend, 4096, sndbuf)) {
                 //    pnode->nLastSend = GetTime();
@@ -259,25 +241,21 @@ void recvFromNode(CNode* pnode, const char *pchBuf, size_t nBytes)
         }
         else {
             // typical socket buffer is 8K-64K
-            if (nBytes > 0)
-            {
+            if (nBytes > 0) {
                 vRecv.resize(nPos + nBytes);
                 memcpy(&vRecv[nPos], pchBuf, nBytes);
                 pnode->nLastRecv = GetTime();
             }
-            else if (nBytes == 0)
-            {
+            else if (nBytes == 0) {
                 // socket closed gracefully
                 if (!pnode->fDisconnect)
                     printf("socket closed\n");
                 pnode->CloseSocketDisconnect();
             }
-            else if (nBytes < 0)
-            {
+            else if (nBytes < 0) {
                 // error
                 int nErr = WSAGetLastError();
-                if (nErr != WSAEWOULDBLOCK && nErr != WSAEMSGSIZE && nErr != WSAEINTR && nErr != WSAEINPROGRESS)
-                {
+                if (nErr != WSAEWOULDBLOCK && nErr != WSAEMSGSIZE && nErr != WSAEINTR && nErr != WSAEINPROGRESS) {
                     if (!pnode->fDisconnect)
                         printf("socket recv error %d\n", nErr);
                     pnode->CloseSocketDisconnect();
@@ -456,7 +434,7 @@ void UnregisterTask(void* objFac)
     datahandler->unregisterAppTask(TASKTYPE::PARACOIN);
 }
 
-static MsgHandler paramsghandler;
+MsgHandler paramsghandler;
 
 static void handleParacoinTask(void *wrk, zmsg *msg)
 {

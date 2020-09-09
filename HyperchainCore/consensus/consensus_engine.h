@@ -36,21 +36,14 @@ using namespace std;
 
 enum class ONCHAINSTATUS :char {
     queueing,       
-
     onchaining1,    
-
     onchaining2,    
-
     onchained,      
-
     matured,        
-
     nonexistent,    
-
     failed,         
-
-    unknown,        
-
+    unknown,       
+    pending,       
 };
 
 class HCMQWrk;
@@ -66,12 +59,10 @@ public:
     void start();
     void stop();
 
-    std::thread::id MQID()
+    std::string MQID()
     {
-        return _msghandler.getID();
+        return _msghandler.details();
     }
-
-    
 
     void startTest() {
         if (_testthread) {
@@ -174,7 +165,6 @@ private:
         GetOnChainState = 1,
         AddNewBlockEx,
         AddChainEx,      
-
         HyperBlockUpdated,
         GetStateOfCurrentConsensus,
         GetDetailsOfCurrentConsensus,

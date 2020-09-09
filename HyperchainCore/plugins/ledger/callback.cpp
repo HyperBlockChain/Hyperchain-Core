@@ -68,13 +68,10 @@ bool IsGenesisBlock(const T_APPTYPE& t)
     t.get(hid, chainnum, localid);
 
     if (hid == 0 && chainnum == 0 && localid == 0) {
-        //genesis block
         return true;
     }
     return false;
 }
-
-
 
 std::map<uint32_t, time_t> mapPullingHyperBlock;
 CCriticalSection cs_pullingHyperBlock;
@@ -88,8 +85,6 @@ void RSyncRemotePullHyperBlock(uint32_t hid, string nodeid = "")
         }
         else {
             if (now - mapPullingHyperBlock[hid] < 20) {
-                
-
                 return;
             }
             else {
@@ -133,8 +128,6 @@ bool UpdateAppAddress(const CBlock& genesisblock, const T_LOCALBLOCKADDRESS& add
     string tokenhash = cryptoToken.GetHashPrefixOfGenesis();
     string errmsg;
     if (!cryptoTokenFromLocal.ReadTokenFile(cryptoToken.GetName(), tokenhash, errmsg)) {
-        
-
         return ERROR_FL("%s", errmsg.c_str());
     }
 
@@ -176,23 +169,16 @@ bool HandleGenesisBlockCb(vector<T_PAYLOADADDR>& vecPA)
     return true;
 }
 
-
-
 bool PutTxsChainCb()
 {
-    
-
     std::lock_guard<std::mutex> lck(g_muxConsensusBlock);
     if (g_spConsensusBlock) {
-        
-
         return false;
     }
 
     CReserveKey reservekey(pwalletMain);
     CBlock* pBlock = CreateNewBlock(reservekey);
     if (!pBlock) {
-        //no transactions need to commit
         return false;
     }
 
@@ -212,8 +198,6 @@ bool PutTxsChainCb()
     }
     return false;
 }
-
-
 
 
 bool CheckChainCb(vector<T_PAYLOADADDR>& vecPA)
@@ -260,8 +244,6 @@ bool CheckChainCb(vector<T_PAYLOADADDR>& vecPA)
 
     return true;
 }
-
-
 
 
 bool LedgerAcceptChainCb(map<T_APPTYPE,vector<T_PAYLOADADDR>>& mapPayload, uint32_t& hidFork, uint32_t& hid, T_SHA256& thhash, bool isLatest)
@@ -315,8 +297,6 @@ bool LedgerAcceptChainCb(map<T_APPTYPE,vector<T_PAYLOADADDR>>& mapPayload, uint3
         }
     }
 
-    
-
     PutTxsChainCb();
 
     return true;
@@ -334,10 +314,6 @@ namespace boost {
     }
 }
 
-
-
-
-
 bool ValidateLedgerDataCb(T_PAYLOADADDR& payloadaddr,
                         map<boost::any,T_LOCALBLOCKADDRESS>& mapOutPt,
                         boost::any& hashPrevBlock)
@@ -353,14 +329,11 @@ bool ValidateLedgerDataCb(T_PAYLOADADDR& payloadaddr,
         return ERROR_FL("hashPrevBlock is different");
     }
 
-    // Preliminary checks
     if (!block.CheckBlock())
         return ERROR_FL("CheckBlock FAILED");
 
     if (!block.CheckTrans())
         return ERROR_FL("CheckTrans FAILED");
-
-    
 
     for (auto tx : block.vtx) {
         if (tx.IsCoinBase()) {
@@ -390,11 +363,8 @@ bool UpdateLedgerDataCb(string& payload, string &newpaylod)
 
     CBlockIndex* pindexPrev = pindexBest;
     if (block.hashPrevBlock == pindexBest->GetBlockHash()) {
-        //don't need update.
         return false;
     }
-    
-
     block.hashPrevBlock = pindexPrev->GetBlockHash();
     //block.nTime = max(pindexPrev->GetMedianTimePast() + 1, GetAdjustedTime());
 
@@ -409,17 +379,9 @@ bool UpdateLedgerDataCb(string& payload, string &newpaylod)
     return true;
 }
 
-
-
 bool LedgerBlockUUIDCb(string& payload, string& uuidpayload)
 {
-    
-
-    
-
     uuidpayload = payload.substr(0, sizeof(int));
-    
-
     uuidpayload += payload.substr(sizeof(int) + sizeof(uint256));
     return true;
 }
@@ -435,8 +397,6 @@ bool GetVPath(T_LOCALBLOCKADDRESS& sAddr, T_LOCALBLOCKADDRESS& eAddr, vector<str
                 p = p->pprev;
                 continue;
             } else if (p->addr.hid < sAddr.hid) {
-                
-
                 return false;
             }
             else {
@@ -535,8 +495,6 @@ void UpdateMaxBlockAddr(const T_LOCALBLOCKADDRESS& addr)
         txdb.Close();
     }
 }
-
-
 void UpdateBlockIndex()
 {
     if(pindexBest->addr < addrMaxChain) {
@@ -546,11 +504,7 @@ void UpdateBlockIndex()
         T_SHA256 thhash;
 		uint32 hid = pindexBest->addr.hid + 1;
         while (hid <= addrMaxChain.hid) {
-            
-
             if (!hyperchainspace->GetLocalBlocksByHID(hid++, app, thhash, vecPA)) {
-                
-
                 break;
             }
             CheckChainCb(vecPA);
@@ -624,8 +578,6 @@ void ThreadRSyncGetBlock(void* parg)
         }
 
         T_APPTYPE app(APPTYPE::ledger);
-        
-
         if (!searchBlockOngoing.startaddr.isValid()) {
             hyperchainspace->GetAppBlocksByAddr(itergb->startaddr, itergb->endaddr, app);
             tOngoingTimePoint = std::time(nullptr);
@@ -644,8 +596,6 @@ void ThreadRSyncGetBlock(void* parg)
 
         auto now = std::time(nullptr);
         if (now - tOngoingTimePoint > 120) {
-            
-
             hyperchainspace->GetAppBlocksByAddr(searchBlockOngoing.startaddr, searchBlockOngoing.endaddr, app);
             tOngoingTimePoint = std::time(nullptr);
         }
@@ -657,8 +607,6 @@ void ThreadRSyncGetBlock(void* parg)
         }
     }
 }
-
-
 
 void RSyncGetBlock(const T_LOCALBLOCKADDRESS& addr)
 {
@@ -676,8 +624,6 @@ void RSyncGetBlock(const T_LOCALBLOCKADDRESS& addr)
     if (listGetBlock.size() > 0 && listGetBlock.rbegin()->endaddr.hid ) {
         auto searchpos = listGetBlock.rbegin()->endaddr;
         if (searchpos >= addr) {
-            
-
             return;
         }
         pos.startaddr = searchpos;
@@ -759,6 +705,8 @@ void AppRunningArg(int& app_argc, string& app_argv)
     }
 }
 
+extern MsgHandler ledgermsghandler;
+
 void AppInfo(string& info)
 {
     ostringstream oss;
@@ -768,6 +716,8 @@ void AppInfo(string& info)
         << "Genesis block address: " << g_cryptoToken.GetHID() << " "
         << g_cryptoToken.GetChainNum() << " "
         << g_cryptoToken.GetLocalID() << endl;
+
+    oss << "MQID: " << ledgermsghandler.details() << endl << endl;
 
     info = oss.str();
 

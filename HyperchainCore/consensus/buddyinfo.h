@@ -162,6 +162,9 @@ typedef struct _tp2pmanagerstatus
 
     T_STRUCTBUDDYINFO tBuddyInfo;
 
+    T_SHA256 latestHyperBlockHash;
+    uint64 latestHyperblockId = 0;
+
     void ClearStatus();
 
     _tp2pmanagerstatus()
@@ -172,8 +175,6 @@ typedef struct _tp2pmanagerstatus
     bool StartGlobalFlag()const;
 
     bool HaveOnChainReq()const;
-
-    
 
     T_SHA256 GetConsensusPreHyperBlockHash()const;
 
@@ -207,8 +208,11 @@ typedef struct _tp2pmanagerstatus
 
     void SetBuddyInfo(T_STRUCTBUDDYINFO info);
 
-    void SetMaxBlockNum(uint64 num);
-    void SetPreHyperBlock(T_HYPERBLOCK&& h);
+    void SetLatestHyperBlock(uint64 hyperid,  const T_SHA256 &hhash);
+
+    inline uint64 GetLatestHyperBlockId() const { return latestHyperblockId; };
+
+    const T_SHA256 & GetLatestHyperBlockHash() const { return latestHyperBlockHash; };
 
     void GetMulticastNodes(vector<CUInt128> &MulticastNodes);
 
@@ -221,11 +225,9 @@ typedef struct _tp2pmanagerstatus
 
     void CleanConsensusEnv();
 
-    
-
     void TrackLocalBlock(const T_LOCALBLOCK& localblock);
     void InitOnChainingState(uint64 hid);
-    void RehandleOnChainingState(uint64 hid);  
+    void RehandleOnChainingState(uint64 hid);
 
     void SetAppCallback(const T_APPTYPE& app, const CONSENSUSNOTIFY& notify);
     void RemoveAppCallback(const T_APPTYPE& app);
@@ -245,10 +247,6 @@ typedef struct _tp2pmanagerstatus
     template<cbindex I, typename... Args>
     CBRET AppCallback(const T_APPTYPE& app, Args&... args)
     {
-        
-
-        
-
         if (_mapcbfn.count(app)) {
             auto& noti = _mapcbfn.at(app);
             auto fn = std::get<static_cast<size_t>(I)>(noti);

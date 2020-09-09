@@ -23,6 +23,16 @@ DEALINGS IN THE SOFTWARE.
 
 #include "algo.h"
 
+priority_props::~priority_props()
+{
+    auto *ctx = boost::fibers::context::active();
+    if (ctx) {
+        auto p = dynamic_cast<priority_scheduler*>(algo_);
+        if (p) {
+            p->count_terminated();
+        }
+    }
+}
 
 void priority_scheduler::awakened(boost::fibers::context * ctx, priority_props & props) noexcept
 {
@@ -54,7 +64,7 @@ bool priority_scheduler::has_ready_fibers() const noexcept
 void priority_scheduler::property_change(boost::fibers::context * ctx, priority_props & props) noexcept
 {
     if (!ctx->ready_is_linked()) {
-        describe_ready_queue();
+        //describe_ready_queue();
         return;
     }
 
@@ -101,4 +111,9 @@ void priority_scheduler::notify() noexcept
     cnd_.notify_all();
 }
 
+
+int priority_scheduler::fibers_count()
+{
+    return nfibers_terminated_;
+}
 

@@ -27,6 +27,7 @@ DEALINGS IN THE SOFTWARE.
 #include "config.h"
 #include "headers.h"
 #include "strlcpy.h"
+#include "util.h"
 
 #include <boost/program_options/detail/config_file.hpp>
 #include <boost/program_options/parsers.hpp>
@@ -48,6 +49,9 @@ bool fDebug = false;
 bool fPrintToConsole = false;
 bool fPrintToDebugFile = false;
 bool fPrintBacktracking = false;
+bool fPrintBacktracking_node = false;
+string strBacktracking_node;
+
 bool fPrintToDebugger = false;
 char pszSetDataDir[MAX_PATH] = "";
 bool fRequestShutdown = false;
@@ -210,8 +214,15 @@ bool TurnOnOffDebugOutput(const string& onoff, string& ret)
         }
 
         if (fPrintBacktracking) {
-            ret += " and 'backtracking'";
+            ret = "'backtracking' on";
         }
+
+        if (fPrintBacktracking_node) {
+            ret = "'backtracking on from node: ";
+            ret += strBacktracking_node;
+            ret += "'";
+        }
+
         return true;
     }
 
@@ -231,9 +242,14 @@ bool TurnOnOffDebugOutput(const string& onoff, string& ret)
         fPrintToConsole = false;
         fPrintToDebugFile = false;
         fPrintBacktracking = false;
+        fPrintBacktracking_node = false;
     }
     else if (optiononoff == "bt") {
         fPrintBacktracking = true;
+    }
+    else if (optiononoff.find("bt:") != string::npos) {
+        fPrintBacktracking_node = true;
+        strBacktracking_node = optiononoff.substr(3);
     }
     else {
         ret = "unknown debug option";
@@ -241,6 +257,17 @@ bool TurnOnOffDebugOutput(const string& onoff, string& ret)
     }
     ret = string("Paracoin's debug setting is '") + optiononoff + "'";
     return true;
+}
+
+void LogBacktrackingFromNode(const string &fromnode, const char* format, ...)
+{
+    if (fPrintBacktracking_node && fromnode == strBacktracking_node) {
+        // print to console
+        va_list arg_ptr;
+        va_start(arg_ptr, format);
+        vprintf(format, arg_ptr);
+        va_end(arg_ptr);
+    }
 }
 
 void LogBacktracking(const char* format, ...)
@@ -253,6 +280,7 @@ void LogBacktracking(const char* format, ...)
         va_end(arg_ptr);
     }
 }
+
 
 int OutputDebugStringF(const char* pszFormat, ...)
 {
@@ -547,11 +575,6 @@ bool WildcardMatch(const string& str, const string& mask)
 
 
 
-
-
-
-
-
 void FormatException(char* pszMessage, std::exception* pex, const char* pszThread)
 {
 #ifdef __WXMSW__
@@ -583,8 +606,6 @@ void PrintException(std::exception* pex, const char* pszThread)
     printf("\n\n************************\n%s\n", pszMessage);
     fprintf(stderr, "\n\n************************\n%s\n", pszMessage);
     strMiscWarning = pszMessage;
-    
-
     //throw;
 }
 
@@ -1046,6 +1067,9 @@ string CCriticalBlockT<pcstName>::_file = "";
 
 template<>
 int CCriticalBlockT<pcstName>::_nLine = 0;
+
+template<>
+std::thread::id CCriticalBlockT<pcstName>::_tid = std::thread::id();
 
 
 #endif /* DEBUG_LOCKORDER */

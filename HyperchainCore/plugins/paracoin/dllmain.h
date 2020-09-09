@@ -163,12 +163,21 @@ bool WriteSetting(const std::string& strKey, const T& value)
         std::string strWalletFile;
         if (!GetWalletFile(pwallet, strWalletFile))
             continue;
-        fOk |= CWalletDB(strWalletFile).WriteSetting(strKey, value);
+        fOk |= CWalletDB_Wrapper(strWalletFile).WriteSetting(strKey, value);
     }
     return fOk;
 }
 
 
+class CSpentTime
+{
+public:
+    CSpentTime();
+    uint64 Elapse();
+    void Reset();
+private:
+    std::chrono::system_clock::time_point  _StartTimePoint;
+};
 
 
 /**
@@ -208,8 +217,7 @@ public:
 class CBlockIndexSimplified
 {
 public:
-    const uint256* phashBlock = nullptr;
-
+    const uint256* phashBlock = nullptr;  
     CBlockIndexSimplified* pprev = nullptr;
     CBlockIndexSimplified* pnext = nullptr;
     int nHeight = -1;
@@ -249,72 +257,71 @@ public:
 //
 // Used to marshal pointers into hashes for db storage.
 //
-class CDiskBlockIndex : public CBlockIndex
+class CDiskBlockIndex
 {
 public:
 
-    CDiskBlockIndex()
+    explicit CDiskBlockIndex(CBlockIndex* pindex) : _pblkindex(pindex)
     {
-        hashPrev = 0;
-        hashNext = 0;
     }
 
-    explicit CDiskBlockIndex(CBlockIndex* pindex) : CBlockIndex(*pindex)
+    CBlockIndex *GetBlockIndex()
     {
+        return _pblkindex;
     }
 
     IMPLEMENT_SERIALIZE
     (
         if (!(nType & SER_GETHASH))
-            READWRITE(nVersion);
+            READWRITE(_pblkindex->nVersion);
 
-        READWRITE(hashNext);
+        READWRITE(_pblkindex->hashNext);
 
-		READWRITE(nHeight);
-		READWRITE(bnChainWork);
+        READWRITE(_pblkindex->nHeight);
+        READWRITE(_pblkindex->bnChainWork);
 
 
-        uint32_t* hid = (uint32_t*)(&addr.hid);
+        uint32_t* hid = (uint32_t*)(&_pblkindex->addr.hid);
         READWRITE(*hid);
 
-        READWRITE(addr.chainnum);
-        READWRITE(addr.id);
-        READWRITE(addr.ns);
+        READWRITE(_pblkindex->addr.chainnum);
+        READWRITE(_pblkindex->addr.id);
+        READWRITE(_pblkindex->addr.ns);
 
         // block header
-        READWRITE(this->nVersion);
-        READWRITE(hashPrev);
-        READWRITE(hashMerkleRoot);
+        READWRITE(_pblkindex->nVersion);
+        READWRITE(_pblkindex->hashPrev);
+        READWRITE(_pblkindex->hashMerkleRoot);
 
-        READWRITE(nTime);
-        READWRITE(nBits);
-        READWRITE(nNonce);
-        READWRITE(nSolution);
-        READWRITE(nPrevHID);
-        READWRITE(hashPrevHyperBlock);
-        READWRITE(hashExternData);
+        READWRITE(_pblkindex->nTime);
+        READWRITE(_pblkindex->nBits);
+        READWRITE(_pblkindex->nNonce);
+        READWRITE(_pblkindex->nSolution);
+        READWRITE(_pblkindex->nPrevHID);
+        READWRITE(_pblkindex->hashPrevHyperBlock);
+        READWRITE(_pblkindex->hashExternData);
 
-        READWRITE(ownerNodeID.Lower64());
-        READWRITE(ownerNodeID.High64());
+        READWRITE(_pblkindex->ownerNodeID.Lower64());
+        READWRITE(_pblkindex->ownerNodeID.High64());
 
     )
 
     uint256 GetBlockHash() const
     {
         CBlock block;
-        block.nVersion        = nVersion;
-        block.hashPrevBlock   = hashPrev;
-        block.hashMerkleRoot  = hashMerkleRoot;
-        block.nHeight         = nHeight;
+        block.nVersion        = _pblkindex->nVersion;
+        block.hashPrevBlock   = _pblkindex->hashPrev;
+        block.hashMerkleRoot  = _pblkindex->hashMerkleRoot;
+        block.nHeight         = _pblkindex->nHeight;
 
-        block.nTime           = nTime;
-        block.nBits           = nBits;
-        block.nNonce          = nNonce;
-        block.nPrevHID        = nPrevHID;
-        block.nSolution       = nSolution;
-        block.hashPrevHyperBlock = hashPrevHyperBlock;
-        block.nNonce          = nNonce;
-        block.hashExternData = hashExternData;
+        block.nTime           = _pblkindex->nTime;
+        block.nBits           = _pblkindex->nBits;
+        block.nNonce          = _pblkindex->nNonce;
+        block.nPrevHID        = _pblkindex->nPrevHID;
+        block.nSolution       = _pblkindex->nSolution;
+        block.hashPrevHyperBlock = _pblkindex->hashPrevHyperBlock;
+        block.nNonce          = _pblkindex->nNonce;
+        block.hashExternData = _pblkindex->hashExternData;
 
         return block.GetHash();
     }
@@ -322,11 +329,11 @@ public:
     std::string ToString() const
     {
         std::string str = "CDiskBlockIndex(";
-        str += CBlockIndex::ToString();
+        str += _pblkindex->ToString();
         str += strprintf("\n                hashBlock=%s, hashPrev=%s, hashNext=%s)",
             GetBlockHash().ToString().c_str(),
-            hashPrev.ToString().substr(0,20).c_str(),
-            hashNext.ToString().substr(0,20).c_str());
+            _pblkindex->hashPrev.ToString().substr(0,20).c_str(),
+            _pblkindex->hashNext.ToString().substr(0,20).c_str());
         return str;
     }
 
@@ -334,6 +341,10 @@ public:
     {
         printf("%s\n", ToString().c_str());
     }
+
+private:
+    CBlockIndex *_pblkindex;
+
 };
 
 
@@ -380,6 +391,8 @@ public:
     {
         vHave.clear();
         int nStep = 1;
+
+        CSpentTime ttSpent;
         while (pindex)
         {
             vHave.push_back(pindex->GetBlockHash());
@@ -389,6 +402,10 @@ public:
                 pindex = pindex->pprev();
             if (vHave.size() > 10)
                 nStep *= 2;
+
+            if (ttSpent.Elapse() > 30) {
+                break;
+            }
         }
         vHave.push_back(hashGenesisBlock);
     }
@@ -683,8 +700,7 @@ private:
 class BLOCKTRIPLEADDRESS
 {
 public:
-    uint32 hid = 0;
-
+    uint32 hid = 0;            
     uint16 chainnum = 0;
     uint16 id = 0;
 
@@ -751,14 +767,6 @@ public:
         return _nLatestParaHeight;
     }
 
-    static uint256 GetRootHash()
-    {
-        if (_pindexLatestRoot && _pindexLatestRoot->pnext) {
-            return *_pindexLatestRoot->pnext->phashBlock;
-        }
-        return 0;
-    }
-
     static uint256 GetBackSearchHash()
     {
         if (_pindexLatestRoot) {
@@ -776,8 +784,6 @@ public:
     }
 
     static string GetMemoryInfo();
-
-
 
     static void Switch();
     static bool IsOnChain();
@@ -804,8 +810,6 @@ private:
     static void PullingPrevBlocks();
 
 private:
-
-
     static CBlockIndexSimplified* _pindexLatest;
     static int  _nLatestParaHeight;
 
@@ -862,8 +866,6 @@ public:
                 if (!LatestParaBlock::IsOnChain()) {
                     auto f = std::bind(&MiningCondition::ProgressChanged, this, std::placeholders::_1);
                     if (!LatestParaBlock::IsLackingBlock(f)) {
-
-
                         _eStatusCode = miningstatuscode::Switching;
                         LatestParaBlock::Switch();
                     }
@@ -929,17 +931,11 @@ private:
                 uint256 hash;
                 g_blockChckPnt.Get(height, hash);
                 if (height == 0) {
-
-
                     _eStatusCode = miningstatuscode::MiningWithWarning1;
                     return false;
                 }
-
-
                 if (height > 0) {
                     if (p->nHeight < height) {
-
-
                         _eStatusCode = miningstatuscode::MiningWithWarning2;
                         return false;
                     }
@@ -949,8 +945,6 @@ private:
                     }
 
                     if (p->GetBlockHash() != hash) {
-
-
                         _eStatusCode = miningstatuscode::MiningWithWarning3;
                         return false;
                     }
@@ -1005,7 +999,7 @@ private:
         {miningstatuscode::MiningWithWarning2,  "Warning: Block height less than seed server's"},
         {miningstatuscode::MiningWithWarning3,  "Warning: Block hash different from seed server's"},
         {miningstatuscode::Switching,           "Switching to the best chain"},
-        {miningstatuscode::GenDisabled,         "Specify \"-gen\" option to enable"},
+        {miningstatuscode::GenDisabled,         "Stopped or disabled, Specify \"-gen\" option to enable"},
         {miningstatuscode::HyperBlockNotReady,  "My latest hyper block isn't ready"},
         {miningstatuscode::NoAnyNeighbor,       "No neighbor found"},
         {miningstatuscode::InvalidGenesisBlock, "Genesis block error"},
@@ -1061,8 +1055,6 @@ public:
 
     void clear();
 
-
-
     bool erase(const uint256& hashBlock);
 
     const CBlock& operator[](const uint256& hashBlock);
@@ -1097,8 +1089,6 @@ public:
     bool insert(const uint256& hashBlock, const BLOCKTRIPLEADDRESS& addr);
     void clear();
 
-
-
     bool erase(const uint256& hashBlock);
 
     const BLOCKTRIPLEADDRESS& operator[](const uint256& hashBlock);
@@ -1115,15 +1105,6 @@ private:
 
     std::set<uint256> _setRemoved;
 
-};
-
-class CSpentTime
-{
-public:
-    CSpentTime();
-    uint64 Elapse();
-private:
-    std::chrono::system_clock::time_point  _StartTimePoint;
 };
 
 
@@ -1162,9 +1143,7 @@ public:
             return 1;
         }
 
-
-
-        Storage db("r");
+        Storage db;
         v_value_type t;
         if (db.ReadSP(hashT, t)) {
             return 1;
@@ -1172,6 +1151,7 @@ public:
         return 0;
     }
 
+    inline
     std::pair<iterator, bool> insert(const value_type& value)
     {
         return insert(value, true);
@@ -1180,7 +1160,7 @@ public:
     std::pair<iterator, bool> insert(const value_type& value, bool newstorageelem)
     {
         const key_type& hashT = value.first;
-        const v_value_type t = value.second;
+        const v_value_type &t = value.second;
 
         if (newstorageelem) {
             Storage db;
@@ -1223,7 +1203,7 @@ public:
             return _mapT[hashT];
         }
 
-        Storage db("r");
+        Storage db;
         v_value_type t;
 
         if(!db.ReadSP(hashT, t)) {

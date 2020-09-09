@@ -287,8 +287,6 @@ string CCommonStruct::generateNodeId(bool isbase62)
     string struuid = boost::uuids::to_string(r_uuid);
     struuid.erase(std::remove(struuid.begin(), struuid.end(), '-'), struuid.end());*/
 
-    
-
     sole::uuid u4 = sole::uuid4();
     string struuid;
     if (isbase62) {
@@ -335,11 +333,7 @@ T_SHA256 calculateMerkleTreeRoot(vector<const T_SHA256*> &mttree)
 string T_LOCALBLOCK::GetUUID() const {
 
     string uuidpayload;
-    
-
     string payload = GetPayLoad();
-    
-
     //CBRET ret =
     //    g_tP2pManagerStatus->appCallback<cbindex::GETUUIDIDX>(GetAppType(), payload, uuidpayload);
 
@@ -355,5 +349,15 @@ string T_LOCALBLOCK::GetUUID() const {
     return string(d.data(), d.size());
 }
 
+string T_BATCHBUFFER::GenerateUUID() const {
+    Digest<DT::sha1> digest;
+    uint64 uiTime = time(nullptr);
+    int ran = rand();
 
+    digest.AddData(&uiTime, sizeof(uiTime));
+    digest.AddData(&ran, sizeof(ran));
+
+    std::string d = digest.getDigestBase58();
+    return string(d.data(), d.size());
+}
 

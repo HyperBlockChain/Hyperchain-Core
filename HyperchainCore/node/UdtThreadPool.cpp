@@ -84,8 +84,6 @@ void UdtThreadPool::stop()
 
     CloseAllConnectedSocket();
     //UDT::close(m_listenFd);
-    
-
     UDT::cleanup();
 }
 
@@ -274,8 +272,6 @@ UDTSOCKET UdtThreadPool::CreateConnectionSocket(T_SERVERKEY &serverKey)
         return UDT::INVALID_SOCK;
     }
 
-    
-
     m_socketMap[serverKey/*.Ip*/] = socket_fd;
 
     g_daily_logger->debug("UdtThreadPool [{}:{}] socket {}",
@@ -305,9 +301,9 @@ bool UdtThreadPool::AcceptConnectionSocket(UDTSOCKET listenFd)
 
     ITR_MAP_CONNECTED_SOCKET iter_map = m_socketMap.find(ServerKey);
     if (iter_map != m_socketMap.end()) {
-        g_daily_logger->error("UdtThreadPool [{}:{}] socket {} already exist!",
+        g_daily_logger->warn("UdtThreadPool [{}:{}] socket {} already exist!",
             fromIp.c_str(), fromPort, iter_map->second);
-        g_console_logger->error("UdtThreadPool [{}:{}] socket {} already exist!",
+        g_console_logger->warn("UdtThreadPool [{}:{}] socket {} already exist!",
             fromIp.c_str(), fromPort, iter_map->second);
         UDT::close(iter_map->second);
     }
@@ -328,8 +324,6 @@ void UdtThreadPool::CloseConnectedSocket(T_SERVERKEY &serverKey)
 void UdtThreadPool::CloseConnectedSocket(UDTSOCKET &socket_fd)
 {
     g_daily_logger->debug("UdtThreadPool::CloseConnectedSocket, socket_fd: {}", socket_fd);
-    
-
     for (auto it = m_socketMap.begin(); it != m_socketMap.end(); it++) {
         if (it->second == socket_fd) {
             m_socketMap.erase(it);
@@ -360,12 +354,9 @@ void UdtThreadPool::Listen()
     while (!m_isstop) {
         timeout = { 10, 0 }; 
 
-
         FillFdSets(fd);
         selectRet = UDT::select(0, &fd, NULL, NULL, &timeout);
         if (selectRet == 0) {
-            
-
             continue;
         }
 
@@ -384,15 +375,11 @@ void UdtThreadPool::Listen()
         }
 
         if (UD_ISSET(m_listenFd, &fd)) {
-            
-
             if (AcceptConnectionSocket(m_listenFd))
                 selectRet--;
         }
 
         if (selectRet > 0) {
-            
-
             FillRecvSocketList(fd, selectRet);
         }
     }
@@ -507,8 +494,6 @@ void UdtThreadPool::RecvData()
         {
             fromIp = inet_ntoa(t.fromAddr.sin_addr);
             fromPort = ntohs(t.fromAddr.sin_port);
-
-            
 
         RETRY:
             bret = udprecvhandler->put(fromIp.c_str(), fromPort, t.DataBuf.c_str(), t.DataBuf.size());

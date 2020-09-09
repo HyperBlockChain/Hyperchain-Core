@@ -30,8 +30,6 @@ DEALINGS IN THE SOFTWARE.
 
 namespace DBSQL {
 
-    
-
     const std::string EVIDENCES_TBL =
         "CREATE TABLE IF NOT EXISTS evidence_tbl "
         "("
@@ -73,15 +71,23 @@ namespace DBSQL {
     const std::string ONCHAINED_TBL =
         "CREATE TABLE IF NOT EXISTS localblockonchained ("
         "  [requestid]	varchar(32) DEFAULT ''," 
-
         "  [hid]		INTEGER DEFAULT 0,"
         "  [chain_num]	INTEGER DEFAULT 0,"
         "  [id]	INTEGER DEFAULT 0,"			
-
         "  PRIMARY KEY (requestid)"
         ");";
 
-    
+    const std::string BATCHONCHAINED_TBL =
+        "CREATE TABLE IF NOT EXISTS batchonchained ("
+        "  [batchid]	varchar(32) DEFAULT '',"
+        "  [requestid]	varchar(32) DEFAULT ''," 
+        "  [data]       blob DEFAULT '' NOT NULL,"
+        "  [retry]      INTEGER DEFAULT 0,"
+        "  [ctime]	    INTEGER DEFAULT 0,"
+        "  [succeed]	INTEGER DEFAULT 0,"
+        "  PRIMARY KEY (batchid,requestid,ctime)"
+        ");";
+
 
     const std::string HASHINFO_TBL =
         "CREATE TABLE IF NOT EXISTS hyperblockhashinfo ("
@@ -90,8 +96,6 @@ namespace DBSQL {
         "  [hash]	    char(64) NOT NULL DEFAULT '',"
         "  PRIMARY KEY (id)"
         ");";
-
-    
 
     const std::string HEADERHASHINFO_TBL =
         "CREATE TABLE IF NOT EXISTS headerhashinfo ("
@@ -310,8 +314,6 @@ int DBmgr::insertEvidence(const TEVIDENCEINFO &evidence)
 {
     try
     {
-        
-
         CppSQLite3Statement stmt = _db->compileStatement(scEvidenceInsert.c_str());
         stmt.bind(1, evidence.cFileHash.c_str());
         stmt.bind(2, (sqlite_int64)evidence.iBlocknum);
@@ -357,8 +359,6 @@ int DBmgr::getEvidences(std::list<TEVIDENCEINFO> &evidences, int page, int size)
         CppSQLite3Query query = stmt.execQuery();
         while (!query.eof())
         {
-            
-
             TEVIDENCEINFO evi;
             evi.cFileHash = query.getStringField("hash");
             evi.cFileName = query.getStringField("filename");
@@ -398,8 +398,6 @@ int DBmgr::getNoConfiringList(std::list<TEVIDENCEINFO>& evidences)
         CppSQLite3Query query = stmt.execQuery();
         while (!query.eof())
         {
-            
-
             TEVIDENCEINFO evi;
             evi.cFileHash = query.getStringField("hash");
             evi.cFileName = query.getStringField("filename");
@@ -425,8 +423,6 @@ int DBmgr::getNoConfiringList(std::list<TEVIDENCEINFO>& evidences)
 int DBmgr::updateEvidence(const TEVIDENCEINFO &evidence, int type)
 {
     try {
-        
-
         std::string sql;
         if (1 == type) {
             sql = "UPDATE evidence_tbl SET filestate=?"
@@ -511,6 +507,7 @@ int DBmgr::createTbls()
     _db->execDML(DBSQL::HYPERBLOCK_TBL.c_str());
     _db->execDML(DBSQL::LOCALBLOCK_TBL.c_str());
     _db->execDML(DBSQL::ONCHAINED_TBL.c_str());
+    _db->execDML(DBSQL::BATCHONCHAINED_TBL.c_str());
     _db->execDML(DBSQL::HASHINFO_TBL.c_str());
     _db->execDML(DBSQL::HEADER_TBL.c_str());
     _db->execDML(DBSQL::SINGLEHEADER_TBL.c_str());
@@ -526,8 +523,6 @@ int DBmgr::createTbls()
 
 int DBmgr::updateDB()
 {
-    
-
     //TO DO in the future
     if (ifTblOrIndexExist("neighbornodes", 1)) {
         if (!ifColExist("neighbornodes", "lasttime")) {
@@ -994,8 +989,6 @@ int DBmgr::getUpqueue(std::list<TUPQUEUE> &queue, int page, int size)
 
         CppSQLite3Query query = stmt.execQuery();
         while (!query.eof()) {
-            
-
             TUPQUEUE evi;
             evi.uiID = query.getInt64Field("id");
             evi.strHash = query.getStringField("hash");
@@ -1103,7 +1096,7 @@ int DBmgr::getAllHashInfo(std::map<uint64, T_SHA256> &hashmap, std::map<uint64, 
 int DBmgr::updateHeaderHashInfo(const uint64 hid, const T_SHA256 headerhash)
 {
     try {
-        exec("insert or replace into headerhashinfo(id,headerhash) values(?,?)",
+        exec("insert or replace into headerhashinfo(id,headerhash) values(?,?);",
             hid, headerhash.toHexString());
 
     }
@@ -1117,10 +1110,42 @@ int DBmgr::updateHeaderHashInfo(const uint64 hid, const T_SHA256 headerhash)
 int DBmgr::updateHashInfo(const uint64 hid, const T_SHA256 headerhash, const T_SHA256 hash)
 {
     try {
-        exec("insert or replace into hyperblockhashinfo(id,headerhash,hash) values(?,?,?)",
+        exec("insert or replace into hyperblockhashinfo(id,headerhash,hash) values(?,?,?);",
             hid,
             headerhash.toHexString(),
             hash.toHexString());
+
+    }
+    catch (CppSQLite3Exception& ex) {
+        return DBERROR(ex);
+    }
+
+    return 0;
+}
+
+int DBmgr::updateBatchOnChainState(const string &batchid, const string &requestid, const string& batchdata)
+{
+    try {
+        exec("insert or replace into batchonchained(batchid,requestid,data,ctime) values(?,?,?,?);",
+            batchid.c_str(),
+            requestid.c_str(),
+            batchdata,
+            (uint64_t)time(NULL));
+    }
+    catch (CppSQLite3Exception& ex) {
+        return DBERROR(ex);
+    }
+
+    return 0;
+}
+
+int DBmgr::updateBatchOnChainState(const string &requestid, const string &newrequestid)
+{
+    try {
+        exec("UPDATE batchonchained SET requestid=?,retry=retry+1,ctime=? WHERE requestid=?;",
+            newrequestid.c_str(),
+            (uint64_t)time(NULL),
+            requestid.c_str());
 
     }
     catch (CppSQLite3Exception& ex) {
@@ -1165,6 +1190,62 @@ void DBmgr::rehandleOnChainState(uint64 hid)
     catch (CppSQLite3Exception& ex) {
         DBERROR(ex);
     }
+}
+
+bool DBmgr::getRequestID(const string &batchid, string &requestid)
+{
+    bool isfound = false;
+    query("SELECT requestid FROM batchonchained WHERE batchid = ? ; ",
+        [this, &requestid, &isfound](CppSQLite3Query & q) {
+        requestid = q.getStringField("requestid");
+        isfound = true;
+    }, batchid.c_str());
+
+    return isfound;
+}
+
+int DBmgr::getRequestIDs(vector<string> &requestIDvec)
+{
+    try {
+        query("SELECT requestid FROM batchonchained WHERE succeed=0 AND retry<10 order by ctime LIMIT 10;",
+            [&requestIDvec](CppSQLite3Query & q) {
+            requestIDvec.push_back(q.getStringField("requestid"));
+        });
+    }
+    catch (CppSQLite3Exception& ex) {
+        return DBERROR(ex);
+    }
+
+    return 0;
+}
+
+int DBmgr::updateSucceedRequestIDs(const string &requestid)
+{
+    try {
+        exec("UPDATE batchonchained SET succeed=1 WHERE requestid=?;", requestid);
+    }
+    catch (CppSQLite3Exception& ex) {
+        return DBERROR(ex);
+    }
+
+    return 0;
+}
+
+int DBmgr::getBatchOnChainData(const string &requestid, string &data)
+{
+    try {
+        query("SELECT data FROM batchonchained WHERE requestid=?;",
+            [&data](CppSQLite3Query & q) {
+            int len;
+            const unsigned char * p = q.getBlobField("data", len);
+            data.assign((char*)p, len);
+        }, requestid);
+    }
+    catch (CppSQLite3Exception& ex) {
+        return DBERROR(ex);
+    }
+
+    return 0;
 }
 
 bool DBmgr::getOnChainStateFromRequestID(const string &requestid, T_LOCALBLOCKADDRESS &addr)

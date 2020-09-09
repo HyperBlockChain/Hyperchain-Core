@@ -94,6 +94,11 @@ public:
         _dispatcher.unregister_app_task(tt);
     }
 
+    string MQID()
+    {
+        return _dispatcher.MQID();
+    }
+
 private:
 
     MsgDispatcher _dispatcher;

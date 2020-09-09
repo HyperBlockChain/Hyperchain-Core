@@ -120,6 +120,10 @@ public:
     int getLatestHyperBlockNo();
     int getLatestHyperBlock(T_HYPERBLOCK& hyperblock);
     bool getOnChainStateFromRequestID(const string &requestid, T_LOCALBLOCKADDRESS &addr);
+    bool getRequestID(const string &batchid, string &requestid);
+    int getRequestIDs(vector<string> &requestIDvec);
+    int updateSucceedRequestIDs(const string &requestid);
+    int getBatchOnChainData(const string &requestid, string &data);
 
     bool isHeaderIndexExisted(uint64 hid);
     bool isHeaderExistedbyHash(T_SHA256 hash);
@@ -138,6 +142,8 @@ public:
     int updateHeaderInfo(const uint64 hid, const T_SHA256 headerhash, const T_HYPERBLOCKHEADER header);
     int updateSingleHeaderInfo(T_SINGLEHEADER singleheader);
     int updateOnChainState(const string &requestid, const T_LOCALBLOCKADDRESS& address);
+    int updateBatchOnChainState(const string &batchid, const string &requestid, const string& batchdata);
+    int updateBatchOnChainState(const string &requestid, const string &newrequestid);
     void initOnChainState(uint64 hid);
     void rehandleOnChainState(uint64 hid);
 
